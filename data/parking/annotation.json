@@ -1,0 +1,1642 @@
+{
+  "annotation": {
+    "folder": "my-project-name",
+    "filename": "cctv사진.jpg",
+    "path": "/my-project-name/cctv사진.jpg",
+    "source": {
+      "database": "Unspecified"
+    },
+    "size": {
+      "width": 1624,
+      "height": 968,
+      "depth": 3
+    },
+    "objects": [
+      {
+        "name": "parking",
+        "number": 1,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 840,
+          "ymin": 189,
+          "xmax": 903,
+          "ymax": 219
+        }
+      },
+      {
+        "name": "parking",
+        "number": 2,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 903,
+          "ymin": 189,
+          "xmax": 964,
+          "ymax": 219
+        }
+      },
+      {
+        "name": "parking",
+        "number": 3,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 903,
+          "ymin": 219,
+          "xmax": 964,
+          "ymax": 249
+        }
+      },
+      {
+        "name": "parking",
+        "number": 4,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 840,
+          "ymin": 219,
+          "xmax": 903,
+          "ymax": 249
+        }
+      },
+      {
+        "name": "parking",
+        "number": 5,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 903,
+          "ymin": 249,
+          "xmax": 964,
+          "ymax": 279
+        }
+      },
+      {
+        "name": "parking",
+        "number": 6,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 840,
+          "ymin": 249,
+          "xmax": 903,
+          "ymax": 279
+        }
+      },
+      {
+        "name": "parking",
+        "number": 7,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 840,
+          "ymin": 279,
+          "xmax": 903,
+          "ymax": 309
+        }
+      },
+      {
+        "name": "parking",
+        "number": 8,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 903,
+          "ymin": 279,
+          "xmax": 964,
+          "ymax": 309
+        }
+      },
+      {
+        "name": "parking",
+        "number": 9,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 903,
+          "ymin": 309,
+          "xmax": 964,
+          "ymax": 339
+        }
+      },
+      {
+        "name": "parking",
+        "number": 10,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 840,
+          "ymin": 309,
+          "xmax": 903,
+          "ymax": 339
+        }
+      },
+      {
+        "name": "parking",
+        "number": 11,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 903,
+          "ymin": 339,
+          "xmax": 964,
+          "ymax": 369
+        }
+      },
+      {
+        "name": "parking",
+        "number": 12,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 840,
+          "ymin": 339,
+          "xmax": 903,
+          "ymax": 369
+        }
+      },
+      {
+        "name": "parking",
+        "number": 13,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 903,
+          "ymin": 369,
+          "xmax": 964,
+          "ymax": 400
+        }
+      },
+      {
+        "name": "parking",
+        "number": 14,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 840,
+          "ymin": 369,
+          "xmax": 903,
+          "ymax": 400
+        }
+      },
+      {
+        "name": "parking",
+        "number": 15,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1052,
+          "ymin": 488,
+          "xmax": 1084,
+          "ymax": 544
+        }
+      },
+      {
+        "name": "parking",
+        "number": 16,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1080,
+          "ymin": 488,
+          "xmax": 1112,
+          "ymax": 544
+        }
+      },
+      {
+        "name": "parking",
+        "number": 17,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1116,
+          "ymin": 488,
+          "xmax": 1148,
+          "ymax": 544
+        }
+      },
+      {
+        "name": "parking",
+        "number": 18,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1150,
+          "ymin": 488,
+          "xmax": 1182,
+          "ymax": 544
+        }
+      },
+      {
+        "name": "parking",
+        "number": 19,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1178,
+          "ymin": 488,
+          "xmax": 1212,
+          "ymax": 544
+        }
+      },
+      {
+        "name": "parking",
+        "number": 20,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1210,
+          "ymin": 488,
+          "xmax": 1242,
+          "ymax": 544
+        }
+      },
+      {
+        "name": "parking",
+        "number": 21,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1238,
+          "ymin": 488,
+          "xmax": 1270,
+          "ymax": 544
+        }
+      },
+      {
+        "name": "parking",
+        "number": 22,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1268,
+          "ymin": 488,
+          "xmax": 1300,
+          "ymax": 544
+        }
+      },
+      {
+        "name": "parking",
+        "number": 23,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1300,
+          "ymin": 488,
+          "xmax": 1332,
+          "ymax": 544
+        }
+      },
+      {
+        "name": "parking",
+        "number": 24,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1328,
+          "ymin": 488,
+          "xmax": 1360,
+          "ymax": 544
+        }
+      },
+      {
+        "name": "parking",
+        "number": 25,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1360,
+          "ymin": 488,
+          "xmax": 1392,
+          "ymax": 544
+        }
+      },
+      {
+        "name": "parking",
+        "number": 26,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1392,
+          "ymin": 488,
+          "xmax": 1426,
+          "ymax": 544
+        }
+      },
+      {
+        "name": "parking",
+        "number": 27,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1426,
+          "ymin": 488,
+          "xmax": 1460,
+          "ymax": 544
+        }
+      },
+      {
+        "name": "parking",
+        "number": 28,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1051,
+          "ymin": 564,
+          "xmax": 1082,
+          "ymax": 621
+        }
+      },
+      {
+        "name": "parking",
+        "number": 29,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1112,
+          "ymin": 564,
+          "xmax": 1140,
+          "ymax": 621
+        }
+      },
+      {
+        "name": "parking",
+        "number": 30,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1140,
+          "ymin": 564,
+          "xmax": 1177,
+          "ymax": 621
+        }
+      },
+      {
+        "name": "parking",
+        "number": 31,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1177,
+          "ymin": 564,
+          "xmax": 1208,
+          "ymax": 621
+        }
+      },
+      {
+        "name": "parking",
+        "number": 32,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1208,
+          "ymin": 564,
+          "xmax": 1238,
+          "ymax": 621
+        }
+      },
+      {
+        "name": "parking",
+        "number": 33,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1238,
+          "ymin": 564,
+          "xmax": 1266,
+          "ymax": 621
+        }
+      },
+      {
+        "name": "parking",
+        "number": 34,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1266,
+          "ymin": 564,
+          "xmax": 1294,
+          "ymax": 621
+        }
+      },
+      {
+        "name": "parking",
+        "number": 35,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1294,
+          "ymin": 564,
+          "xmax": 1322,
+          "ymax": 621
+        }
+      },
+      {
+        "name": "parking",
+        "number": 36,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1322,
+          "ymin": 564,
+          "xmax": 1350,
+          "ymax": 621
+        }
+      },
+      {
+        "name": "parking",
+        "number": 37,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1350,
+          "ymin": 564,
+          "xmax": 1378,
+          "ymax": 621
+        }
+      },
+      {
+        "name": "parking",
+        "number": 38,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1378,
+          "ymin": 564,
+          "xmax": 1406,
+          "ymax": 621
+        }
+      },
+      {
+        "name": "parking",
+        "number": 39,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1406,
+          "ymin": 564,
+          "xmax": 1434,
+          "ymax": 621
+        }
+      },
+      {
+        "name": "parking",
+        "number": 40,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1434,
+          "ymin": 564,
+          "xmax": 1462,
+          "ymax": 621
+        }
+      },
+      {
+        "name": "parking",
+        "number": 41,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1462,
+          "ymin": 564,
+          "xmax": 1490,
+          "ymax": 621
+        }
+      },
+      {
+        "name": "parking",
+        "number": 42,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1490,
+          "ymin": 564,
+          "xmax": 1518,
+          "ymax": 621
+        }
+      },
+      {
+        "name": "parking",
+        "number": 43,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1462,
+          "ymin": 488,
+          "xmax": 1494,
+          "ymax": 544
+        }
+      },
+      {
+        "name": "parking",
+        "number": 44,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1496,
+          "ymin": 488,
+          "xmax": 1528,
+          "ymax": 544
+        }
+      },
+      {
+        "name": "parking",
+        "number": 45,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1491,
+          "ymin": 692,
+          "xmax": 1519,
+          "ymax": 743
+        }
+      },
+      {
+        "name": "parking",
+        "number": 46,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1463,
+          "ymin": 692,
+          "xmax": 1491,
+          "ymax": 743
+        }
+      },
+      {
+        "name": "parking",
+        "number": 47,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1435,
+          "ymin": 692,
+          "xmax": 1463,
+          "ymax": 743
+        }
+      },
+      {
+        "name": "parking",
+        "number": 48,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1407,
+          "ymin": 692,
+          "xmax": 1435,
+          "ymax": 743
+        }
+      },
+      {
+        "name": "parking",
+        "number": 49,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1379,
+          "ymin": 692,
+          "xmax": 1407,
+          "ymax": 743
+        }
+      },
+      {
+        "name": "parking",
+        "number": 50,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1351,
+          "ymin": 692,
+          "xmax": 1379,
+          "ymax": 743
+        }
+      },
+      {
+        "name": "parking",
+        "number": 51,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1323,
+          "ymin": 692,
+          "xmax": 1351,
+          "ymax": 743
+        }
+      },
+      {
+        "name": "parking",
+        "number": 52,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1295,
+          "ymin": 692,
+          "xmax": 1323,
+          "ymax": 743
+        }
+      },
+      {
+        "name": "parking",
+        "number": 53,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1267,
+          "ymin": 692,
+          "xmax": 1295,
+          "ymax": 743
+        }
+      },
+      {
+        "name": "parking",
+        "number": 54,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1239,
+          "ymin": 692,
+          "xmax": 1267,
+          "ymax": 743
+        }
+      },
+      {
+        "name": "parking",
+        "number": 55,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1211,
+          "ymin": 692,
+          "xmax": 1239,
+          "ymax": 743
+        }
+      },
+      {
+        "name": "parking",
+        "number": 56,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1182,
+          "ymin": 692,
+          "xmax": 1211,
+          "ymax": 743
+        }
+      },
+      {
+        "name": "parking",
+        "number": 57,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1153,
+          "ymin": 692,
+          "xmax": 1182,
+          "ymax": 743
+        }
+      },
+      {
+        "name": "parking",
+        "number": 58,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1492,
+          "ymin": 786,
+          "xmax": 1520,
+          "ymax": 839
+        }
+      },
+      {
+        "name": "parking",
+        "number": 59,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1463,
+          "ymin": 786,
+          "xmax": 1492,
+          "ymax": 839
+        }
+      },
+      {
+        "name": "parking",
+        "number": 60,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1436,
+          "ymin": 786,
+          "xmax": 1463,
+          "ymax": 839
+        }
+      },
+      {
+        "name": "parking",
+        "number": 61,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1408,
+          "ymin": 786,
+          "xmax": 1436,
+          "ymax": 839
+        }
+      },
+      {
+        "name": "parking",
+        "number": 62,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1380,
+          "ymin": 786,
+          "xmax": 1408,
+          "ymax": 839
+        }
+      },
+      {
+        "name": "parking",
+        "number": 63,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1351,
+          "ymin": 786,
+          "xmax": 1380,
+          "ymax": 839
+        }
+      },
+      {
+        "name": "parking",
+        "number": 64,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1323,
+          "ymin": 786,
+          "xmax": 1351,
+          "ymax": 839
+        }
+      },
+      {
+        "name": "parking",
+        "number": 65,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1295,
+          "ymin": 786,
+          "xmax": 1323,
+          "ymax": 839
+        }
+      },
+      {
+        "name": "parking",
+        "number": 66,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1267,
+          "ymin": 786,
+          "xmax": 1295,
+          "ymax": 839
+        }
+      },
+      {
+        "name": "parking",
+        "number": 67,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1239,
+          "ymin": 786,
+          "xmax": 1267,
+          "ymax": 839
+        }
+      },
+      {
+        "name": "parking",
+        "number": 68,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1211,
+          "ymin": 786,
+          "xmax": 1239,
+          "ymax": 839
+        }
+      },
+      {
+        "name": "parking",
+        "number": 69,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1183,
+          "ymin": 786,
+          "xmax": 1211,
+          "ymax": 839
+        }
+      },
+      {
+        "name": "parking",
+        "number": 70,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1153,
+          "ymin": 786,
+          "xmax": 1183,
+          "ymax": 839
+        }
+      },
+      {
+        "name": "parking",
+        "number": 71,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1081,
+          "ymin": 710,
+          "xmax": 1110,
+          "ymax": 766
+        }
+      },
+      {
+        "name": "parking",
+        "number": 72,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1082,
+          "ymin": 766,
+          "xmax": 1110,
+          "ymax": 822
+        }
+      },
+      {
+        "name": "parking",
+        "number": 73,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1060,
+          "ymin": 882,
+          "xmax": 1062,
+          "ymax": 886
+        }
+      },
+      {
+        "name": "parking",
+        "number": 74,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 1082,
+          "ymin": 564,
+          "xmax": 1112,
+          "ymax": 621
+        }
+      },
+      {
+        "name": "parking",
+        "number": 75,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 838,
+          "ymin": 595,
+          "xmax": 899,
+          "ymax": 622
+        }
+      },
+      {
+        "name": "parking",
+        "number": 76,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 899,
+          "ymin": 622,
+          "xmax": 958,
+          "ymax": 653
+        }
+      },
+      {
+        "name": "parking",
+        "number": 77,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 838,
+          "ymin": 653,
+          "xmax": 899,
+          "ymax": 684
+        }
+      },
+      {
+        "name": "parking",
+        "number": 78,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 899,
+          "ymin": 653,
+          "xmax": 958,
+          "ymax": 684
+        }
+      },
+      {
+        "name": "parking",
+        "number": 79,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 838,
+          "ymin": 622,
+          "xmax": 899,
+          "ymax": 653
+        }
+      },
+      {
+        "name": "parking",
+        "number": 80,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 899,
+          "ymin": 595,
+          "xmax": 958,
+          "ymax": 622
+        }
+      },
+      {
+        "name": "parking",
+        "number": 81,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 971,
+          "ymin": 749,
+          "xmax": 1001,
+          "ymax": 807
+        }
+      },
+      {
+        "name": "parking",
+        "number": 82,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 940,
+          "ymin": 749,
+          "xmax": 971,
+          "ymax": 807
+        }
+      },
+      {
+        "name": "parking",
+        "number": 83,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 909,
+          "ymin": 749,
+          "xmax": 940,
+          "ymax": 807
+        }
+      },
+      {
+        "name": "parking",
+        "number": 84,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 879,
+          "ymin": 749,
+          "xmax": 909,
+          "ymax": 807
+        }
+      },
+      {
+        "name": "parking",
+        "number": 85,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 848,
+          "ymin": 749,
+          "xmax": 879,
+          "ymax": 807
+        }
+      },
+      {
+        "name": "parking",
+        "number": 86,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 817,
+          "ymin": 749,
+          "xmax": 848,
+          "ymax": 807
+        }
+      },
+      {
+        "name": "parking",
+        "number": 87,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 700,
+          "ymin": 314,
+          "xmax": 727,
+          "ymax": 369
+        }
+      },
+      {
+        "name": "parking",
+        "number": 88,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 727,
+          "ymin": 314,
+          "xmax": 757,
+          "ymax": 369
+        }
+      },
+      {
+        "name": "parking",
+        "number": 89,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 727,
+          "ymin": 369,
+          "xmax": 757,
+          "ymax": 423
+        }
+      },
+      {
+        "name": "parking",
+        "number": 90,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 700,
+          "ymin": 369,
+          "xmax": 727,
+          "ymax": 423
+        }
+      },
+      {
+        "name": "parking",
+        "number": 91,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 725,
+          "ymin": 602,
+          "xmax": 754,
+          "ymax": 668
+        }
+      },
+      {
+        "name": "parking",
+        "number": 92,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 726,
+          "ymin": 538,
+          "xmax": 754,
+          "ymax": 605
+        }
+      },
+      {
+        "name": "parking",
+        "number": 93,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 614,
+          "ymin": 858,
+          "xmax": 677,
+          "ymax": 879
+        }
+      },
+      {
+        "name": "parking",
+        "number": 94,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 549,
+          "ymin": 858,
+          "xmax": 614,
+          "ymax": 879
+        }
+      },
+      {
+        "name": "parking",
+        "number": 95,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 495,
+          "ymin": 858,
+          "xmax": 549,
+          "ymax": 879
+        }
+      },
+      {
+        "name": "parking",
+        "number": 96,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 430,
+          "ymin": 858,
+          "xmax": 495,
+          "ymax": 879
+        }
+      },
+      {
+        "name": "parking",
+        "number": 97,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 373,
+          "ymin": 858,
+          "xmax": 430,
+          "ymax": 879
+        }
+      },
+      {
+        "name": "parking",
+        "number": 98,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 305,
+          "ymin": 858,
+          "xmax": 373,
+          "ymax": 879
+        }
+      },
+      {
+        "name": "parking",
+        "number": 99,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 244,
+          "ymin": 858,
+          "xmax": 305,
+          "ymax": 879
+        }
+      },
+      {
+        "name": "parking",
+        "number": 100,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 173,
+          "ymin": 130,
+          "xmax": 236,
+          "ymax": 154
+        }
+      },
+      {
+        "name": "parking",
+        "number": 101,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 236,
+          "ymin": 130,
+          "xmax": 305,
+          "ymax": 154
+        }
+      },
+      {
+        "name": "parking",
+        "number": 102,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 305,
+          "ymin": 130,
+          "xmax": 374,
+          "ymax": 154
+        }
+      },
+      {
+        "name": "parking",
+        "number": 103,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 374,
+          "ymin": 130,
+          "xmax": 443,
+          "ymax": 154
+        }
+      },
+      {
+        "name": "parking",
+        "number": 104,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 443,
+          "ymin": 130,
+          "xmax": 515,
+          "ymax": 154
+        }
+      },
+      {
+        "name": "parking",
+        "number": 105,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 515,
+          "ymin": 130,
+          "xmax": 587,
+          "ymax": 154
+        }
+      },
+      {
+        "name": "parking",
+        "number": 106,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 587,
+          "ymin": 130,
+          "xmax": 655,
+          "ymax": 154
+        }
+      },
+      {
+        "name": "parking",
+        "number": 107,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 203,
+          "ymin": 742,
+          "xmax": 229,
+          "ymax": 812
+        }
+      },
+      {
+        "name": "parking",
+        "number": 108,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 204,
+          "ymin": 219,
+          "xmax": 231,
+          "ymax": 273
+        }
+      },
+      {
+        "name": "parking",
+        "number": 109,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 203,
+          "ymin": 671,
+          "xmax": 229,
+          "ymax": 742
+        }
+      },
+      {
+        "name": "parking",
+        "number": 110,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 203,
+          "ymin": 590,
+          "xmax": 229,
+          "ymax": 660
+        }
+      },
+      {
+        "name": "parking",
+        "number": 111,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 202,
+          "ymin": 512,
+          "xmax": 230,
+          "ymax": 582
+        }
+      },
+      {
+        "name": "parking",
+        "number": 112,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 205,
+          "ymin": 444,
+          "xmax": 233,
+          "ymax": 516
+        }
+      },
+      {
+        "name": "parking",
+        "number": 113,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 204,
+          "ymin": 374,
+          "xmax": 232,
+          "ymax": 444
+        }
+      },
+      {
+        "name": "parking",
+        "number": 114,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 13,
+          "ymin": 729,
+          "xmax": 40,
+          "ymax": 787
+        }
+      },
+      {
+        "name": "parking",
+        "number": 115,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 40,
+          "ymin": 729,
+          "xmax": 71,
+          "ymax": 787
+        }
+      },
+      {
+        "name": "parking",
+        "number": 116,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 71,
+          "ymin": 729,
+          "xmax": 99,
+          "ymax": 787
+        }
+      },
+      {
+        "name": "parking",
+        "number": 117,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 99,
+          "ymin": 729,
+          "xmax": 131,
+          "ymax": 787
+        }
+      },
+      {
+        "name": "parking",
+        "number": 118,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 131,
+          "ymin": 729,
+          "xmax": 157,
+          "ymax": 787
+        }
+      },
+      {
+        "name": "parking",
+        "number": 119,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 128,
+          "ymin": 856,
+          "xmax": 157,
+          "ymax": 914
+        }
+      },
+      {
+        "name": "parking",
+        "number": 120,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 99,
+          "ymin": 856,
+          "xmax": 128,
+          "ymax": 914
+        }
+      },
+      {
+        "name": "parking",
+        "number": 121,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 69,
+          "ymin": 856,
+          "xmax": 99,
+          "ymax": 914
+        }
+      },
+      {
+        "name": "parking",
+        "number": 122,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 40,
+          "ymin": 856,
+          "xmax": 69,
+          "ymax": 914
+        }
+      },
+      {
+        "name": "parking",
+        "number": 123,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 11,
+          "ymin": 856,
+          "xmax": 40,
+          "ymax": 914
+        }
+      },
+      {
+        "name": "parking",
+        "number": 124,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 698,
+          "ymin": 698,
+          "xmax": 754,
+          "ymax": 738
+        }
+      },
+      {
+        "name": "parking",
+        "number": 125,
+        "pose": "Unspecified",
+        "truncated": 0,
+        "difficult": 0,
+        "bndbox": {
+          "xmin": 204,
+          "ymin": 273,
+          "xmax": 231,
+          "ymax": 332
+        }
+      }
+    ]
+  }
+}

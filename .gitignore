@@ -1,0 +1,42 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local secrets and machine-specific settings
+.env
+.env.*
+!.env.example
+*.local.yaml
+*.local.yml
+
+# Generated inference/training output and weights outside models/
+runs/
+*.pt
+*.pth
+*.onnx
+*.engine
+
+# Frontend dependencies and build output
+node_modules/
+/web/dist/
+/web/build/
+/web/.next/
+
+# OS metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
+# Runtime CCTV media and maps
+data/videos/**
+data/maps/**
+data/parking/*.png
+!data/README.md
+
+# Local model binaries
+models/detection/**
+!models/README.md

@@ -1,0 +1,2 @@
+# Backward-compatible installation entry; requirements.txt now includes YOLO.
+-r requirements.txt

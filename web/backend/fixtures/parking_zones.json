@@ -1,0 +1,9 @@
+[
+  {"id":"P1","name":"1구역","camera_id":null,"x":59,"y":22},
+  {"id":"P2","name":"2구역","camera_id":null,"x":83,"y":46},
+  {"id":"P3","name":"3구역","camera_id":null,"x":86,"y":66},
+  {"id":"P4","name":"4구역","camera_id":null,"x":62,"y":43},
+  {"id":"P5","name":"5구역","camera_id":null,"x":49,"y":72},
+  {"id":"P6","name":"6구역","camera_id":null,"x":8,"y":82},
+  {"id":"P7","name":"7구역","camera_id":null,"x":13,"y":39}
+]

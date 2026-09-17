@@ -1,0 +1,18 @@
+# Parking management API
+Django>=5.0,<6.0
+djangorestframework>=3.15,<4.0
+django-cors-headers>=4.3,<5.0
+
+# Video upload and processing API
+fastapi>=0.115,<1
+uvicorn>=0.30,<1
+python-multipart>=0.0.18,<1
+
+# Existing AX_Parking modules and selectable YOLO processing
+ultralytics>=8.3,<9
+opencv-python>=4.8,<5
+numpy>=1.24,<3
+PyYAML>=6,<7
+
+# API integration tests
+httpx>=0.28,<1
