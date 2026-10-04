@@ -11,7 +11,8 @@ inference:
   # 32 = FP32
   quantize: 16
 
-  # 한 번에 처리할 카메라 수
+  # 7개 카메라의 동일 시점 프레임을
+  # 하나의 batch로 처리
   batch_size: 7
 
 classes:
@@ -43,13 +44,21 @@ videos:
   - camera_id: cam08
     path: data/videos/scene1/260914_8.mp4
 
-display:
-  # OpenCV 창 표시 여부
-  show: false
+pipeline:
+  # 다음 synchronized frame set을
+  # 몇 개까지 미리 준비할지
+  #
+  # 너무 크게 잡을 필요 없음.
+  queue_size: 2
 
-  # BBOX drawing + resize + grid 생성 여부
-  # 순수 분석 성능 측정 시 false
-  render: false
+profile:
+  # 몇 set마다 성능 출력
+  print_interval: 100
+
+display:
+  # 현재는 순수 분석 성능 측정
+  show: true
+  render: true
 
   show_confidence: true
   line_width: 2

@@ -22,6 +22,7 @@ if str(ROOT) not in sys.path:
 
 
 from src.detection.detector import VehicleDetector
+from src.video.sync_reader import SynchronizedVideoReader
 
 
 CONFIG_PATH = (
@@ -30,84 +31,104 @@ CONFIG_PATH = (
     / "detection.yaml"
 )
 
-
 WINDOW_NAME = (
     "AX Parking - 7 Camera YOLO"
 )
 
 
 @dataclass
-class CameraStream:
-    camera_id: str
-    path: Path
-    capture: cv2.VideoCapture
-
-    fps: float
-    frame_count: int
-    width: int
-    height: int
-
-
-@dataclass
 class TimingStats:
     count: int = 0
 
-    read_total: float = 0.0
-    inference_total: float = 0.0
-    draw_total: float = 0.0
-    grid_total: float = 0.0
-    display_total: float = 0.0
-    loop_total: float = 0.0
+    read_total_ms: float = 0.0
+    queue_wait_total_ms: float = 0.0
+    inference_total_ms: float = 0.0
+
+    draw_total_ms: float = 0.0
+    grid_total_ms: float = 0.0
+    display_total_ms: float = 0.0
+
+    consumer_loop_total_ms: float = 0.0
+
+    started_at: float = 0.0
+
+    def start(
+        self,
+    ) -> None:
+
+        self.started_at = (
+            time.perf_counter()
+        )
 
     def add(
         self,
-        read_time: float,
-        inference_time: float,
-        draw_time: float,
-        grid_time: float,
-        display_time: float,
-        loop_time: float,
+        read_ms: float,
+        queue_wait_ms: float,
+        inference_ms: float,
+        draw_ms: float,
+        grid_ms: float,
+        display_ms: float,
+        consumer_loop_ms: float,
     ) -> None:
 
         self.count += 1
 
-        self.read_total += read_time
-        self.inference_total += inference_time
-        self.draw_total += draw_time
-        self.grid_total += grid_time
-        self.display_total += display_time
-        self.loop_total += loop_time
+        self.read_total_ms += read_ms
+        self.queue_wait_total_ms += queue_wait_ms
+        self.inference_total_ms += inference_ms
 
-    def average_ms(
+        self.draw_total_ms += draw_ms
+        self.grid_total_ms += grid_ms
+        self.display_total_ms += display_ms
+
+        self.consumer_loop_total_ms += (
+            consumer_loop_ms
+        )
+
+    def average(
         self,
-        value: float,
+        total: float,
     ) -> float:
 
         if self.count == 0:
             return 0.0
 
         return (
-            value
+            total
             /
             self.count
-            *
-            1000.0
         )
 
-    def percentage(
+    @property
+    def elapsed_seconds(
         self,
-        value: float,
     ) -> float:
 
-        if self.loop_total <= 0:
+        if self.started_at <= 0:
             return 0.0
 
         return (
-            value
+            time.perf_counter()
+            -
+            self.started_at
+        )
+
+    @property
+    def throughput(
+        self,
+    ) -> float:
+
+        elapsed = (
+            self.elapsed_seconds
+        )
+
+        if elapsed <= 0:
+            return 0.0
+
+        return (
+            self.count
             /
-            self.loop_total
-            *
-            100.0
+            elapsed
         )
 
 
@@ -123,199 +144,8 @@ def load_config() -> dict:
         )
 
 
-def open_cameras(
-    config: dict,
-) -> list[CameraStream]:
-
-    cameras = []
-
-    for video_config in config[
-        "videos"
-    ]:
-
-        camera_id = video_config[
-            "camera_id"
-        ]
-
-        path = (
-            ROOT
-            /
-            video_config[
-                "path"
-            ]
-        )
-
-        if not path.exists():
-
-            raise FileNotFoundError(
-                f"Video not found: "
-                f"{path}"
-            )
-
-        capture = cv2.VideoCapture(
-            str(path)
-        )
-
-        if not capture.isOpened():
-
-            raise RuntimeError(
-                f"Failed to open video: "
-                f"{path}"
-            )
-
-        fps = capture.get(
-            cv2.CAP_PROP_FPS
-        )
-
-        frame_count = int(
-            capture.get(
-                cv2.CAP_PROP_FRAME_COUNT
-            )
-        )
-
-        width = int(
-            capture.get(
-                cv2.CAP_PROP_FRAME_WIDTH
-            )
-        )
-
-        height = int(
-            capture.get(
-                cv2.CAP_PROP_FRAME_HEIGHT
-            )
-        )
-
-        cameras.append(
-            CameraStream(
-                camera_id=camera_id,
-                path=path,
-                capture=capture,
-                fps=fps,
-                frame_count=frame_count,
-                width=width,
-                height=height,
-            )
-        )
-
-    return cameras
-
-
-def validate_cameras(
-    cameras: list[CameraStream],
-) -> None:
-
-    if not cameras:
-
-        raise RuntimeError(
-            "No cameras configured."
-        )
-
-    reference_fps = (
-        cameras[0].fps
-    )
-
-    for camera in cameras[1:]:
-
-        if (
-            abs(
-                camera.fps
-                -
-                reference_fps
-            )
-            >
-            0.01
-        ):
-
-            raise RuntimeError(
-                "Camera FPS mismatch: "
-                f"{cameras[0].camera_id}="
-                f"{reference_fps:.3f}, "
-                f"{camera.camera_id}="
-                f"{camera.fps:.3f}"
-            )
-
-
-def print_camera_info(
-    cameras: list[CameraStream],
-) -> None:
-
-    print()
-
-    print(
-        "======================================"
-    )
-
-    print(
-        "Synchronized camera set"
-    )
-
-    print(
-        "======================================"
-    )
-
-    for camera in cameras:
-
-        duration = (
-            camera.frame_count
-            /
-            camera.fps
-            if camera.fps > 0
-            else 0
-        )
-
-        print(
-            f"{camera.camera_id}: "
-            f"{camera.path.name} | "
-            f"{camera.width}x{camera.height} | "
-            f"{camera.fps:.3f} FPS | "
-            f"{camera.frame_count} frames | "
-            f"{duration:.2f}s"
-        )
-
-    print(
-        "======================================"
-    )
-
-    print()
-
-
-def print_gpu_memory() -> None:
-
-    allocated = (
-        torch.cuda.memory_allocated()
-        /
-        1024**3
-    )
-
-    reserved = (
-        torch.cuda.memory_reserved()
-        /
-        1024**3
-    )
-
-    max_allocated = (
-        torch.cuda.max_memory_allocated()
-        /
-        1024**3
-    )
-
-    max_reserved = (
-        torch.cuda.max_memory_reserved()
-        /
-        1024**3
-    )
-
-    print(
-        f"GPU memory | "
-        f"allocated={allocated:.2f} GB | "
-        f"reserved={reserved:.2f} GB | "
-        f"peak allocated={max_allocated:.2f} GB | "
-        f"peak reserved={max_reserved:.2f} GB"
-    )
-
-
 def draw_detections(
-    frame,
+    frame: np.ndarray,
     detections,
     show_confidence: bool,
     line_width: int,
@@ -323,21 +153,10 @@ def draw_detections(
 
     for detection in detections:
 
-        x1 = int(
-            detection.x1
-        )
-
-        y1 = int(
-            detection.y1
-        )
-
-        x2 = int(
-            detection.x2
-        )
-
-        y2 = int(
-            detection.y2
-        )
+        x1 = int(detection.x1)
+        y1 = int(detection.y1)
+        x2 = int(detection.x2)
+        y2 = int(detection.y2)
 
         cv2.rectangle(
             frame,
@@ -348,14 +167,11 @@ def draw_detections(
         )
 
         if show_confidence:
-
             label = (
                 f"{detection.class_name} "
                 f"{detection.confidence:.2f}"
             )
-
         else:
-
             label = (
                 detection.class_name
             )
@@ -438,11 +254,8 @@ def fit_frame(
     ) // 2
 
     canvas[
-        y:
-        y + new_height,
-
-        x:
-        x + new_width,
+        y:y + new_height,
+        x:x + new_width,
     ] = resized
 
     return canvas
@@ -565,12 +378,12 @@ def compose_grid(
 
     grid_rows = []
 
-    for row in range(
+    for row_index in range(
         rows
     ):
 
         start = (
-            row
+            row_index
             *
             columns
         )
@@ -617,7 +430,46 @@ def compose_grid(
     return grid
 
 
-def print_timing_stats(
+def print_gpu_memory() -> None:
+
+    allocated = (
+        torch.cuda.memory_allocated()
+        /
+        1024**3
+    )
+
+    reserved = (
+        torch.cuda.memory_reserved()
+        /
+        1024**3
+    )
+
+    peak_allocated = (
+        torch.cuda.max_memory_allocated()
+        /
+        1024**3
+    )
+
+    peak_reserved = (
+        torch.cuda.max_memory_reserved()
+        /
+        1024**3
+    )
+
+    print(
+        "GPU memory | "
+        f"allocated="
+        f"{allocated:.2f} GB | "
+        f"reserved="
+        f"{reserved:.2f} GB | "
+        f"peak allocated="
+        f"{peak_allocated:.2f} GB | "
+        f"peak reserved="
+        f"{peak_reserved:.2f} GB"
+    )
+
+
+def print_stats(
     stats: TimingStats,
     camera_count: int,
 ) -> None:
@@ -625,40 +477,42 @@ def print_timing_stats(
     if stats.count == 0:
         return
 
-    read_ms = stats.average_ms(
-        stats.read_total
+    avg_read = stats.average(
+        stats.read_total_ms
     )
 
-    inference_ms = stats.average_ms(
-        stats.inference_total
+    avg_queue_wait = stats.average(
+        stats.queue_wait_total_ms
     )
 
-    draw_ms = stats.average_ms(
-        stats.draw_total
+    avg_inference = stats.average(
+        stats.inference_total_ms
     )
 
-    grid_ms = stats.average_ms(
-        stats.grid_total
+    avg_draw = stats.average(
+        stats.draw_total_ms
     )
 
-    display_ms = stats.average_ms(
-        stats.display_total
+    avg_grid = stats.average(
+        stats.grid_total_ms
     )
 
-    loop_ms = stats.average_ms(
-        stats.loop_total
+    avg_display = stats.average(
+        stats.display_total_ms
     )
 
-    loop_fps = (
-        1000.0
-        /
-        loop_ms
-        if loop_ms > 0
-        else 0.0
+    avg_consumer_loop = (
+        stats.average(
+            stats.consumer_loop_total_ms
+        )
+    )
+
+    sets_per_second = (
+        stats.throughput
     )
 
     camera_frames_per_second = (
-        loop_fps
+        sets_per_second
         *
         camera_count
     )
@@ -670,7 +524,7 @@ def print_timing_stats(
     )
 
     print(
-        "PERFORMANCE PROFILE"
+        "PIPELINE PERFORMANCE"
     )
 
     print(
@@ -678,50 +532,45 @@ def print_timing_stats(
     )
 
     print(
-        f"Samples: "
+        f"Samples             : "
         f"{stats.count}"
     )
 
     print()
 
     print(
-        f"Video read     : "
-        f"{read_ms:8.2f} ms "
-        f"("
-        f"{stats.percentage(stats.read_total):5.1f}%"
-        f")"
+        f"Video read/thread   : "
+        f"{avg_read:8.2f} ms"
     )
 
     print(
-        f"YOLO inference : "
-        f"{inference_ms:8.2f} ms "
-        f"("
-        f"{stats.percentage(stats.inference_total):5.1f}%"
-        f")"
+        f"Queue wait/main     : "
+        f"{avg_queue_wait:8.2f} ms"
     )
 
     print(
-        f"BBox drawing   : "
-        f"{draw_ms:8.2f} ms "
-        f"("
-        f"{stats.percentage(stats.draw_total):5.1f}%"
-        f")"
+        f"YOLO inference      : "
+        f"{avg_inference:8.2f} ms"
     )
 
     print(
-        f"Grid compose   : "
-        f"{grid_ms:8.2f} ms "
-        f"("
-        f"{stats.percentage(stats.grid_total):5.1f}%"
-        f")"
+        f"BBox drawing        : "
+        f"{avg_draw:8.2f} ms"
     )
 
     print(
-        f"imshow/waitKey : "
-        f"{display_ms:8.2f} ms "
-        f"("
-        f"{stats.percentage(stats.display_total):5.1f}%"
-        f")"
+        f"Grid compose        : "
+        f"{avg_grid:8.2f} ms"
+    )
+
+    print(
+        f"imshow/waitKey      : "
+        f"{avg_display:8.2f} ms"
+    )
+
+    print(
+        f"Consumer loop       : "
+        f"{avg_consumer_loop:8.2f} ms"
     )
 
     print(
@@ -729,15 +578,8 @@ def print_timing_stats(
     )
 
     print(
-        f"Whole loop     : "
-        f"{loop_ms:8.2f} ms"
-    )
-
-    print()
-
-    print(
-        f"Synchronized sets/s : "
-        f"{loop_fps:.2f}"
+        f"Real sets/s         : "
+        f"{sets_per_second:.2f}"
     )
 
     print(
@@ -754,21 +596,52 @@ def main() -> None:
 
     config = load_config()
 
-    display_config = config[
-        "display"
-    ]
+    pipeline_config = (
+        config.get(
+            "pipeline",
+            {},
+        )
+    )
+
+    profile_config = (
+        config.get(
+            "profile",
+            {},
+        )
+    )
+
+    display_config = (
+        config.get(
+            "display",
+            {},
+        )
+    )
+
+    queue_size = int(
+        pipeline_config.get(
+            "queue_size",
+            2,
+        )
+    )
+
+    print_interval = int(
+        profile_config.get(
+            "print_interval",
+            100,
+        )
+    )
 
     show = bool(
         display_config.get(
             "show",
-            True,
+            False,
         )
     )
 
     render = bool(
         display_config.get(
             "render",
-            True,
+            False,
         )
     )
 
@@ -807,60 +680,50 @@ def main() -> None:
         )
     )
 
-
     print(
-        f"Render enabled: {render}"
+        f"Render enabled: "
+        f"{render}"
     )
 
     print(
-        f"Display enabled: {show}"
+        f"Display enabled: "
+        f"{show}"
     )
-
 
     detector = VehicleDetector(
         CONFIG_PATH
     )
 
-
-    cameras = open_cameras(
-        config
+    reader = (
+        SynchronizedVideoReader(
+            video_configs=(
+                config["videos"]
+            ),
+            root=ROOT,
+            queue_size=queue_size,
+        )
     )
 
+    reader.print_info()
 
-    validate_cameras(
-        cameras
+    print(
+        f"Pipeline queue size: "
+        f"{queue_size}"
     )
 
-
-    print_camera_info(
-        cameras
+    print(
+        "Video decode thread: enabled"
     )
 
-
-    reference_fps = (
-        cameras[0].fps
+    print(
+        "YOLO worker: main thread"
     )
 
-
-    common_frame_count = min(
-        camera.frame_count
-        for camera
-        in cameras
-    )
-
-
-    camera_ids = [
-        camera.camera_id
-        for camera
-        in cameras
-    ]
-
-
-    stats = TimingStats()
-
+    print()
 
     torch.cuda.reset_peak_memory_stats()
 
+    stats = TimingStats()
 
     if show and render:
 
@@ -875,66 +738,40 @@ def main() -> None:
             display_height,
         )
 
+    reader.start()
+
+    stats.start()
 
     try:
 
-        for frame_index in range(
-            common_frame_count
-        ):
+        while True:
 
-            loop_start = (
+            consumer_start = (
                 time.perf_counter()
             )
-
 
             # =============================================
-            # 1. VIDEO READ
+            # 1. GET SYNCHRONIZED FRAME SET
             # =============================================
 
-            read_start = (
+            queue_wait_start = (
                 time.perf_counter()
             )
 
+            frame_set = reader.get()
 
-            frames = []
-
-            failed = False
-
-
-            for camera in cameras:
-
-                success, frame = (
-                    camera.capture.read()
+            queue_wait_ms = (
+                (
+                    time.perf_counter()
+                    -
+                    queue_wait_start
                 )
-
-                if not success:
-
-                    print(
-                        "Failed to read:",
-                        camera.camera_id,
-                        frame_index,
-                    )
-
-                    failed = True
-
-                    break
-
-
-                frames.append(
-                    frame
-                )
-
-
-            read_time = (
-                time.perf_counter()
-                -
-                read_start
+                *
+                1000.0
             )
 
-
-            if failed:
+            if frame_set is None:
                 break
-
 
             # =============================================
             # 2. YOLO
@@ -944,34 +781,33 @@ def main() -> None:
                 time.perf_counter()
             )
 
-
             all_detections = (
                 detector.detect_batch(
-                    frames
+                    frame_set.frames
                 )
             )
 
-
             torch.cuda.synchronize()
 
-
-            inference_time = (
-                time.perf_counter()
-                -
-                inference_start
+            inference_ms = (
+                (
+                    time.perf_counter()
+                    -
+                    inference_start
+                )
+                *
+                1000.0
             )
 
-
             # =============================================
-            # 3. OPTIONAL RENDER
+            # 3. OPTIONAL BBOX RENDER
             # =============================================
 
-            draw_time = 0.0
-            grid_time = 0.0
-            display_time = 0.0
+            draw_ms = 0.0
+            grid_ms = 0.0
+            display_ms = 0.0
 
             key = 255
-
 
             if render:
 
@@ -979,17 +815,14 @@ def main() -> None:
                     time.perf_counter()
                 )
 
-
                 display_frames = []
-
                 detection_counts = []
-
 
                 for (
                     frame,
                     detections,
                 ) in zip(
-                    frames,
+                    frame_set.frames,
                     all_detections,
                 ):
 
@@ -997,67 +830,84 @@ def main() -> None:
                         frame.copy()
                     )
 
-
                     draw_detections(
                         frame=output,
                         detections=detections,
-                        show_confidence=show_confidence,
+                        show_confidence=(
+                            show_confidence
+                        ),
                         line_width=line_width,
                     )
-
 
                     display_frames.append(
                         output
                     )
 
-
                     detection_counts.append(
-                        len(detections)
+                        len(
+                            detections
+                        )
                     )
 
-
-                draw_time = (
-                    time.perf_counter()
-                    -
-                    draw_start
+                draw_ms = (
+                    (
+                        time.perf_counter()
+                        -
+                        draw_start
+                    )
+                    *
+                    1000.0
                 )
 
+                # =========================================
+                # 4. GRID
+                # =========================================
 
                 grid_start = (
                     time.perf_counter()
                 )
 
-
-                timestamp = (
-                    frame_index
-                    /
-                    reference_fps
+                display_frame = (
+                    compose_grid(
+                        frames=display_frames,
+                        camera_ids=(
+                            reader.camera_ids
+                        ),
+                        detection_counts=(
+                            detection_counts
+                        ),
+                        frame_index=(
+                            frame_set.frame_index
+                        ),
+                        timestamp=(
+                            frame_set.timestamp
+                        ),
+                        inference_ms=(
+                            inference_ms
+                        ),
+                        display_width=(
+                            display_width
+                        ),
+                        display_height=(
+                            display_height
+                        ),
+                        columns=columns,
+                    )
                 )
 
-
-                display = compose_grid(
-                    frames=display_frames,
-                    camera_ids=camera_ids,
-                    detection_counts=detection_counts,
-                    frame_index=frame_index,
-                    timestamp=timestamp,
-                    inference_ms=(
-                        inference_time
-                        *
-                        1000
-                    ),
-                    display_width=display_width,
-                    display_height=display_height,
-                    columns=columns,
+                grid_ms = (
+                    (
+                        time.perf_counter()
+                        -
+                        grid_start
+                    )
+                    *
+                    1000.0
                 )
 
-
-                grid_time = (
-                    time.perf_counter()
-                    -
-                    grid_start
-                )
-
+                # =========================================
+                # 5. DISPLAY
+                # =========================================
 
                 if show:
 
@@ -1065,12 +915,10 @@ def main() -> None:
                         time.perf_counter()
                     )
 
-
                     cv2.imshow(
                         WINDOW_NAME,
-                        display,
+                        display_frame,
                     )
-
 
                     key = (
                         cv2.waitKey(1)
@@ -1078,81 +926,97 @@ def main() -> None:
                         0xFF
                     )
 
-
-                    display_time = (
-                        time.perf_counter()
-                        -
-                        display_start
+                    display_ms = (
+                        (
+                            time.perf_counter()
+                            -
+                            display_start
+                        )
+                        *
+                        1000.0
                     )
 
-
             # =============================================
-            # 4. TOTAL
+            # 6. STATS
             # =============================================
 
-            loop_time = (
-                time.perf_counter()
-                -
-                loop_start
+            consumer_loop_ms = (
+                (
+                    time.perf_counter()
+                    -
+                    consumer_start
+                )
+                *
+                1000.0
             )
-
 
             stats.add(
-                read_time=read_time,
-                inference_time=inference_time,
-                draw_time=draw_time,
-                grid_time=grid_time,
-                display_time=display_time,
-                loop_time=loop_time,
+                read_ms=(
+                    frame_set.read_time_ms
+                ),
+                queue_wait_ms=(
+                    queue_wait_ms
+                ),
+                inference_ms=(
+                    inference_ms
+                ),
+                draw_ms=draw_ms,
+                grid_ms=grid_ms,
+                display_ms=display_ms,
+                consumer_loop_ms=(
+                    consumer_loop_ms
+                ),
             )
-
 
             if (
                 stats.count
                 %
-                100
+                print_interval
                 ==
                 0
             ):
 
-                print_timing_stats(
+                print_stats(
                     stats,
-                    len(cameras),
+                    len(
+                        reader.cameras
+                    ),
                 )
 
                 print_gpu_memory()
-
 
             if key in (
                 ord("q"),
                 27,
             ):
-
                 break
 
+    except KeyboardInterrupt:
+
+        print()
+
+        print(
+            "Interrupted by user."
+        )
 
     finally:
 
-        for camera in cameras:
-
-            camera.capture.release()
-
+        reader.stop()
 
         cv2.destroyAllWindows()
-
 
     print()
 
     print(
-        "7-camera profiling finished."
+        "7-camera pipeline finished."
     )
 
-
-    print_timing_stats(
+    print_stats(
         stats,
-        len(cameras),
+        len(
+            reader.cameras
+        ),
     )
-
 
     print_gpu_memory()
 
