@@ -1,3 +1,9 @@
-Pillow
 fastapi
 uvicorn[standard]
+
+numpy
+opencv-python
+pyyaml
+pillow
+
+ultralytics

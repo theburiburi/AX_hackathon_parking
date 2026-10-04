@@ -1,0 +1,25 @@
+model:
+  weights: yolo26x.pt
+  device: 0
+
+inference:
+  imgsz: 960
+  conf: 0.20
+  iou: 0.70
+  half: true
+
+classes:
+  names:
+    - car
+    - motorcycle
+    - bus
+    - truck
+
+video:
+  camera_id: cam01
+  path: data/videos/scene1/260914_1.mp4
+
+display:
+  show: true
+  show_confidence: true
+  line_width: 2
