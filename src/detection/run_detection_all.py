@@ -21,6 +21,7 @@ if str(ROOT) not in sys.path:
     )
 
 
+from src.calibration import CameraProjector
 from src.detection.detector import VehicleDetector
 from src.video.sync_reader import SynchronizedVideoReader
 
@@ -31,9 +32,55 @@ CONFIG_PATH = (
     / "detection.yaml"
 )
 
-WINDOW_NAME = (
-    "AX Parking - 7 Camera YOLO"
+BEV_MAP_PATH = (
+    ROOT
+    / "data"
+    / "maps"
+    / "map.png"
 )
+
+WINDOW_NAME = (
+    "AX Parking - 7 Camera YOLO + BEV"
+)
+
+
+CAMERA_COLORS = {
+    "cam01": (
+        0,
+        0,
+        255,
+    ),
+    "cam02": (
+        0,
+        165,
+        255,
+    ),
+    "cam03": (
+        0,
+        255,
+        255,
+    ),
+    "cam05": (
+        0,
+        255,
+        0,
+    ),
+    "cam06": (
+        255,
+        255,
+        0,
+    ),
+    "cam07": (
+        255,
+        0,
+        0,
+    ),
+    "cam08": (
+        255,
+        0,
+        255,
+    ),
+}
 
 
 @dataclass
@@ -43,6 +90,8 @@ class TimingStats:
     read_total_ms: float = 0.0
     queue_wait_total_ms: float = 0.0
     inference_total_ms: float = 0.0
+
+    projection_total_ms: float = 0.0
 
     draw_total_ms: float = 0.0
     grid_total_ms: float = 0.0
@@ -65,6 +114,7 @@ class TimingStats:
         read_ms: float,
         queue_wait_ms: float,
         inference_ms: float,
+        projection_ms: float,
         draw_ms: float,
         grid_ms: float,
         display_ms: float,
@@ -74,12 +124,22 @@ class TimingStats:
         self.count += 1
 
         self.read_total_ms += read_ms
-        self.queue_wait_total_ms += queue_wait_ms
-        self.inference_total_ms += inference_ms
+        self.queue_wait_total_ms += (
+            queue_wait_ms
+        )
+        self.inference_total_ms += (
+            inference_ms
+        )
+
+        self.projection_total_ms += (
+            projection_ms
+        )
 
         self.draw_total_ms += draw_ms
         self.grid_total_ms += grid_ms
-        self.display_total_ms += display_ms
+        self.display_total_ms += (
+            display_ms
+        )
 
         self.consumer_loop_total_ms += (
             consumer_loop_ms
@@ -132,6 +192,21 @@ class TimingStats:
         )
 
 
+@dataclass
+class BEVDetection:
+    camera_id: str
+
+    class_name: str
+
+    confidence: float
+
+    image_x: float
+    image_y: float
+
+    bev_x: float
+    bev_y: float
+
+
 def load_config() -> dict:
 
     with CONFIG_PATH.open(
@@ -144,6 +219,203 @@ def load_config() -> dict:
         )
 
 
+def load_bev_map() -> np.ndarray:
+
+    bev_map = cv2.imread(
+        str(
+            BEV_MAP_PATH
+        ),
+        cv2.IMREAD_COLOR,
+    )
+
+    if bev_map is None:
+
+        raise RuntimeError(
+            "Failed to load BEV map: "
+            f"{BEV_MAP_PATH}"
+        )
+
+    return bev_map
+
+
+def load_projectors(
+    camera_ids: list[str],
+) -> dict[
+    str,
+    CameraProjector,
+]:
+
+    projectors = {}
+
+    print()
+
+    print(
+        "======================================"
+    )
+
+    print(
+        "CAMERA CALIBRATION"
+    )
+
+    print(
+        "======================================"
+    )
+
+    for camera_id in camera_ids:
+
+        try:
+
+            projector = (
+                CameraProjector(
+                    camera_id=(
+                        camera_id
+                    )
+                )
+            )
+
+            projectors[
+                camera_id
+            ] = projector
+
+            print(
+                f"{camera_id}: loaded"
+            )
+
+        except Exception as exc:
+
+            print(
+                f"{camera_id}: unavailable"
+            )
+
+            print(
+                f"  {exc}"
+            )
+
+    print(
+        "======================================"
+    )
+
+    print()
+
+    return projectors
+
+
+def project_detections(
+    camera_ids: list[str],
+    all_detections,
+    projectors: dict[
+        str,
+        CameraProjector,
+    ],
+) -> list[
+    list[BEVDetection]
+]:
+
+    all_bev_detections = []
+
+    for (
+        camera_id,
+        detections,
+    ) in zip(
+        camera_ids,
+        all_detections,
+    ):
+
+        camera_bev_detections = []
+
+        projector = projectors.get(
+            camera_id
+        )
+
+        if projector is None:
+
+            all_bev_detections.append(
+                camera_bev_detections
+            )
+
+            continue
+
+        for detection in detections:
+
+            ground_x = (
+                float(
+                    detection.x1
+                )
+                +
+                float(
+                    detection.x2
+                )
+            ) / 2.0
+
+            ground_y = float(
+                detection.y2
+            )
+
+            try:
+
+                bev_x, bev_y = (
+                    projector
+                    .project(
+                        ground_x,
+                        ground_y,
+                    )
+                )
+
+            except Exception:
+
+                continue
+
+            if (
+                not math.isfinite(
+                    bev_x
+                )
+                or
+                not math.isfinite(
+                    bev_y
+                )
+            ):
+
+                continue
+
+            camera_bev_detections.append(
+                BEVDetection(
+                    camera_id=(
+                        camera_id
+                    ),
+
+                    class_name=(
+                        detection.class_name
+                    ),
+
+                    confidence=float(
+                        detection.confidence
+                    ),
+
+                    image_x=(
+                        ground_x
+                    ),
+
+                    image_y=(
+                        ground_y
+                    ),
+
+                    bev_x=(
+                        bev_x
+                    ),
+
+                    bev_y=(
+                        bev_y
+                    ),
+                )
+            )
+
+        all_bev_detections.append(
+            camera_bev_detections
+        )
+
+    return all_bev_detections
+
+
 def draw_detections(
     frame: np.ndarray,
     detections,
@@ -153,25 +425,83 @@ def draw_detections(
 
     for detection in detections:
 
-        x1 = int(detection.x1)
-        y1 = int(detection.y1)
-        x2 = int(detection.x2)
-        y2 = int(detection.y2)
+        x1 = int(
+            detection.x1
+        )
+
+        y1 = int(
+            detection.y1
+        )
+
+        x2 = int(
+            detection.x2
+        )
+
+        y2 = int(
+            detection.y2
+        )
 
         cv2.rectangle(
             frame,
-            (x1, y1),
-            (x2, y2),
-            (0, 255, 0),
+            (
+                x1,
+                y1,
+            ),
+            (
+                x2,
+                y2,
+            ),
+            (
+                0,
+                255,
+                0,
+            ),
             line_width,
         )
 
+        ground_x = int(
+            round(
+                (
+                    detection.x1
+                    +
+                    detection.x2
+                )
+                /
+                2.0
+            )
+        )
+
+        ground_y = int(
+            round(
+                detection.y2
+            )
+        )
+
+        cv2.circle(
+            frame,
+            (
+                ground_x,
+                ground_y,
+            ),
+            5,
+            (
+                0,
+                0,
+                255,
+            ),
+            -1,
+            cv2.LINE_AA,
+        )
+
         if show_confidence:
+
             label = (
                 f"{detection.class_name} "
                 f"{detection.confidence:.2f}"
             )
+
         else:
+
             label = (
                 detection.class_name
             )
@@ -188,10 +518,138 @@ def draw_detections(
             ),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.55,
-            (0, 255, 0),
+            (
+                0,
+                255,
+                0,
+            ),
             2,
             cv2.LINE_AA,
         )
+
+
+def draw_bev_detections(
+    bev_map: np.ndarray,
+    all_bev_detections: list[
+        list[BEVDetection]
+    ],
+) -> np.ndarray:
+
+    output = bev_map.copy()
+
+    height, width = (
+        output.shape[:2]
+    )
+
+    total_valid = 0
+
+    for camera_detections in (
+        all_bev_detections
+    ):
+
+        for detection in (
+            camera_detections
+        ):
+
+            x = int(
+                round(
+                    detection.bev_x
+                )
+            )
+
+            y = int(
+                round(
+                    detection.bev_y
+                )
+            )
+
+            if (
+                x < 0
+                or
+                x >= width
+                or
+                y < 0
+                or
+                y >= height
+            ):
+
+                continue
+
+            total_valid += 1
+
+            color = CAMERA_COLORS.get(
+                detection.camera_id,
+                (
+                    255,
+                    255,
+                    255,
+                ),
+            )
+
+            cv2.circle(
+                output,
+                (
+                    x,
+                    y,
+                ),
+                10,
+                (
+                    255,
+                    255,
+                    255,
+                ),
+                -1,
+                cv2.LINE_AA,
+            )
+
+            cv2.circle(
+                output,
+                (
+                    x,
+                    y,
+                ),
+                7,
+                color,
+                -1,
+                cv2.LINE_AA,
+            )
+
+            cv2.putText(
+                output,
+                detection.camera_id,
+                (
+                    x + 10,
+                    y - 8,
+                ),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.48,
+                color,
+                2,
+                cv2.LINE_AA,
+            )
+
+    cv2.putText(
+        output,
+        (
+            f"BEV vehicles: "
+            f"{total_valid}"
+        ),
+        (
+            15,
+            30,
+        ),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.7,
+        (
+            255,
+            255,
+            255,
+        ),
+        2,
+        cv2.LINE_AA,
+    )
+
+    return output
 
 
 def fit_frame(
@@ -212,14 +670,18 @@ def fit_frame(
     new_width = max(
         1,
         int(
-            width * scale
+            width
+            *
+            scale
         ),
     )
 
     new_height = max(
         1,
         int(
-            height * scale
+            height
+            *
+            scale
         ),
     )
 
@@ -280,6 +742,7 @@ def compose_grid(
     frames: list[np.ndarray],
     camera_ids: list[str],
     detection_counts: list[int],
+    bev_frame: np.ndarray,
     frame_index: int,
     timestamp: float,
     inference_ms: float,
@@ -288,8 +751,36 @@ def compose_grid(
     columns: int,
 ) -> np.ndarray:
 
+    all_frames = list(
+        frames
+    )
+
+    all_camera_ids = list(
+        camera_ids
+    )
+
+    all_detection_counts = list(
+        detection_counts
+    )
+
+    all_frames.append(
+        bev_frame
+    )
+
+    all_camera_ids.append(
+        "BEV MAP"
+    )
+
+    all_detection_counts.append(
+        sum(
+            detection_counts
+        )
+    )
+
     rows = math.ceil(
-        len(frames)
+        len(
+            all_frames
+        )
         /
         columns
     )
@@ -311,7 +802,7 @@ def compose_grid(
     tiles = []
 
     for index, frame in enumerate(
-        frames
+        all_frames
     ):
 
         content_height = (
@@ -335,19 +826,40 @@ def compose_grid(
             dtype=np.uint8,
         )
 
-        title = (
-            f"{camera_ids[index]} | "
-            f"vehicles "
-            f"{detection_counts[index]}"
-        )
+        if (
+            all_camera_ids[index]
+            ==
+            "BEV MAP"
+        ):
+
+            title = (
+                "BEV MAP | "
+                f"detections "
+                f"{all_detection_counts[index]}"
+            )
+
+        else:
+
+            title = (
+                f"{all_camera_ids[index]} | "
+                f"vehicles "
+                f"{all_detection_counts[index]}"
+            )
 
         cv2.putText(
             header,
             title,
-            (8, 23),
+            (
+                8,
+                23,
+            ),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.55,
-            (255, 255, 255),
+            (
+                255,
+                255,
+                255,
+            ),
             1,
             cv2.LINE_AA,
         )
@@ -364,9 +876,13 @@ def compose_grid(
         )
 
     while (
-        len(tiles)
+        len(
+            tiles
+        )
         <
-        rows * columns
+        rows
+        *
+        columns
     ):
 
         tiles.append(
@@ -422,7 +938,11 @@ def compose_grid(
         ),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.6,
-        (255, 255, 255),
+        (
+            255,
+            255,
+            255,
+        ),
         2,
         cv2.LINE_AA,
     )
@@ -487,6 +1007,10 @@ def print_stats(
 
     avg_inference = stats.average(
         stats.inference_total_ms
+    )
+
+    avg_projection = stats.average(
+        stats.projection_total_ms
     )
 
     avg_draw = stats.average(
@@ -554,7 +1078,12 @@ def print_stats(
     )
 
     print(
-        f"BBox drawing        : "
+        f"BEV projection      : "
+        f"{avg_projection:8.2f} ms"
+    )
+
+    print(
+        f"BBox/BEV drawing    : "
         f"{avg_draw:8.2f} ms"
     )
 
@@ -697,14 +1226,35 @@ def main() -> None:
     reader = (
         SynchronizedVideoReader(
             video_configs=(
-                config["videos"]
+                config[
+                    "videos"
+                ]
             ),
             root=ROOT,
-            queue_size=queue_size,
+            queue_size=(
+                queue_size
+            ),
         )
     )
 
     reader.print_info()
+
+    bev_map = load_bev_map()
+
+    projectors = load_projectors(
+        reader.camera_ids
+    )
+
+    print(
+        f"BEV map: "
+        f"{BEV_MAP_PATH}"
+    )
+
+    print(
+        f"BEV size: "
+        f"{bev_map.shape[1]}x"
+        f"{bev_map.shape[0]}"
+    )
 
     print(
         f"Pipeline queue size: "
@@ -758,7 +1308,9 @@ def main() -> None:
                 time.perf_counter()
             )
 
-            frame_set = reader.get()
+            frame_set = (
+                reader.get()
+            )
 
             queue_wait_ms = (
                 (
@@ -800,7 +1352,39 @@ def main() -> None:
             )
 
             # =============================================
-            # 3. OPTIONAL BBOX RENDER
+            # 3. CAMERA -> BEV PROJECTION
+            # =============================================
+
+            projection_start = (
+                time.perf_counter()
+            )
+
+            all_bev_detections = (
+                project_detections(
+                    camera_ids=(
+                        reader.camera_ids
+                    ),
+                    all_detections=(
+                        all_detections
+                    ),
+                    projectors=(
+                        projectors
+                    ),
+                )
+            )
+
+            projection_ms = (
+                (
+                    time.perf_counter()
+                    -
+                    projection_start
+                )
+                *
+                1000.0
+            )
+
+            # =============================================
+            # 4. OPTIONAL RENDER
             # =============================================
 
             draw_ms = 0.0
@@ -816,6 +1400,7 @@ def main() -> None:
                 )
 
                 display_frames = []
+
                 detection_counts = []
 
                 for (
@@ -832,11 +1417,15 @@ def main() -> None:
 
                     draw_detections(
                         frame=output,
-                        detections=detections,
+                        detections=(
+                            detections
+                        ),
                         show_confidence=(
                             show_confidence
                         ),
-                        line_width=line_width,
+                        line_width=(
+                            line_width
+                        ),
                     )
 
                     display_frames.append(
@@ -849,6 +1438,15 @@ def main() -> None:
                         )
                     )
 
+                bev_output = (
+                    draw_bev_detections(
+                        bev_map=bev_map,
+                        all_bev_detections=(
+                            all_bev_detections
+                        ),
+                    )
+                )
+
                 draw_ms = (
                     (
                         time.perf_counter()
@@ -860,7 +1458,7 @@ def main() -> None:
                 )
 
                 # =========================================
-                # 4. GRID
+                # 5. GRID
                 # =========================================
 
                 grid_start = (
@@ -869,12 +1467,17 @@ def main() -> None:
 
                 display_frame = (
                     compose_grid(
-                        frames=display_frames,
+                        frames=(
+                            display_frames
+                        ),
                         camera_ids=(
                             reader.camera_ids
                         ),
                         detection_counts=(
                             detection_counts
+                        ),
+                        bev_frame=(
+                            bev_output
                         ),
                         frame_index=(
                             frame_set.frame_index
@@ -891,7 +1494,9 @@ def main() -> None:
                         display_height=(
                             display_height
                         ),
-                        columns=columns,
+                        columns=(
+                            columns
+                        ),
                     )
                 )
 
@@ -906,7 +1511,7 @@ def main() -> None:
                 )
 
                 # =========================================
-                # 5. DISPLAY
+                # 6. DISPLAY
                 # =========================================
 
                 if show:
@@ -937,7 +1542,7 @@ def main() -> None:
                     )
 
             # =============================================
-            # 6. STATS
+            # 7. STATS
             # =============================================
 
             consumer_loop_ms = (
@@ -960,9 +1565,18 @@ def main() -> None:
                 inference_ms=(
                     inference_ms
                 ),
-                draw_ms=draw_ms,
-                grid_ms=grid_ms,
-                display_ms=display_ms,
+                projection_ms=(
+                    projection_ms
+                ),
+                draw_ms=(
+                    draw_ms
+                ),
+                grid_ms=(
+                    grid_ms
+                ),
+                display_ms=(
+                    display_ms
+                ),
                 consumer_loop_ms=(
                     consumer_loop_ms
                 ),
