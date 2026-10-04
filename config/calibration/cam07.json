@@ -1,0 +1,169 @@
+{
+  "camera_id": "cam07",
+  "video_path": "data/videos/scene1/260914_7.mp4",
+  "frame_index": 300,
+  "image_size": {
+    "width": 1920,
+    "height": 1080
+  },
+  "bev_map": "data/maps/map.png",
+  "bev_size": {
+    "width": 1624,
+    "height": 968
+  },
+  "points": [
+    {
+      "id": 1,
+      "image": [1071.608, 675.285],
+      "bev": [961.484, 397.376],
+      "reprojection_error_px": 0.283
+    },
+    {
+      "id": 2,
+      "image": [1260.207, 689.109],
+      "bev": [961.484, 367.215],
+      "reprojection_error_px": 1.508
+    },
+    {
+      "id": 3,
+      "image": [1429.057, 693.059],
+      "bev": [961.252, 337.054],
+      "reprojection_error_px": 0.713
+    },
+    {
+      "id": 4,
+      "image": [1565.322, 692.071],
+      "bev": [961.716, 307.126],
+      "reprojection_error_px": 5.102
+    },
+    {
+      "id": 5,
+      "image": [1679.864, 693.059],
+      "bev": [961.484, 277.197],
+      "reprojection_error_px": 7.756
+    },
+    {
+      "id": 6,
+      "image": [1086.029, 477.302],
+      "bev": [840.653, 396.935],
+      "reprojection_error_px": 4.08
+    },
+    {
+      "id": 7,
+      "image": [1081.448, 551.082],
+      "bev": [901.16, 396.935],
+      "reprojection_error_px": 0.538
+    },
+    {
+      "id": 8,
+      "image": [1227.587, 564.511],
+      "bev": [901.16, 367.238],
+      "reprojection_error_px": 0.572
+    },
+    {
+      "id": 9,
+      "image": [1207.838, 486.307],
+      "bev": [841.024, 367.238],
+      "reprojection_error_px": 3.599
+    },
+    {
+      "id": 10,
+      "image": [1013.589, 405.008],
+      "bev": [756.58, 422.232],
+      "reprojection_error_px": 18.409
+    },
+    {
+      "id": 11,
+      "image": [1178.529, 418.911],
+      "bev": [756.218, 367.856],
+      "reprojection_error_px": 0.989
+    },
+    {
+      "id": 12,
+      "image": [1341.574, 434.077],
+      "bev": [756.58, 313.48],
+      "reprojection_error_px": 20.5
+    },
+    {
+      "id": 13,
+      "image": [906.112, 657.965],
+      "bev": [959.501, 420.814],
+      "reprojection_error_px": 1.009
+    },
+    {
+      "id": 14,
+      "image": [953.509, 542.949],
+      "bev": [904.376, 420.628],
+      "reprojection_error_px": 0.419
+    },
+    {
+      "id": 15,
+      "image": [848.668, 421.875],
+      "bev": [795.143, 460.232],
+      "reprojection_error_px": 28.46
+    },
+    {
+      "id": 16,
+      "image": [607.982, 355.532],
+      "bev": [790.821, 509.929],
+      "reprojection_error_px": 0.837
+    },
+    {
+      "id": 17,
+      "image": [442.491, 369.418],
+      "bev": [810.268, 561.786],
+      "reprojection_error_px": 38.948
+    },
+    {
+      "id": 18,
+      "image": [396.321, 602.196],
+      "bev": [980.964, 509.929],
+      "reprojection_error_px": 42.279
+    },
+    {
+      "id": 19,
+      "image": [192.927, 542.364],
+      "bev": [959.357, 598.518],
+      "reprojection_error_px": 94.352
+    },
+    {
+      "id": 20,
+      "image": [216.964, 860.625],
+      "bev": [1052.579, 490.593],
+      "reprojection_error_px": 49.012
+    },
+    {
+      "id": 21,
+      "image": [1646.036, 807.589],
+      "bev": [1003.174, 293.239],
+      "reprojection_error_px": 16.982
+    },
+    {
+      "id": 22,
+      "image": [1070.357, 802.768],
+      "bev": [1007.599, 400.549],
+      "reprojection_error_px": 9.395
+    },
+    {
+      "id": 23,
+      "image": [600.268, 783.482],
+      "bev": [1019.768, 451.438],
+      "reprojection_error_px": 25.111
+    },
+    {
+      "id": 24,
+      "image": [1405.446, 1063.125],
+      "bev": [1036.362, 350.766],
+      "reprojection_error_px": 17.688
+    }
+  ],
+  "homography": [
+    [-1.9013236371676228, 8.422438774365784, 86.52933527770413],
+    [-1.3219967013774157, 2.864746287495476, 1027.6478382076232],
+    [-0.0018972032930365547, 0.007285479474716594, 1.0]
+  ],
+  "reprojection": {
+    "mean_error_px": 16.189,
+    "max_error_px": 94.352
+  }
+}

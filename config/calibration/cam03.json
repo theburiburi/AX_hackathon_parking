@@ -1,0 +1,115 @@
+{
+  "camera_id": "cam03",
+  "video_path": "data/videos/scene1/260914_3.mp4",
+  "frame_index": 300,
+  "image_size": {
+    "width": 1920,
+    "height": 1080
+  },
+  "bev_map": "data/maps/map.png",
+  "bev_size": {
+    "width": 1624,
+    "height": 968
+  },
+  "points": [
+    {
+      "id": 1,
+      "image": [682.872, 771.575],
+      "bev": [208.372, 218.688],
+      "reprojection_error_px": 1.073
+    },
+    {
+      "id": 2,
+      "image": [538.708, 724.179],
+      "bev": [228.232, 218.502],
+      "reprojection_error_px": 1.483
+    },
+    {
+      "id": 3,
+      "image": [1155.851, 724.179],
+      "bev": [164.021, 268.348],
+      "reprojection_error_px": 3.905
+    },
+    {
+      "id": 4,
+      "image": [1201.272, 502.995],
+      "bev": [164.021, 476.507],
+      "reprojection_error_px": 23.434
+    },
+    {
+      "id": 5,
+      "image": [946.073, 570.116],
+      "bev": [207.012, 323.687],
+      "reprojection_error_px": 3.966
+    },
+    {
+      "id": 6,
+      "image": [849.511, 644.939],
+      "bev": [207.918, 266.139],
+      "reprojection_error_px": 0.642
+    },
+    {
+      "id": 7,
+      "image": [1004.939, 523.581],
+      "bev": [208.159, 371.778],
+      "reprojection_error_px": 3.947
+    },
+    {
+      "id": 8,
+      "image": [1048.667, 491.819],
+      "bev": [204.521, 434.095],
+      "reprojection_error_px": 0.753
+    },
+    {
+      "id": 9,
+      "image": [1081.549, 464.499],
+      "bev": [204.875, 508.26],
+      "reprojection_error_px": 2.488
+    },
+    {
+      "id": 10,
+      "image": [1109.33, 441.253],
+      "bev": [201.88, 587.331],
+      "reprojection_error_px": 22.809
+    },
+    {
+      "id": 11,
+      "image": [1121.082, 430.178],
+      "bev": [201.88, 666.983],
+      "reprojection_error_px": 9.541
+    },
+    {
+      "id": 12,
+      "image": [1130.899, 421.072],
+      "bev": [200.946, 747.607],
+      "reprojection_error_px": 3.682
+    },
+    {
+      "id": 13,
+      "image": [1137.308, 414.364],
+      "bev": [205.268, 810.268],
+      "reprojection_error_px": 1.98
+    },
+    {
+      "id": 14,
+      "image": [1174.323, 414.623],
+      "bev": [205.268, 859.964],
+      "reprojection_error_px": 30.907
+    },
+    {
+      "id": 15,
+      "image": [1200.467, 414.882],
+      "bev": [166.375, 859.964],
+      "reprojection_error_px": 2.416
+    }
+  ],
+  "homography": [
+    [0.19958136859635936, -0.5676541072122775, -44.98245102600157],
+    [-0.05351766892113415, -0.5010337928699922, 58.515604020039774],
+    [0.00021900699228575215, -0.003641301643477689, 1.0]
+  ],
+  "reprojection": {
+    "mean_error_px": 7.535,
+    "max_error_px": 30.907
+  }
+}

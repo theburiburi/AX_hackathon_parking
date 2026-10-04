@@ -1,0 +1,103 @@
+{
+  "camera_id": "cam06",
+  "video_path": "data/videos/scene1/260914_6.mp4",
+  "frame_index": 300,
+  "image_size": {
+    "width": 1920,
+    "height": 1080
+  },
+  "bev_map": "data/maps/map.png",
+  "bev_size": {
+    "width": 1624,
+    "height": 968
+  },
+  "points": [
+    {
+      "id": 1,
+      "image": [737.117, 495.946],
+      "bev": [201.645, 812.801],
+      "reprojection_error_px": 18.053
+    },
+    {
+      "id": 2,
+      "image": [465.377, 499.106],
+      "bev": [201.645, 755.593],
+      "reprojection_error_px": 30.172
+    },
+    {
+      "id": 3,
+      "image": [481.175, 573.36],
+      "bev": [157.464, 785.613],
+      "reprojection_error_px": 0.37
+    },
+    {
+      "id": 4,
+      "image": [404.551, 620.757],
+      "bev": [129.143, 785.047],
+      "reprojection_error_px": 0.059
+    },
+    {
+      "id": 5,
+      "image": [306.598, 686.322],
+      "bev": [100.256, 785.613],
+      "reprojection_error_px": 0.968
+    },
+    {
+      "id": 6,
+      "image": [185.737, 770.056],
+      "bev": [71.369, 786.18],
+      "reprojection_error_px": 0.677
+    },
+    {
+      "id": 7,
+      "image": [946.402, 573.214],
+      "bev": [156.186, 855.356],
+      "reprojection_error_px": 0.3
+    },
+    {
+      "id": 8,
+      "image": [938.819, 632.365],
+      "bev": [128.578, 855.588],
+      "reprojection_error_px": 0.17
+    },
+    {
+      "id": 9,
+      "image": [925.674, 722.861],
+      "bev": [99.345, 855.588],
+      "reprojection_error_px": 0.548
+    },
+    {
+      "id": 10,
+      "image": [904.441, 878.574],
+      "bev": [69.649, 855.588],
+      "reprojection_error_px": 0.424
+    },
+    {
+      "id": 11,
+      "image": [1060.188, 452.742],
+      "bev": [243.56, 877.373],
+      "reprojection_error_px": 8.396
+    },
+    {
+      "id": 12,
+      "image": [936.588, 450.154],
+      "bev": [244.126, 856.416],
+      "reprojection_error_px": 19.283
+    },
+    {
+      "id": 13,
+      "image": [1065.536, 361.607],
+      "bev": [317.625, 896.696],
+      "reprojection_error_px": 111.705
+    }
+  ],
+  "homography": [
+    [-0.059538474694722135, 0.059771444947806666, -111.01869651368484],
+    [-0.44246787819409233, -2.2162934742291047, 958.8197889541287],
+    [-0.0004004969862583388, -0.0025728990150644167, 0.9999999999999999]
+  ],
+  "reprojection": {
+    "mean_error_px": 14.702,
+    "max_error_px": 111.705
+  }
+}
