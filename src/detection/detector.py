@@ -96,6 +96,13 @@ class VehicleDetector:
             )
         )
 
+        self.batch_size = int(
+            inference_config.get(
+                "batch_size",
+                1,
+            )
+        )
+
         self.target_class_names = set(
             class_config.get(
                 "names",
@@ -119,13 +126,13 @@ class VehicleDetector:
         )
 
         print(
-            "Vehicle classes:",
-            self.target_class_names,
+            f"Target classes: "
+            f"{sorted(self.target_class_names)}"
         )
 
         print(
-            "Vehicle class IDs:",
-            self.class_ids,
+            f"YOLO batch size: "
+            f"{self.batch_size}"
         )
 
     def _load_config(
@@ -152,47 +159,66 @@ class VehicleDetector:
         self,
     ) -> None:
 
-        if isinstance(
+        if not isinstance(
             self.device,
             int,
         ):
-
-            if not torch.cuda.is_available():
-
-                raise RuntimeError(
-                    "CUDA GPU를 사용할 수 없습니다.\n"
-                    "torch.cuda.is_available() == False"
-                )
-
-            gpu_count = (
-                torch.cuda.device_count()
+            raise ValueError(
+                "현재 프로젝트는 CUDA GPU 사용을 "
+                "전제로 합니다. "
+                "device는 GPU 번호여야 합니다."
             )
 
-            if (
+        if not torch.cuda.is_available():
+
+            raise RuntimeError(
+                "CUDA GPU를 사용할 수 없습니다.\n"
+                "torch.cuda.is_available() == False"
+            )
+
+        gpu_count = (
+            torch.cuda.device_count()
+        )
+
+        if (
+            self.device
+            >=
+            gpu_count
+        ):
+
+            raise RuntimeError(
+                f"GPU device {self.device}가 없습니다. "
+                f"사용 가능한 GPU 수: {gpu_count}"
+            )
+
+        gpu_name = (
+            torch.cuda.get_device_name(
                 self.device
-                >=
-                gpu_count
-            ):
-
-                raise RuntimeError(
-                    f"GPU device {self.device}가 없습니다. "
-                    f"사용 가능한 GPU 수: {gpu_count}"
-                )
-
-            gpu_name = (
-                torch.cuda.get_device_name(
-                    self.device
-                )
             )
+        )
 
-            print(
-                f"CUDA device: "
-                f"{self.device}"
-            )
+        total_memory = (
+            torch.cuda.get_device_properties(
+                self.device
+            ).total_memory
+            /
+            1024**3
+        )
 
-            print(
-                f"GPU: {gpu_name}"
-            )
+        print(
+            f"CUDA device: "
+            f"{self.device}"
+        )
+
+        print(
+            f"GPU: "
+            f"{gpu_name}"
+        )
+
+        print(
+            f"VRAM: "
+            f"{total_memory:.2f} GB"
+        )
 
     def _resolve_class_ids(
         self,
@@ -214,16 +240,16 @@ class VehicleDetector:
                     int(class_id)
                 )
 
+        resolved_names = {
+            names[class_id]
+            for class_id
+            in class_ids
+        }
+
         missing = (
             self.target_class_names
             -
-            set(
-                names[
-                    class_id
-                ]
-                for class_id
-                in class_ids
-            )
+            resolved_names
         )
 
         if missing:
@@ -235,27 +261,10 @@ class VehicleDetector:
 
         return class_ids
 
-    def detect(
+    def _convert_result(
         self,
-        frame,
+        result,
     ) -> list[Detection]:
-
-        results = self.model.predict(
-            source=frame,
-            imgsz=self.imgsz,
-            conf=self.conf,
-            iou=self.iou,
-            classes=self.class_ids,
-            device=self.device,
-            half=self.half,
-            verbose=False,
-        )
-
-        if not results:
-
-            return []
-
-        result = results[0]
 
         boxes = result.boxes
 
@@ -297,3 +306,70 @@ class VehicleDetector:
             )
 
         return detections
+
+    def detect(
+        self,
+        frame,
+    ) -> list[Detection]:
+
+        results = self.model.predict(
+            source=frame,
+            imgsz=self.imgsz,
+            conf=self.conf,
+            iou=self.iou,
+            classes=self.class_ids,
+            device=self.device,
+            half=self.half,
+            verbose=False,
+        )
+
+        if not results:
+
+            return []
+
+        return self._convert_result(
+            results[0]
+        )
+
+    def detect_batch(
+        self,
+        frames: list,
+    ) -> list[list[Detection]]:
+
+        if not frames:
+
+            return []
+
+        all_detections = []
+
+        for start in range(
+            0,
+            len(frames),
+            self.batch_size,
+        ):
+
+            batch = frames[
+                start:
+                start + self.batch_size
+            ]
+
+            results = self.model.predict(
+                source=batch,
+                imgsz=self.imgsz,
+                conf=self.conf,
+                iou=self.iou,
+                classes=self.class_ids,
+                device=self.device,
+                half=self.half,
+                verbose=False,
+            )
+
+            for result in results:
+
+                all_detections.append(
+                    self._convert_result(
+                        result
+                    )
+                )
+
+        return all_detections

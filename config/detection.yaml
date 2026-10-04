@@ -8,6 +8,11 @@ inference:
   iou: 0.70
   half: true
 
+  # 한 번의 YOLO inference에 넣을 카메라 수
+  # RTX 5070 12GB에서 먼저 7로 테스트
+  # OOM 발생 시 4 또는 2로 낮추면 됨
+  batch_size: 7
+
 classes:
   names:
     - car
@@ -15,11 +20,36 @@ classes:
     - bus
     - truck
 
-video:
-  camera_id: cam01
-  path: data/videos/scene1/260914_1.mp4
+videos:
+  - camera_id: cam01
+    path: data/videos/scene1/260914_1.mp4
+
+  - camera_id: cam02
+    path: data/videos/scene1/260914_2.mp4
+
+  - camera_id: cam03
+    path: data/videos/scene1/260914_3.mp4
+
+  - camera_id: cam05
+    path: data/videos/scene1/260914_5.mp4
+
+  - camera_id: cam06
+    path: data/videos/scene1/260914_6.mp4
+
+  - camera_id: cam07
+    path: data/videos/scene1/260914_7.mp4
+
+  - camera_id: cam08
+    path: data/videos/scene1/260914_8.mp4
 
 display:
   show: true
   show_confidence: true
   line_width: 2
+
+  # 7개 CCTV를 한 창에 표시
+  grid_columns: 4
+
+  # 전체 OpenCV 창 크기
+  width: 1600
+  height: 850
