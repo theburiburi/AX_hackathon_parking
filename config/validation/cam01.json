@@ -1,0 +1,159 @@
+{
+  "camera_id": "cam01",
+  "frame_index": 300,
+  "calibration_file": "config/calibration/cam01.json",
+  "points": [
+    {
+      "id": 1,
+      "image": [
+        141.443,
+        285.229
+      ],
+      "predicted_bev": [
+        895.917,
+        162.157
+      ],
+      "actual_bev": [
+        654.616,
+        151.226
+      ],
+      "error_px": 241.549
+    },
+    {
+      "id": 2,
+      "image": [
+        623.479,
+        346.417
+      ],
+      "predicted_bev": [
+        961.635,
+        160.286
+      ],
+      "actual_bev": [
+        962.491,
+        188.306
+      ],
+      "error_px": 28.033
+    },
+    {
+      "id": 3,
+      "image": [
+        316.936,
+        432.387
+      ],
+      "predicted_bev": [
+        961.26,
+        219.702
+      ],
+      "actual_bev": [
+        963.372,
+        218.817
+      ],
+      "error_px": 2.29
+    },
+    {
+      "id": 4,
+      "image": [
+        142.522,
+        485.979
+      ],
+      "predicted_bev": [
+        962.451,
+        249.968
+      ],
+      "actual_bev": [
+        960.377,
+        249.328
+      ],
+      "error_px": 2.171
+    },
+    {
+      "id": 5,
+      "image": [
+        952.544,
+        302.918
+      ],
+      "predicted_bev": [
+        980.934,
+        109.552
+      ],
+      "actual_bev": [
+        981.346,
+        109.118
+      ],
+      "error_px": 0.598
+    },
+    {
+      "id": 6,
+      "image": [
+        992.189,
+        293.448
+      ],
+      "predicted_bev": [
+        981.952,
+        100.041
+      ],
+      "actual_bev": [
+        981.875,
+        98.537
+      ],
+      "error_px": 1.507
+    },
+    {
+      "id": 7,
+      "image": [
+        1605.802,
+        409.085
+      ],
+      "predicted_bev": [
+        1101.932,
+        117.435
+      ],
+      "actual_bev": [
+        1107.34,
+        106.649
+      ],
+      "error_px": 12.066
+    },
+    {
+      "id": 8,
+      "image": [
+        1628.538,
+        462.329
+      ],
+      "predicted_bev": [
+        1120.367,
+        148.728
+      ],
+      "actual_bev": [
+        1120.573,
+        148.582
+      ],
+      "error_px": 0.253
+    },
+    {
+      "id": 9,
+      "image": [
+        1639.389,
+        463.764
+      ],
+      "predicted_bev": [
+        1122.361,
+        148.697
+      ],
+      "actual_bev": [
+        1122.739,
+        148.853
+      ],
+      "error_px": 0.409
+    }
+  ],
+  "statistics": {
+    "count": 9,
+    "mean_error_px": 32.097,
+    "median_error_px": 2.171,
+    "max_error_px": 241.549,
+    "min_error_px": 0.253,
+    "std_error_px": 74.549
+  }
+}
