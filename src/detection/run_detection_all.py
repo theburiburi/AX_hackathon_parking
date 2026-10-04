@@ -21,9 +21,7 @@ if str(ROOT) not in sys.path:
     )
 
 
-from src.detection.detector import (
-    VehicleDetector,
-)
+from src.detection.detector import VehicleDetector
 
 
 CONFIG_PATH = (
@@ -200,6 +198,120 @@ def open_cameras(
         )
 
     return cameras
+
+
+def validate_cameras(
+    cameras: list[CameraStream],
+) -> None:
+
+    if not cameras:
+
+        raise RuntimeError(
+            "No cameras configured."
+        )
+
+    reference_fps = (
+        cameras[0].fps
+    )
+
+    for camera in cameras[1:]:
+
+        if (
+            abs(
+                camera.fps
+                -
+                reference_fps
+            )
+            >
+            0.01
+        ):
+
+            raise RuntimeError(
+                "Camera FPS mismatch: "
+                f"{cameras[0].camera_id}="
+                f"{reference_fps:.3f}, "
+                f"{camera.camera_id}="
+                f"{camera.fps:.3f}"
+            )
+
+
+def print_camera_info(
+    cameras: list[CameraStream],
+) -> None:
+
+    print()
+
+    print(
+        "======================================"
+    )
+
+    print(
+        "Synchronized camera set"
+    )
+
+    print(
+        "======================================"
+    )
+
+    for camera in cameras:
+
+        duration = (
+            camera.frame_count
+            /
+            camera.fps
+            if camera.fps > 0
+            else 0
+        )
+
+        print(
+            f"{camera.camera_id}: "
+            f"{camera.path.name} | "
+            f"{camera.width}x{camera.height} | "
+            f"{camera.fps:.3f} FPS | "
+            f"{camera.frame_count} frames | "
+            f"{duration:.2f}s"
+        )
+
+    print(
+        "======================================"
+    )
+
+    print()
+
+
+def print_gpu_memory() -> None:
+
+    allocated = (
+        torch.cuda.memory_allocated()
+        /
+        1024**3
+    )
+
+    reserved = (
+        torch.cuda.memory_reserved()
+        /
+        1024**3
+    )
+
+    max_allocated = (
+        torch.cuda.max_memory_allocated()
+        /
+        1024**3
+    )
+
+    max_reserved = (
+        torch.cuda.max_memory_reserved()
+        /
+        1024**3
+    )
+
+    print(
+        f"GPU memory | "
+        f"allocated={allocated:.2f} GB | "
+        f"reserved={reserved:.2f} GB | "
+        f"peak allocated={max_allocated:.2f} GB | "
+        f"peak reserved={max_reserved:.2f} GB"
+    )
 
 
 def draw_detections(
@@ -505,106 +617,6 @@ def compose_grid(
     return grid
 
 
-def print_camera_info(
-    cameras: list[CameraStream],
-) -> None:
-
-    print()
-
-    print(
-        "======================================"
-    )
-
-    print(
-        "Synchronized camera set"
-    )
-
-    print(
-        "======================================"
-    )
-
-    for camera in cameras:
-
-        duration = (
-            camera.frame_count
-            /
-            camera.fps
-            if camera.fps > 0
-            else 0
-        )
-
-        print(
-            f"{camera.camera_id}: "
-            f"{camera.path.name} | "
-            f"{camera.width}x{camera.height} | "
-            f"{camera.fps:.3f} FPS | "
-            f"{camera.frame_count} frames | "
-            f"{duration:.2f}s"
-        )
-
-    print(
-        "======================================"
-    )
-
-    print()
-
-
-def validate_cameras(
-    cameras: list[CameraStream],
-) -> None:
-
-    if not cameras:
-
-        raise RuntimeError(
-            "No cameras configured."
-        )
-
-    reference_fps = (
-        cameras[0].fps
-    )
-
-    for camera in cameras[1:]:
-
-        if (
-            abs(
-                camera.fps
-                -
-                reference_fps
-            )
-            >
-            0.01
-        ):
-
-            raise RuntimeError(
-                "Camera FPS mismatch: "
-                f"{cameras[0].camera_id}="
-                f"{reference_fps:.3f}, "
-                f"{camera.camera_id}="
-                f"{camera.fps:.3f}"
-            )
-
-
-def print_gpu_memory() -> None:
-
-    allocated = (
-        torch.cuda.memory_allocated()
-        /
-        1024**3
-    )
-
-    reserved = (
-        torch.cuda.memory_reserved()
-        /
-        1024**3
-    )
-
-    print(
-        f"GPU memory | "
-        f"allocated={allocated:.2f} GB | "
-        f"reserved={reserved:.2f} GB"
-    )
-
-
 def print_timing_stats(
     stats: TimingStats,
     camera_count: int,
@@ -612,7 +624,6 @@ def print_timing_stats(
 
     if stats.count == 0:
         return
-
 
     read_ms = stats.average_ms(
         stats.read_total
@@ -638,7 +649,6 @@ def print_timing_stats(
         stats.loop_total
     )
 
-
     loop_fps = (
         1000.0
         /
@@ -647,13 +657,11 @@ def print_timing_stats(
         else 0.0
     )
 
-
     camera_frames_per_second = (
         loop_fps
         *
         camera_count
     )
-
 
     print()
 
@@ -757,6 +765,13 @@ def main() -> None:
         )
     )
 
+    render = bool(
+        display_config.get(
+            "render",
+            True,
+        )
+    )
+
     show_confidence = bool(
         display_config.get(
             "show_confidence",
@@ -790,6 +805,15 @@ def main() -> None:
             "height",
             850,
         )
+    )
+
+
+    print(
+        f"Render enabled: {render}"
+    )
+
+    print(
+        f"Display enabled: {show}"
     )
 
 
@@ -835,7 +859,10 @@ def main() -> None:
     stats = TimingStats()
 
 
-    if show:
+    torch.cuda.reset_peak_memory_stats()
+
+
+    if show and render:
 
         cv2.namedWindow(
             WINDOW_NAME,
@@ -860,9 +887,9 @@ def main() -> None:
             )
 
 
-            # =================================================
+            # =============================================
             # 1. VIDEO READ
-            # =================================================
+            # =============================================
 
             read_start = (
                 time.perf_counter()
@@ -909,9 +936,9 @@ def main() -> None:
                 break
 
 
-            # =================================================
+            # =============================================
             # 2. YOLO
-            # =================================================
+            # =============================================
 
             inference_start = (
                 time.perf_counter()
@@ -925,9 +952,6 @@ def main() -> None:
             )
 
 
-            # CUDA 연산은 비동기일 수 있으므로
-            # 정확한 프로파일링을 위해 동기화한다.
-            # 성능 측정용으로만 필요하다.
             torch.cuda.synchronize()
 
 
@@ -938,135 +962,133 @@ def main() -> None:
             )
 
 
-            # =================================================
-            # 3. BBOX DRAWING
-            # =================================================
+            # =============================================
+            # 3. OPTIONAL RENDER
+            # =============================================
 
-            draw_start = (
-                time.perf_counter()
-            )
-
-
-            display_frames = []
-
-            detection_counts = []
-
-
-            for (
-                frame,
-                detections,
-            ) in zip(
-                frames,
-                all_detections,
-            ):
-
-                output = (
-                    frame.copy()
-                )
-
-
-                draw_detections(
-                    frame=output,
-                    detections=detections,
-                    show_confidence=show_confidence,
-                    line_width=line_width,
-                )
-
-
-                display_frames.append(
-                    output
-                )
-
-
-                detection_counts.append(
-                    len(detections)
-                )
-
-
-            draw_time = (
-                time.perf_counter()
-                -
-                draw_start
-            )
-
-
-            # =================================================
-            # 4. GRID
-            # =================================================
-
-            grid_start = (
-                time.perf_counter()
-            )
-
-
-            timestamp = (
-                frame_index
-                /
-                reference_fps
-            )
-
-
-            display = compose_grid(
-                frames=display_frames,
-                camera_ids=camera_ids,
-                detection_counts=detection_counts,
-                frame_index=frame_index,
-                timestamp=timestamp,
-                inference_ms=(
-                    inference_time
-                    *
-                    1000
-                ),
-                display_width=display_width,
-                display_height=display_height,
-                columns=columns,
-            )
-
-
-            grid_time = (
-                time.perf_counter()
-                -
-                grid_start
-            )
-
-
-            # =================================================
-            # 5. DISPLAY
-            # =================================================
-
-            display_start = (
-                time.perf_counter()
-            )
-
+            draw_time = 0.0
+            grid_time = 0.0
+            display_time = 0.0
 
             key = 255
 
 
-            if show:
+            if render:
 
-                cv2.imshow(
-                    WINDOW_NAME,
-                    display,
+                draw_start = (
+                    time.perf_counter()
                 )
 
 
-                key = (
-                    cv2.waitKey(1)
-                    &
-                    0xFF
+                display_frames = []
+
+                detection_counts = []
+
+
+                for (
+                    frame,
+                    detections,
+                ) in zip(
+                    frames,
+                    all_detections,
+                ):
+
+                    output = (
+                        frame.copy()
+                    )
+
+
+                    draw_detections(
+                        frame=output,
+                        detections=detections,
+                        show_confidence=show_confidence,
+                        line_width=line_width,
+                    )
+
+
+                    display_frames.append(
+                        output
+                    )
+
+
+                    detection_counts.append(
+                        len(detections)
+                    )
+
+
+                draw_time = (
+                    time.perf_counter()
+                    -
+                    draw_start
                 )
 
 
-            display_time = (
-                time.perf_counter()
-                -
-                display_start
-            )
+                grid_start = (
+                    time.perf_counter()
+                )
 
 
-            # =================================================
-            # TOTAL
-            # =================================================
+                timestamp = (
+                    frame_index
+                    /
+                    reference_fps
+                )
+
+
+                display = compose_grid(
+                    frames=display_frames,
+                    camera_ids=camera_ids,
+                    detection_counts=detection_counts,
+                    frame_index=frame_index,
+                    timestamp=timestamp,
+                    inference_ms=(
+                        inference_time
+                        *
+                        1000
+                    ),
+                    display_width=display_width,
+                    display_height=display_height,
+                    columns=columns,
+                )
+
+
+                grid_time = (
+                    time.perf_counter()
+                    -
+                    grid_start
+                )
+
+
+                if show:
+
+                    display_start = (
+                        time.perf_counter()
+                    )
+
+
+                    cv2.imshow(
+                        WINDOW_NAME,
+                        display,
+                    )
+
+
+                    key = (
+                        cv2.waitKey(1)
+                        &
+                        0xFF
+                    )
+
+
+                    display_time = (
+                        time.perf_counter()
+                        -
+                        display_start
+                    )
+
+
+            # =============================================
+            # 4. TOTAL
+            # =============================================
 
             loop_time = (
                 time.perf_counter()

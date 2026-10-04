@@ -11,7 +11,7 @@ inference:
   # 32 = FP32
   quantize: 16
 
-  # 한 번의 YOLO inference에 넣을 카메라 수
+  # 한 번에 처리할 카메라 수
   batch_size: 7
 
 classes:
@@ -44,9 +44,16 @@ videos:
     path: data/videos/scene1/260914_8.mp4
 
 display:
-  show: true
+  # OpenCV 창 표시 여부
+  show: false
+
+  # BBOX drawing + resize + grid 생성 여부
+  # 순수 분석 성능 측정 시 false
+  render: false
+
   show_confidence: true
   line_width: 2
+
   grid_columns: 4
   width: 1600
   height: 850
