@@ -45,118 +45,29 @@ const cameraTimeLabels =
 const SEEK_SECONDS = 5;
 
 
-/*
- * 영상끼리 이 이상 차이가 나면
- * 전체 동기화를 다시 수행한다.
- *
- * 30 FPS 기준:
- * 1 frame ≈ 0.033초
- *
- * 0.08초는 약 2.4 frame.
- */
-const MAX_DRIFT_SECONDS = 0.08;
+const HARD_SYNC_THRESHOLD = 0.15;
+
+const IGNORE_SYNC_THRESHOLD = 0.04;
 
 
-/*
- * seek 완료 후 목표 지점과 이 정도 이하 차이면
- * 정상적으로 이동한 것으로 본다.
- */
-const SEEK_TOLERANCE_SECONDS = 0.03;
-
-
-/*
- * 재생 중 영상 간 drift 검사 주기
- */
-const DRIFT_CHECK_INTERVAL_MS = 200;
-
-
-/*
- * 재생 준비 여부 확인 주기
- */
-const READY_CHECK_INTERVAL_MS = 50;
-
-
-/*
- * 동기화 작업이 무한 대기하지 않도록 하는 제한.
- */
-const READY_TIMEOUT_MS = 10000;
-
-
-/*
- * 현재 영상 메타데이터가 준비된 개수
- */
 let readyCount = 0;
 
-
-/*
- * 7개 영상이 공통으로 재생 가능한 최대 길이
- */
 let duration = 0;
 
+let playing = false;
 
-/*
- * 사용자가 재생 상태를 원하는지.
- *
- * buffering 때문에 실제 영상이 멈춰 있더라도
- * 사용자가 Pause를 누르지 않았다면 true.
- */
-let wantsToPlay = false;
-
-
-/*
- * 현재 실제로 7개 영상이 재생되고 있는지.
- */
-let actuallyPlaying = false;
-
-
-/*
- * 전체 영상의 논리적인 공통 시간.
- */
 let masterTime = 0;
 
 
-/*
- * requestAnimationFrame ID
- */
+let playStartedAt = 0;
+
+let playStartedMasterTime = 0;
+
 let animationFrame = null;
 
 
-/*
- * drift 검사 시간
- */
-let lastDriftCheck = 0;
-
-
-/*
- * seek / resync 같은 비동기 작업의 세대 번호.
- *
- * 사용자가 재생바를 빠르게 여러 번 움직일 경우
- * 이전 작업 결과가 뒤늦게 적용되는 것을 막는다.
- */
-let operationId = 0;
-
-
-/*
- * 이미 복구 작업이 수행 중인지.
- */
-let recovering = false;
-
-
-/*
- * 내부 pause() 때문에 발생한 pause 이벤트와
- * 예상하지 못한 pause 이벤트를 구분한다.
- */
-let internalPause = false;
-
-
-/*
- * 같은 buffering 복구 요청이 중복으로 실행되는 것을 막는다.
- */
-let resumeTimer = null;
-
-
 /* =========================================================
- * 기본 Utility
+ * VIDEO PLAYER
  * =========================================================
  */
 
@@ -168,18 +79,14 @@ function formatTime(seconds) {
     }
 
 
-    const safeSeconds =
-        Math.max(0, seconds);
-
-
     const minutes =
         Math.floor(
-            safeSeconds / 60
+            seconds / 60
         );
 
 
     const remaining =
-        safeSeconds % 60;
+        seconds % 60;
 
 
     return (
@@ -196,19 +103,11 @@ function formatTime(seconds) {
 
 function clampTime(value) {
 
-    const number =
-        Number(value);
-
-
-    if (!Number.isFinite(number)) {
-        return 0;
-    }
-
-
     if (duration <= 0) {
+
         return Math.max(
             0,
-            number
+            value
         );
     }
 
@@ -216,68 +115,97 @@ function clampTime(value) {
     return Math.min(
         Math.max(
             0,
-            number
+            value
         ),
         duration
     );
 }
 
 
-function sleep(ms) {
-
-    return new Promise(
-        resolve => {
-            setTimeout(
-                resolve,
-                ms
-            );
-        }
-    );
-}
-
-
-/* =========================================================
- * 상태 표시
- * =========================================================
- */
-
-
-function setStatus(
-    text,
-    ready = false
+function setAllVideosTime(
+    targetTime,
+    force = false
 ) {
 
-    cameraStatus.textContent =
-        text;
-
-
-    cameraStatus.classList.remove(
-        "loading",
-        "ready"
-    );
-
-
-    if (ready) {
-        cameraStatus.classList.add(
-            "ready"
+    const time =
+        clampTime(
+            targetTime
         );
-    }
-    else {
-        cameraStatus.classList.add(
-            "loading"
-        );
+
+
+    for (const video of videos) {
+
+        if (
+            video.readyState
+            <
+            HTMLMediaElement.HAVE_METADATA
+        ) {
+
+            continue;
+        }
+
+
+        const drift =
+            video.currentTime
+            -
+            time;
+
+
+        if (
+            force
+            ||
+            Math.abs(drift)
+            >
+            HARD_SYNC_THRESHOLD
+        ) {
+
+            video.currentTime =
+                Math.min(
+                    time,
+                    video.duration || time
+                );
+
+
+            video.playbackRate = 1;
+
+
+            continue;
+        }
+
+
+        if (
+            Math.abs(drift)
+            <
+            IGNORE_SYNC_THRESHOLD
+        ) {
+
+            video.playbackRate = 1;
+
+            continue;
+        }
+
+
+        if (drift < 0) {
+
+            video.playbackRate =
+                1.02;
+
+        }
+        else {
+
+            video.playbackRate =
+                0.98;
+        }
     }
 }
 
 
 function updateLabels() {
 
-    const text =
-        formatTime(masterTime);
-
-
     currentTimeLabel.textContent =
-        text;
+        formatTime(
+            masterTime
+        );
 
 
     timeline.value =
@@ -290,574 +218,141 @@ function updateLabels() {
     ) {
 
         label.textContent =
-            text;
+            formatTime(
+                masterTime
+            );
     }
 }
 
 
-/* =========================================================
- * 영상 상태
- * =========================================================
- */
+function updateMasterClock() {
 
-
-function allMetadataLoaded() {
-
-    return videos.every(
-        video =>
-            Number.isFinite(
-                video.duration
-            )
-            &&
-            video.duration > 0
-    );
-}
-
-
-function videoCanStart(video) {
-
-    return (
-        !video.seeking
-        &&
-        !video.ended
-        &&
-        video.readyState
-        >=
-        HTMLMediaElement.HAVE_CURRENT_DATA
-    );
-}
-
-
-function allVideosCanStart() {
-
-    return videos.every(
-        video =>
-            videoCanStart(video)
-    );
-}
-
-
-function getVideoTimes() {
-
-    return videos
-        .filter(
-            video =>
-                Number.isFinite(
-                    video.currentTime
-                )
-        )
-        .map(
-            video =>
-                video.currentTime
-        );
-}
-
-
-/*
- * 현재 실제 공통 재생 시간.
- *
- * 가장 느린 영상을 기준으로 한다.
- *
- * 예:
- *
- * CAM01 10.050
- * CAM02 10.047
- * CAM03 10.051
- * CAM07 10.010  <- buffering 직전
- *
- * masterTime = 10.010
- *
- * 따라서 한 영상이 진행하지 않으면
- * 화면 시간도 앞서 나가지 않는다.
- */
-function updateMasterFromVideos() {
-
-    const times =
-        getVideoTimes();
-
-
-    if (times.length === 0) {
+    if (!playing) {
         return;
     }
 
 
+    const now =
+        performance.now();
+
+
+    const elapsed =
+        (
+            now
+            -
+            playStartedAt
+        )
+        /
+        1000;
+
+
     masterTime =
-        clampTime(
-            Math.min(...times)
+        playStartedMasterTime
+        +
+        elapsed;
+
+
+    if (
+        duration > 0
+        &&
+        masterTime >= duration
+    ) {
+
+        masterTime =
+            duration;
+
+
+        pausePlayback();
+
+
+        updateLabels();
+
+
+        return;
+    }
+
+
+    setAllVideosTime(
+        masterTime,
+        false
+    );
+
+
+    updateLabels();
+
+
+    animationFrame =
+        requestAnimationFrame(
+            updateMasterClock
         );
 }
 
 
-/*
- * 가장 앞선 영상과
- * 가장 느린 영상의 시간 차이.
- */
-function getMaxDrift() {
+async function startPlayback() {
 
-    const times =
-        getVideoTimes();
+    if (
+        readyCount
+        <
+        videos.length
+    ) {
 
-
-    if (times.length < 2) {
-        return 0;
+        return;
     }
 
 
-    const min =
-        Math.min(...times);
-
-    const max =
-        Math.max(...times);
-
-
-    return max - min;
-}
+    setAllVideosTime(
+        masterTime,
+        true
+    );
 
 
-/* =========================================================
- * 전체 Pause
- * =========================================================
- */
-
-
-function pauseAllVideos() {
-
-    internalPause = true;
+    const playPromises = [];
 
 
     for (const video of videos) {
 
-        if (!video.paused) {
-            video.pause();
-        }
+        video.playbackRate =
+            1;
 
 
-        video.playbackRate = 1;
-    }
+        playPromises.push(
+            video
+                .play()
+                .catch(
+                    error => {
 
-
-    internalPause = false;
-}
-
-
-/*
- * 실제 재생을 멈춘다.
- *
- * wantsToPlay은 변경하지 않는다.
- *
- * buffering 때문에 일시적으로 멈출 때 사용.
- */
-function freezePlayback() {
-
-    if (actuallyPlaying) {
-
-        updateMasterFromVideos();
-    }
-
-
-    actuallyPlaying = false;
-
-
-    cancelAnimationFrame(
-        animationFrame
-    );
-
-
-    animationFrame = null;
-
-
-    pauseAllVideos();
-
-
-    updateLabels();
-}
-
-
-/* =========================================================
- * Seek Barrier
- * =========================================================
- */
-
-
-function seekSingleVideo(
-    video,
-    targetTime
-) {
-
-    return new Promise(
-        resolve => {
-
-            const safeTarget =
-                Math.min(
-                    targetTime,
-                    video.duration || targetTime
-                );
-
-
-            /*
-             * 이미 목표 위치라면
-             * seek 작업 불필요.
-             */
-            if (
-                !video.seeking
-                &&
-                Math.abs(
-                    video.currentTime
-                    -
-                    safeTarget
-                )
-                <=
-                SEEK_TOLERANCE_SECONDS
-            ) {
-
-                resolve();
-
-                return;
-            }
-
-
-            let resolved = false;
-
-
-            const finish = () => {
-
-                if (resolved) {
-                    return;
-                }
-
-
-                resolved = true;
-
-
-                video.removeEventListener(
-                    "seeked",
-                    handleSeeked
-                );
-
-
-                clearTimeout(
-                    timeout
-                );
-
-
-                resolve();
-            };
-
-
-            const handleSeeked = () => {
-
-                finish();
-            };
-
-
-            const timeout =
-                setTimeout(
-                    () => {
-
-                        console.warn(
-                            "Seek timeout:",
-                            video.id
+                        console.error(
+                            "Video play failed:",
+                            video.id,
+                            error
                         );
 
-
-                        finish();
-
-                    },
-                    READY_TIMEOUT_MS
-                );
-
-
-            video.addEventListener(
-                "seeked",
-                handleSeeked,
-                {
-                    once: true
-                }
-            );
-
-
-            try {
-
-                video.currentTime =
-                    safeTarget;
-
-            }
-            catch (error) {
-
-                console.error(
-                    "Seek failed:",
-                    video.id,
-                    error
-                );
-
-
-                finish();
-            }
-        }
-    );
-}
-
-
-/*
- * 7개 영상 전부가 목표 시간으로 이동할 때까지 기다린다.
- */
-async function seekAllVideos(
-    targetTime,
-    currentOperation
-) {
-
-    const safeTarget =
-        clampTime(targetTime);
+                    }
+                )
+        );
+    }
 
 
     await Promise.all(
-        videos.map(
-            video =>
-                seekSingleVideo(
-                    video,
-                    safeTarget
-                )
-        )
+        playPromises
     );
 
 
-    /*
-     * 기다리는 사이 새로운 seek가 발생했다면
-     * 현재 작업은 폐기.
-     */
-    if (
-        currentOperation
-        !==
-        operationId
-    ) {
-
-        return false;
-    }
+    playing = true;
 
 
-    masterTime =
-        safeTarget;
-
-
-    updateLabels();
-
-
-    return true;
-}
-
-
-/* =========================================================
- * 재생 준비 Barrier
- * =========================================================
- */
-
-
-async function waitUntilAllReady(
-    currentOperation
-) {
-
-    const startedAt =
+    playStartedAt =
         performance.now();
 
 
-    while (true) {
-
-        if (
-            currentOperation
-            !==
-            operationId
-        ) {
-
-            return false;
-        }
-
-
-        if (!wantsToPlay) {
-
-            return false;
-        }
-
-
-        if (allVideosCanStart()) {
-
-            return true;
-        }
-
-
-        if (
-            performance.now()
-            -
-            startedAt
-            >
-            READY_TIMEOUT_MS
-        ) {
-
-            console.warn(
-                "Video ready timeout"
-            );
-
-
-            return false;
-        }
-
-
-        await sleep(
-            READY_CHECK_INTERVAL_MS
-        );
-    }
-}
-
-
-/* =========================================================
- * 동기 재생
- * =========================================================
- */
-
-
-async function playAllTogether(
-    currentOperation
-) {
-
-    if (
-        currentOperation
-        !==
-        operationId
-    ) {
-
-        return;
-    }
-
-
-    if (!wantsToPlay) {
-
-        return;
-    }
-
-
-    /*
-     * 재생 직전에 7개 영상 모두
-     * 정확히 masterTime으로 다시 이동.
-     */
-
-    setStatus(
-        "Synchronizing 7 cameras..."
-    );
-
-
-    pauseAllVideos();
-
-
-    const seekSuccess =
-        await seekAllVideos(
-            masterTime,
-            currentOperation
-        );
-
-
-    if (!seekSuccess) {
-        return;
-    }
-
-
-    const ready =
-        await waitUntilAllReady(
-            currentOperation
-        );
-
-
-    if (!ready) {
-
-        if (
-            currentOperation
-            ===
-            operationId
-            &&
-            wantsToPlay
-        ) {
-
-            scheduleResumeCheck();
-        }
-
-
-        return;
-    }
-
-
-    if (
-        currentOperation
-        !==
-        operationId
-    ) {
-
-        return;
-    }
-
-
-    /*
-     * Promise.all로 7개 play를 한 번에 요청.
-     */
-
-    try {
-
-        await Promise.all(
-            videos.map(
-                video => {
-
-                    video.playbackRate = 1;
-
-                    return video.play();
-                }
-            )
-        );
-
-    }
-    catch (error) {
-
-        console.warn(
-            "Playback start delayed:",
-            error
-        );
-
-
-        freezePlayback();
-
-        scheduleResumeCheck();
-
-        return;
-    }
-
-
-    if (
-        currentOperation
-        !==
-        operationId
-    ) {
-
-        pauseAllVideos();
-
-        return;
-    }
-
-
-    actuallyPlaying = true;
-
-    recovering = false;
+    playStartedMasterTime =
+        masterTime;
 
 
     playButton.textContent =
         "일시정지";
 
 
-    setStatus(
-        `${videos.length} / ${videos.length} cameras synchronized`,
-        true
-    );
-
-
-    lastDriftCheck =
-        performance.now();
-
-
     cancelAnimationFrame(
         animationFrame
     );
@@ -865,339 +360,72 @@ async function playAllTogether(
 
     animationFrame =
         requestAnimationFrame(
-            playbackLoop
+            updateMasterClock
         );
-}
-
-
-/* =========================================================
- * 재생 Loop
- * =========================================================
- */
-
-
-function playbackLoop(timestamp) {
-
-    if (
-        !actuallyPlaying
-        ||
-        !wantsToPlay
-    ) {
-
-        return;
-    }
-
-
-    /*
-     * 실제 영상 시간을 기준으로
-     * masterTime을 갱신한다.
-     *
-     * 별도의 wall clock을 사용하지 않는다.
-     */
-
-    updateMasterFromVideos();
-
-
-    updateLabels();
-
-
-    /*
-     * 공통 끝 지점
-     */
-
-    if (
-        duration > 0
-        &&
-        masterTime
-        >=
-        duration
-        - 0.02
-    ) {
-
-        wantsToPlay = false;
-
-        freezePlayback();
-
-        masterTime =
-            duration;
-
-        updateLabels();
-
-        playButton.textContent =
-            "재생";
-
-        return;
-    }
-
-
-    /*
-     * 주기적으로 drift 확인
-     */
-
-    if (
-        timestamp
-        -
-        lastDriftCheck
-        >=
-        DRIFT_CHECK_INTERVAL_MS
-    ) {
-
-        lastDriftCheck =
-            timestamp;
-
-
-        const drift =
-            getMaxDrift();
-
-
-        if (
-            drift
-            >
-            MAX_DRIFT_SECONDS
-        ) {
-
-            console.warn(
-                `Camera drift detected: ${
-                    (
-                        drift * 1000
-                    ).toFixed(1)
-                } ms`
-            );
-
-
-            recoverSynchronization();
-
-            return;
-        }
-    }
-
-
-    animationFrame =
-        requestAnimationFrame(
-            playbackLoop
-        );
-}
-
-
-/* =========================================================
- * Drift / Buffering 복구
- * =========================================================
- */
-
-
-async function recoverSynchronization() {
-
-    if (recovering) {
-        return;
-    }
-
-
-    if (!wantsToPlay) {
-        return;
-    }
-
-
-    recovering = true;
-
-
-    /*
-     * 가장 느린 영상 시점에서
-     * 전체를 다시 맞춘다.
-     */
-
-    updateMasterFromVideos();
-
-
-    freezePlayback();
-
-
-    setStatus(
-        "Resynchronizing..."
-    );
-
-
-    operationId += 1;
-
-
-    const currentOperation =
-        operationId;
-
-
-    await playAllTogether(
-        currentOperation
-    );
-}
-
-
-/*
- * buffering 중에는 계속 시간을 증가시키지 않고,
- * 모든 영상이 다시 준비됐는지만 확인한다.
- */
-function scheduleResumeCheck() {
-
-    if (!wantsToPlay) {
-        return;
-    }
-
-
-    if (resumeTimer !== null) {
-        return;
-    }
-
-
-    resumeTimer =
-        setTimeout(
-            async () => {
-
-                resumeTimer = null;
-
-
-                if (!wantsToPlay) {
-                    return;
-                }
-
-
-                if (!allVideosCanStart()) {
-
-                    scheduleResumeCheck();
-
-                    return;
-                }
-
-
-                operationId += 1;
-
-
-                const currentOperation =
-                    operationId;
-
-
-                recovering = true;
-
-
-                await playAllTogether(
-                    currentOperation
-                );
-
-            },
-            READY_CHECK_INTERVAL_MS
-        );
-}
-
-
-/*
- * 어느 한 영상이라도 waiting/stalled 상태가 되면
- * 전부 정지한다.
- */
-function handleBuffering(video) {
-
-    if (!wantsToPlay) {
-        return;
-    }
-
-
-    console.log(
-        "Buffering:",
-        video.id
-    );
-
-
-    updateMasterFromVideos();
-
-
-    freezePlayback();
-
-
-    recovering = true;
-
-
-    setStatus(
-        `Waiting for ${video.id}...`
-    );
-
-
-    scheduleResumeCheck();
-}
-
-
-/* =========================================================
- * 사용자 Play / Pause
- * =========================================================
- */
-
-
-async function startPlayback() {
-
-    if (!allMetadataLoaded()) {
-        return;
-    }
-
-
-    wantsToPlay = true;
-
-
-    operationId += 1;
-
-
-    const currentOperation =
-        operationId;
-
-
-    recovering = true;
-
-
-    await playAllTogether(
-        currentOperation
-    );
 }
 
 
 function pausePlayback() {
 
-    /*
-     * 사용자가 직접 Pause했으므로
-     * 자동 재개 금지.
-     */
+    if (playing) {
 
-    wantsToPlay = false;
+        const now =
+            performance.now();
 
 
-    operationId += 1;
+        const elapsed =
+            (
+                now
+                -
+                playStartedAt
+            )
+            /
+            1000;
 
 
-    recovering = false;
-
-
-    if (resumeTimer !== null) {
-
-        clearTimeout(
-            resumeTimer
-        );
-
-        resumeTimer = null;
+        masterTime =
+            clampTime(
+                playStartedMasterTime
+                +
+                elapsed
+            );
     }
 
 
-    updateMasterFromVideos();
+    playing = false;
 
 
-    freezePlayback();
+    cancelAnimationFrame(
+        animationFrame
+    );
+
+
+    for (const video of videos) {
+
+        video.pause();
+
+        video.playbackRate =
+            1;
+    }
+
+
+    setAllVideosTime(
+        masterTime,
+        true
+    );
 
 
     playButton.textContent =
         "재생";
 
 
-    setStatus(
-        `${videos.length} / ${videos.length} cameras ready`,
-        true
-    );
+    updateLabels();
 }
 
 
 function togglePlayback() {
 
-    if (wantsToPlay) {
+    if (playing) {
 
         pausePlayback();
 
@@ -1209,136 +437,31 @@ function togglePlayback() {
 }
 
 
-/* =========================================================
- * 사용자 Seek
- * =========================================================
- */
+function seekTo(value) {
 
-
-async function seekTo(value) {
-
-    const targetTime =
+    masterTime =
         clampTime(
-            value
+            Number(value)
         );
 
 
-    /*
-     * seek하기 전에 사용자가 재생 중이었는지 기억.
-     */
-
-    const resumeAfterSeek =
-        wantsToPlay;
-
-
-    operationId += 1;
-
-
-    const currentOperation =
-        operationId;
-
-
-    recovering = true;
-
-
-    /*
-     * 모든 영상 즉시 정지.
-     *
-     * 이 순간부터 master clock도 움직이지 않는다.
-     */
-
-    updateMasterFromVideos();
-
-
-    actuallyPlaying = false;
-
-
-    cancelAnimationFrame(
-        animationFrame
+    setAllVideosTime(
+        masterTime,
+        true
     );
-
-
-    animationFrame = null;
-
-
-    pauseAllVideos();
-
-
-    masterTime =
-        targetTime;
 
 
     updateLabels();
 
 
-    setStatus(
-        "Seeking all cameras..."
-    );
+    if (playing) {
+
+        playStartedAt =
+            performance.now();
 
 
-    /*
-     * 7개 모두 seek 완료될 때까지 대기
-     */
-
-    const seekSuccess =
-        await seekAllVideos(
-            targetTime,
-            currentOperation
-        );
-
-
-    if (!seekSuccess) {
-        return;
-    }
-
-
-    /*
-     * 사용자가 seek 도중 Pause를 눌렀거나
-     * 또 다른 seek를 했다면 여기서 중단.
-     */
-
-    if (
-        currentOperation
-        !==
-        operationId
-    ) {
-
-        return;
-    }
-
-
-    recovering = false;
-
-
-    /*
-     * seek 전에 재생 중이었다면
-     * 7개 모두 준비된 후 함께 재생.
-     */
-
-    if (
-        resumeAfterSeek
-        &&
-        wantsToPlay
-    ) {
-
-        recovering = true;
-
-
-        await playAllTogether(
-            currentOperation
-        );
-
-    }
-    else {
-
-        setStatus(
-            `${videos.length} / ${videos.length} cameras ready`,
-            true
-        );
-
-
-        playButton.textContent =
-            "재생";
+        playStartedMasterTime =
+            masterTime;
     }
 }
 
@@ -1346,28 +469,19 @@ async function seekTo(value) {
 function seekRelative(seconds) {
 
     seekTo(
-        masterTime + seconds
+        masterTime
+        +
+        seconds
     );
 }
 
 
 function resetPlayback() {
 
-    /*
-     * Reset은 항상 정지 상태로 이동.
-     */
-
     pausePlayback();
-
 
     seekTo(0);
 }
-
-
-/* =========================================================
- * Metadata
- * =========================================================
- */
 
 
 function updateReadyState() {
@@ -1378,66 +492,61 @@ function updateReadyState() {
                 Number.isFinite(
                     video.duration
                 )
-                &&
-                video.duration > 0
         ).length;
 
 
-    setStatus(
-        `${readyCount} / ${videos.length} cameras ready`,
-        readyCount === videos.length
-    );
+    cameraStatus.textContent =
+        `${readyCount} / ${videos.length} cameras ready`;
 
 
     if (
         readyCount
-        !==
+        ===
         videos.length
     ) {
 
-        return;
-    }
-
-
-    duration =
-        Math.min(
-            ...videos.map(
-                video =>
-                    video.duration
-            )
+        cameraStatus.classList.remove(
+            "loading"
         );
 
 
-    timeline.max =
-        duration;
+        cameraStatus.classList.add(
+            "ready"
+        );
 
 
-    durationLabel.textContent =
-        formatTime(duration);
+        duration =
+            Math.min(
+                ...videos.map(
+                    video =>
+                        video.duration
+                )
+            );
 
 
-    playButton.disabled =
-        false;
+        timeline.max =
+            duration;
 
 
-    masterTime = 0;
+        durationLabel.textContent =
+            formatTime(
+                duration
+            );
 
 
-    updateLabels();
+        playButton.disabled =
+            false;
+
+
+        setAllVideosTime(
+            0,
+            true
+        );
+    }
 }
 
 
-/* =========================================================
- * Video Event 등록
- * =========================================================
- */
-
-
 for (const video of videos) {
-
-    /*
-     * 기본 브라우저 컨트롤은 사용하지 않는다.
-     */
 
     video.controls = false;
 
@@ -1446,123 +555,12 @@ for (const video of videos) {
         "loadedmetadata",
         updateReadyState
     );
-
-
-    /*
-     * 실제로 데이터가 부족해서 재생이 멈추는 경우.
-     */
-
-    video.addEventListener(
-        "waiting",
-        () => {
-
-            handleBuffering(
-                video
-            );
-        }
-    );
-
-
-    video.addEventListener(
-        "stalled",
-        () => {
-
-            handleBuffering(
-                video
-            );
-        }
-    );
-
-
-    /*
-     * 예상하지 못한 개별 영상 Pause 방지.
-     */
-
-    video.addEventListener(
-        "pause",
-        () => {
-
-            if (internalPause) {
-                return;
-            }
-
-
-            if (
-                wantsToPlay
-                &&
-                actuallyPlaying
-            ) {
-
-                handleBuffering(
-                    video
-                );
-            }
-        }
-    );
-
-
-    /*
-     * 영상이 다시 재생 가능한 상태가 되면
-     * 7개 전체 상태를 확인.
-     */
-
-    video.addEventListener(
-        "canplay",
-        () => {
-
-            if (
-                wantsToPlay
-                &&
-                !actuallyPlaying
-            ) {
-
-                scheduleResumeCheck();
-            }
-        }
-    );
-
-
-    video.addEventListener(
-        "error",
-        () => {
-
-            console.error(
-                "Video error:",
-                video.id,
-                video.error
-            );
-
-
-            wantsToPlay = false;
-
-
-            freezePlayback();
-
-
-            setStatus(
-                `Video error: ${video.id}`
-            );
-
-
-            playButton.textContent =
-                "재생";
-        }
-    );
 }
-
-
-/* =========================================================
- * Button
- * =========================================================
- */
 
 
 playButton.addEventListener(
     "click",
-    () => {
-
-        togglePlayback();
-    }
+    togglePlayback
 );
 
 
@@ -1590,17 +588,8 @@ forwardButton.addEventListener(
 
 resetButton.addEventListener(
     "click",
-    () => {
-
-        resetPlayback();
-    }
+    resetPlayback
 );
-
-
-/* =========================================================
- * Timeline
- * =========================================================
- */
 
 
 timeline.addEventListener(
@@ -1608,18 +597,10 @@ timeline.addEventListener(
     event => {
 
         seekTo(
-            Number(
-                event.target.value
-            )
+            event.target.value
         );
     }
 );
-
-
-/* =========================================================
- * Keyboard
- * =========================================================
- */
 
 
 window.addEventListener(
@@ -1631,7 +612,6 @@ window.addEventListener(
         ) {
 
             event.preventDefault();
-
 
             togglePlayback();
 
@@ -1680,7 +660,579 @@ window.addEventListener(
 
 
 /* =========================================================
- * 초기화
+ * BEV MAP
+ * =========================================================
+ */
+
+
+const BEV_MAP_PATH =
+    "/map/map.png";
+
+const ZONES_PATH =
+    "/parking/zones.json";
+
+
+const bevCanvas =
+    document.getElementById(
+        "bev-canvas"
+    );
+
+const bevContainer =
+    document.getElementById(
+        "bev-container"
+    );
+
+const bevStatus =
+    document.getElementById(
+        "bev-status"
+    );
+
+
+const bevContext =
+    bevCanvas.getContext(
+        "2d"
+    );
+
+
+const bevImage =
+    new Image();
+
+
+let zoneData = null;
+
+
+const ZONE_COLORS = {
+    A: "#ff5252",
+    B: "#ff9800",
+    C: "#ffc107",
+    D: "#cddc39",
+    E: "#4caf50",
+    F: "#00bcd4",
+    G: "#2196f3",
+    H: "#3f51b5",
+    I: "#673ab7",
+    J: "#9c27b0",
+    K: "#e91e63",
+    L: "#795548",
+    M: "#607d8b",
+    N: "#00e5ff",
+};
+
+
+/*
+ * 현재 occupancy는 아직 실제 추적 결과가 없으므로
+ * 모두 0으로 시작한다.
+ */
+const zoneOccupancy = {};
+
+
+function initializeOccupancy() {
+
+    if (!zoneData) {
+        return;
+    }
+
+
+    for (
+        const zone
+        of zoneData.zones
+    ) {
+
+        zoneOccupancy[
+            zone.id
+        ] = 0;
+    }
+}
+
+
+/*
+ * Canvas 실제 픽셀 크기를
+ * 화면 크기에 맞춘다.
+ *
+ * 고해상도 모니터에서도
+ * 선과 글자가 흐려지지 않도록
+ * devicePixelRatio를 적용한다.
+ */
+function resizeBevCanvas() {
+
+    const width =
+        bevContainer.clientWidth;
+
+    const height =
+        bevContainer.clientHeight;
+
+
+    const dpr =
+        window.devicePixelRatio
+        ||
+        1;
+
+
+    bevCanvas.width =
+        Math.max(
+            1,
+            Math.floor(
+                width * dpr
+            )
+        );
+
+
+    bevCanvas.height =
+        Math.max(
+            1,
+            Math.floor(
+                height * dpr
+            )
+        );
+
+
+    bevCanvas.style.width =
+        `${width}px`;
+
+
+    bevCanvas.style.height =
+        `${height}px`;
+
+
+    bevContext.setTransform(
+        dpr,
+        0,
+        0,
+        dpr,
+        0,
+        0
+    );
+
+
+    drawBev();
+}
+
+
+/*
+ * 지도 이미지가 카드 안에
+ * object-fit: contain처럼 들어가도록
+ * 실제 표시 영역을 계산한다.
+ */
+function calculateMapLayout() {
+
+    const canvasWidth =
+        bevContainer.clientWidth;
+
+    const canvasHeight =
+        bevContainer.clientHeight;
+
+
+    const imageWidth =
+        bevImage.naturalWidth;
+
+    const imageHeight =
+        bevImage.naturalHeight;
+
+
+    if (
+        imageWidth <= 0
+        ||
+        imageHeight <= 0
+    ) {
+
+        return null;
+    }
+
+
+    const scale =
+        Math.min(
+            canvasWidth
+            /
+            imageWidth,
+
+            canvasHeight
+            /
+            imageHeight
+        );
+
+
+    const drawWidth =
+        imageWidth
+        *
+        scale;
+
+
+    const drawHeight =
+        imageHeight
+        *
+        scale;
+
+
+    const offsetX =
+        (
+            canvasWidth
+            -
+            drawWidth
+        )
+        /
+        2;
+
+
+    const offsetY =
+        (
+            canvasHeight
+            -
+            drawHeight
+        )
+        /
+        2;
+
+
+    return {
+        scale,
+        drawWidth,
+        drawHeight,
+        offsetX,
+        offsetY,
+    };
+}
+
+
+function drawZone(
+    zone,
+    layout
+) {
+
+    const box =
+        zone.bndbox;
+
+
+    const x =
+        layout.offsetX
+        +
+        box.xmin
+        *
+        layout.scale;
+
+
+    const y =
+        layout.offsetY
+        +
+        box.ymin
+        *
+        layout.scale;
+
+
+    const width =
+        (
+            box.xmax
+            -
+            box.xmin
+        )
+        *
+        layout.scale;
+
+
+    const height =
+        (
+            box.ymax
+            -
+            box.ymin
+        )
+        *
+        layout.scale;
+
+
+    const color =
+        ZONE_COLORS[
+            zone.id
+        ]
+        ||
+        "#ffffff";
+
+
+    /*
+     * BBOX
+     */
+    bevContext.strokeStyle =
+        color;
+
+
+    bevContext.lineWidth =
+        2;
+
+
+    bevContext.strokeRect(
+        x,
+        y,
+        width,
+        height
+    );
+
+
+    /*
+     * Label
+     */
+    const occupancy =
+        zoneOccupancy[
+            zone.id
+        ]
+        ??
+        0;
+
+
+    const label =
+        `${zone.id} ${occupancy}/${zone.capacity}`;
+
+
+    bevContext.font =
+        "bold 12px Arial";
+
+
+    const textWidth =
+        bevContext.measureText(
+            label
+        ).width;
+
+
+    const labelHeight =
+        19;
+
+
+    const labelWidth =
+        textWidth
+        +
+        10;
+
+
+    /*
+     * 라벨 배경
+     */
+    bevContext.fillStyle =
+        color;
+
+
+    bevContext.fillRect(
+        x,
+        y,
+        labelWidth,
+        labelHeight
+    );
+
+
+    /*
+     * 라벨 글자
+     */
+    bevContext.fillStyle =
+        "#ffffff";
+
+
+    bevContext.fillText(
+        label,
+        x + 5,
+        y + 14
+    );
+}
+
+
+function drawBev() {
+
+    const canvasWidth =
+        bevContainer.clientWidth;
+
+    const canvasHeight =
+        bevContainer.clientHeight;
+
+
+    bevContext.clearRect(
+        0,
+        0,
+        canvasWidth,
+        canvasHeight
+    );
+
+
+    if (
+        !bevImage.complete
+        ||
+        bevImage.naturalWidth === 0
+    ) {
+
+        return;
+    }
+
+
+    const layout =
+        calculateMapLayout();
+
+
+    if (!layout) {
+        return;
+    }
+
+
+    /*
+     * 지도
+     */
+    bevContext.drawImage(
+        bevImage,
+        layout.offsetX,
+        layout.offsetY,
+        layout.drawWidth,
+        layout.drawHeight
+    );
+
+
+    /*
+     * Zone BBOX
+     */
+    if (zoneData) {
+
+        for (
+            const zone
+            of zoneData.zones
+        ) {
+
+            drawZone(
+                zone,
+                layout
+            );
+        }
+    }
+}
+
+
+/*
+ * 나중에 Tracking 결과를 연결할 때
+ * 이 함수만 호출하면 occupancy를 갱신할 수 있다.
+ *
+ * 예:
+ *
+ * setZoneOccupancy("A", 3)
+ */
+function setZoneOccupancy(
+    zoneId,
+    count
+) {
+
+    if (
+        !Object.prototype.hasOwnProperty.call(
+            zoneOccupancy,
+            zoneId
+        )
+    ) {
+
+        return;
+    }
+
+
+    zoneOccupancy[
+        zoneId
+    ] = count;
+
+
+    drawBev();
+}
+
+
+/*
+ * zones.json 로딩
+ */
+async function loadZones() {
+
+    try {
+
+        const response =
+            await fetch(
+                ZONES_PATH
+            );
+
+
+        if (!response.ok) {
+
+            throw new Error(
+                `HTTP ${response.status}`
+            );
+        }
+
+
+        zoneData =
+            await response.json();
+
+
+        initializeOccupancy();
+
+
+        drawBev();
+
+
+        bevStatus.textContent =
+            `${zoneData.zones.length} zones`;
+
+    }
+    catch (error) {
+
+        console.error(
+            "Failed to load zones:",
+            error
+        );
+
+
+        bevStatus.textContent =
+            "zone error";
+    }
+}
+
+
+/*
+ * 지도 이미지 로딩
+ */
+bevImage.addEventListener(
+    "load",
+    () => {
+
+        drawBev();
+    }
+);
+
+
+bevImage.addEventListener(
+    "error",
+    () => {
+
+        console.error(
+            "Failed to load BEV map"
+        );
+
+
+        bevStatus.textContent =
+            "map error";
+    }
+);
+
+
+bevImage.src =
+    BEV_MAP_PATH;
+
+
+/*
+ * BEV 카드 크기가 변하면
+ * Canvas도 자동 재계산한다.
+ */
+const bevResizeObserver =
+    new ResizeObserver(
+        () => {
+
+            resizeBevCanvas();
+        }
+    );
+
+
+bevResizeObserver.observe(
+    bevContainer
+);
+
+
+loadZones();
+
+
+/* =========================================================
+ * INITIALIZE
  * =========================================================
  */
 

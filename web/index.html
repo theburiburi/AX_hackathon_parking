@@ -24,6 +24,7 @@
 
             <div>
                 <h1>AX Parking</h1>
+
                 <p>
                     Synchronized CCTV Playback
                 </p>
@@ -42,14 +43,17 @@
         <main class="content">
 
             <section
-                id="video-grid"
                 class="video-grid"
             >
 
                 <article class="camera-card">
+
                     <div class="camera-header">
                         <span>CAM 01</span>
-                        <span class="camera-time">00:00.000</span>
+
+                        <span class="camera-time">
+                            00:00.000
+                        </span>
                     </div>
 
                     <video
@@ -59,13 +63,18 @@
                         muted
                         playsinline
                     ></video>
+
                 </article>
 
 
                 <article class="camera-card">
+
                     <div class="camera-header">
                         <span>CAM 02</span>
-                        <span class="camera-time">00:00.000</span>
+
+                        <span class="camera-time">
+                            00:00.000
+                        </span>
                     </div>
 
                     <video
@@ -75,13 +84,18 @@
                         muted
                         playsinline
                     ></video>
+
                 </article>
 
 
                 <article class="camera-card">
+
                     <div class="camera-header">
                         <span>CAM 03</span>
-                        <span class="camera-time">00:00.000</span>
+
+                        <span class="camera-time">
+                            00:00.000
+                        </span>
                     </div>
 
                     <video
@@ -91,13 +105,18 @@
                         muted
                         playsinline
                     ></video>
+
                 </article>
 
 
                 <article class="camera-card">
+
                     <div class="camera-header">
                         <span>CAM 05</span>
-                        <span class="camera-time">00:00.000</span>
+
+                        <span class="camera-time">
+                            00:00.000
+                        </span>
                     </div>
 
                     <video
@@ -107,13 +126,18 @@
                         muted
                         playsinline
                     ></video>
+
                 </article>
 
 
                 <article class="camera-card">
+
                     <div class="camera-header">
                         <span>CAM 06</span>
-                        <span class="camera-time">00:00.000</span>
+
+                        <span class="camera-time">
+                            00:00.000
+                        </span>
                     </div>
 
                     <video
@@ -123,13 +147,18 @@
                         muted
                         playsinline
                     ></video>
+
                 </article>
 
 
                 <article class="camera-card">
+
                     <div class="camera-header">
                         <span>CAM 07</span>
-                        <span class="camera-time">00:00.000</span>
+
+                        <span class="camera-time">
+                            00:00.000
+                        </span>
                     </div>
 
                     <video
@@ -139,13 +168,18 @@
                         muted
                         playsinline
                     ></video>
+
                 </article>
 
 
                 <article class="camera-card">
+
                     <div class="camera-header">
                         <span>CAM 08</span>
-                        <span class="camera-time">00:00.000</span>
+
+                        <span class="camera-time">
+                            00:00.000
+                        </span>
                     </div>
 
                     <video
@@ -155,6 +189,34 @@
                         muted
                         playsinline
                     ></video>
+
+                </article>
+
+
+                <!-- BEV MAP -->
+                <article class="camera-card bev-card">
+
+                    <div class="camera-header">
+
+                        <span>BEV MAP</span>
+
+                        <span id="bev-status">
+                            loading...
+                        </span>
+
+                    </div>
+
+                    <div
+                        id="bev-container"
+                        class="bev-container"
+                    >
+
+                        <canvas
+                            id="bev-canvas"
+                        ></canvas>
+
+                    </div>
+
                 </article>
 
             </section>
