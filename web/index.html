@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>AX Parking</title>
+
+    <link
+        rel="stylesheet"
+        href="/web/style.css"
+    >
+</head>
+
+<body>
+
+    <div class="app">
+
+        <header class="header">
+
+            <div>
+                <h1>AX Parking</h1>
+                <p>
+                    Synchronized CCTV Playback
+                </p>
+            </div>
+
+            <div
+                id="camera-status"
+                class="camera-status loading"
+            >
+                0 / 7 cameras ready
+            </div>
+
+        </header>
+
+
+        <main class="content">
+
+            <section
+                id="video-grid"
+                class="video-grid"
+            >
+
+                <article class="camera-card">
+                    <div class="camera-header">
+                        <span>CAM 01</span>
+                        <span class="camera-time">00:00.000</span>
+                    </div>
+
+                    <video
+                        id="cam01"
+                        src="/media/scene1/260914_1.mp4"
+                        preload="metadata"
+                        muted
+                        playsinline
+                    ></video>
+                </article>
+
+
+                <article class="camera-card">
+                    <div class="camera-header">
+                        <span>CAM 02</span>
+                        <span class="camera-time">00:00.000</span>
+                    </div>
+
+                    <video
+                        id="cam02"
+                        src="/media/scene1/260914_2.mp4"
+                        preload="metadata"
+                        muted
+                        playsinline
+                    ></video>
+                </article>
+
+
+                <article class="camera-card">
+                    <div class="camera-header">
+                        <span>CAM 03</span>
+                        <span class="camera-time">00:00.000</span>
+                    </div>
+
+                    <video
+                        id="cam03"
+                        src="/media/scene1/260914_3.mp4"
+                        preload="metadata"
+                        muted
+                        playsinline
+                    ></video>
+                </article>
+
+
+                <article class="camera-card">
+                    <div class="camera-header">
+                        <span>CAM 05</span>
+                        <span class="camera-time">00:00.000</span>
+                    </div>
+
+                    <video
+                        id="cam05"
+                        src="/media/scene1/260914_5.mp4"
+                        preload="metadata"
+                        muted
+                        playsinline
+                    ></video>
+                </article>
+
+
+                <article class="camera-card">
+                    <div class="camera-header">
+                        <span>CAM 06</span>
+                        <span class="camera-time">00:00.000</span>
+                    </div>
+
+                    <video
+                        id="cam06"
+                        src="/media/scene1/260914_6.mp4"
+                        preload="metadata"
+                        muted
+                        playsinline
+                    ></video>
+                </article>
+
+
+                <article class="camera-card">
+                    <div class="camera-header">
+                        <span>CAM 07</span>
+                        <span class="camera-time">00:00.000</span>
+                    </div>
+
+                    <video
+                        id="cam07"
+                        src="/media/scene1/260914_7.mp4"
+                        preload="metadata"
+                        muted
+                        playsinline
+                    ></video>
+                </article>
+
+
+                <article class="camera-card">
+                    <div class="camera-header">
+                        <span>CAM 08</span>
+                        <span class="camera-time">00:00.000</span>
+                    </div>
+
+                    <video
+                        id="cam08"
+                        src="/media/scene1/260914_8.mp4"
+                        preload="metadata"
+                        muted
+                        playsinline
+                    ></video>
+                </article>
+
+            </section>
+
+        </main>
+
+
+        <footer class="controls">
+
+            <div class="button-row">
+
+                <button id="back-button">
+                    -5초
+                </button>
+
+                <button
+                    id="play-button"
+                    class="primary-button"
+                    disabled
+                >
+                    재생
+                </button>
+
+                <button id="forward-button">
+                    +5초
+                </button>
+
+                <button id="reset-button">
+                    처음
+                </button>
+
+            </div>
+
+
+            <div class="timeline-row">
+
+                <span id="current-time">
+                    00:00.000
+                </span>
+
+                <input
+                    id="timeline"
+                    type="range"
+                    min="0"
+                    max="0"
+                    step="0.01"
+                    value="0"
+                >
+
+                <span id="duration-time">
+                    00:00.000
+                </span>
+
+            </div>
+
+
+            <div class="help">
+                Space : 재생/일시정지
+                ·
+                A/D : -5초/+5초
+                ·
+                R : 처음
+            </div>
+
+        </footer>
+
+    </div>
+
+
+    <script
+        src="/web/app.js"
+    ></script>
+
+</body>
+</html>

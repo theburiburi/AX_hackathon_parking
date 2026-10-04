@@ -1,0 +1,352 @@
+* {
+    box-sizing: border-box;
+}
+
+
+html,
+body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+}
+
+
+body {
+    overflow: hidden;
+
+    background:
+        #0f1115;
+
+    color:
+        #f3f5f7;
+
+    font-family:
+        Arial,
+        "Noto Sans KR",
+        sans-serif;
+}
+
+
+button,
+input {
+    font: inherit;
+}
+
+
+.app {
+    width: 100vw;
+    height: 100vh;
+
+    display: grid;
+
+    grid-template-rows:
+        auto
+        minmax(0, 1fr)
+        auto;
+}
+
+
+.header {
+    min-height: 68px;
+
+    padding:
+        10px
+        20px;
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content:
+        space-between;
+
+    background:
+        #181b20;
+
+    border-bottom:
+        1px solid #30343b;
+}
+
+
+.header h1 {
+    margin: 0;
+
+    font-size: 22px;
+}
+
+
+.header p {
+    margin:
+        4px 0 0;
+
+    color:
+        #9299a3;
+
+    font-size:
+        12px;
+}
+
+
+.camera-status {
+    font-size:
+        13px;
+
+    font-weight:
+        bold;
+}
+
+
+.camera-status.loading {
+    color:
+        #e8bd63;
+}
+
+
+.camera-status.ready {
+    color:
+        #67d789;
+}
+
+
+.content {
+    min-height: 0;
+
+    padding: 8px;
+
+    overflow: hidden;
+}
+
+
+.video-grid {
+    width: 100%;
+    height: 100%;
+
+    display: grid;
+
+    grid-template-columns:
+        repeat(
+            4,
+            minmax(0, 1fr)
+        );
+
+    grid-template-rows:
+        repeat(
+            2,
+            minmax(0, 1fr)
+        );
+
+    gap: 7px;
+
+    justify-content:
+        center;
+}
+
+
+.camera-card {
+    min-width: 0;
+    min-height: 0;
+
+    overflow: hidden;
+
+    display: grid;
+
+    grid-template-rows:
+        30px
+        minmax(0, 1fr);
+
+    background:
+        #060708;
+
+    border:
+        1px solid #30343b;
+
+    border-radius:
+        6px;
+}
+
+
+.camera-header {
+    padding:
+        0
+        9px;
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content:
+        space-between;
+
+    background:
+        #1b1f25;
+
+    font-size:
+        12px;
+
+    font-weight:
+        bold;
+}
+
+
+.camera-time {
+    color:
+        #9299a3;
+
+    font-family:
+        Consolas,
+        monospace;
+
+    font-weight:
+        normal;
+}
+
+
+.camera-card video {
+    width: 100%;
+    height: 100%;
+
+    display: block;
+
+    object-fit: contain;
+
+    background:
+        black;
+}
+
+
+.controls {
+    padding:
+        10px
+        20px;
+
+    display: grid;
+
+    gap: 9px;
+
+    background:
+        #181b20;
+
+    border-top:
+        1px solid #30343b;
+}
+
+
+.button-row {
+    display: flex;
+
+    justify-content:
+        center;
+
+    gap: 8px;
+}
+
+
+button {
+    min-width:
+        72px;
+
+    padding:
+        7px
+        14px;
+
+    background:
+        #282d35;
+
+    color:
+        white;
+
+    border:
+        1px solid #3b414a;
+
+    border-radius:
+        5px;
+
+    cursor:
+        pointer;
+}
+
+
+button:hover {
+    background:
+        #343a44;
+}
+
+
+button:disabled {
+    opacity:
+        0.4;
+
+    cursor:
+        default;
+}
+
+
+.primary-button {
+    min-width:
+        100px;
+
+    background:
+        #f1f3f5;
+
+    color:
+        #111318;
+
+    border-color:
+        #f1f3f5;
+
+    font-weight:
+        bold;
+}
+
+
+.primary-button:hover {
+    background:
+        white;
+}
+
+
+.timeline-row {
+    display: grid;
+
+    grid-template-columns:
+        80px
+        minmax(0, 1fr)
+        80px;
+
+    align-items:
+        center;
+
+    gap:
+        10px;
+
+    font-family:
+        Consolas,
+        monospace;
+
+    font-size:
+        13px;
+}
+
+
+.timeline-row span:last-child {
+    text-align:
+        right;
+}
+
+
+.timeline {
+    width:
+        100%;
+}
+
+
+.help {
+    text-align:
+        center;
+
+    color:
+        #858d98;
+
+    font-size:
+        11px;
+}
