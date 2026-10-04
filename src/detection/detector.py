@@ -49,7 +49,9 @@ class VehicleDetector:
 
         self.config = self._load_config()
 
-        model_config = self.config["model"]
+        model_config = self.config[
+            "model"
+        ]
 
         inference_config = self.config[
             "inference"
@@ -89,11 +91,9 @@ class VehicleDetector:
             )
         )
 
-        self.half = bool(
-            inference_config.get(
-                "half",
-                True,
-            )
+        self.quantize = inference_config.get(
+            "quantize",
+            16,
         )
 
         self.batch_size = int(
@@ -109,6 +109,8 @@ class VehicleDetector:
                 [],
             )
         )
+
+        self._validate_quantize()
 
         self._validate_device()
 
@@ -128,6 +130,26 @@ class VehicleDetector:
         print(
             f"Target classes: "
             f"{sorted(self.target_class_names)}"
+        )
+
+        print(
+            f"Image size: "
+            f"{self.imgsz}"
+        )
+
+        print(
+            f"Confidence threshold: "
+            f"{self.conf}"
+        )
+
+        print(
+            f"IoU threshold: "
+            f"{self.iou}"
+        )
+
+        print(
+            f"Inference precision: "
+            f"FP{self.quantize}"
         )
 
         print(
@@ -151,9 +173,58 @@ class VehicleDetector:
             encoding="utf-8",
         ) as file:
 
-            return yaml.safe_load(
+            config = yaml.safe_load(
                 file
             )
+
+        if not isinstance(
+            config,
+            dict,
+        ):
+
+            raise ValueError(
+                "Detection config must be a YAML object."
+            )
+
+        return config
+
+    def _validate_quantize(
+        self,
+    ) -> None:
+
+        valid_values = {
+            16,
+            32,
+            "16",
+            "32",
+            "fp16",
+            "fp32",
+        }
+
+        if (
+            self.quantize
+            not in valid_values
+        ):
+
+            raise ValueError(
+                "현재 PyTorch 추론 설정에서는 "
+                "quantize를 16 또는 32로 사용하세요. "
+                f"현재 값: {self.quantize}"
+            )
+
+        if self.quantize in {
+            "16",
+            "fp16",
+        }:
+
+            self.quantize = 16
+
+        elif self.quantize in {
+            "32",
+            "fp32",
+        }:
+
+            self.quantize = 32
 
     def _validate_device(
         self,
@@ -163,6 +234,7 @@ class VehicleDetector:
             self.device,
             int,
         ):
+
             raise ValueError(
                 "현재 프로젝트는 CUDA GPU 사용을 "
                 "전제로 합니다. "
@@ -182,6 +254,9 @@ class VehicleDetector:
 
         if (
             self.device
+            < 0
+            or
+            self.device
             >=
             gpu_count
         ):
@@ -197,10 +272,14 @@ class VehicleDetector:
             )
         )
 
-        total_memory = (
+        properties = (
             torch.cuda.get_device_properties(
                 self.device
-            ).total_memory
+            )
+        )
+
+        total_memory_gb = (
+            properties.total_memory
             /
             1024**3
         )
@@ -217,7 +296,7 @@ class VehicleDetector:
 
         print(
             f"VRAM: "
-            f"{total_memory:.2f} GB"
+            f"{total_memory_gb:.2f} GB"
         )
 
     def _resolve_class_ids(
@@ -228,10 +307,13 @@ class VehicleDetector:
 
         class_ids = []
 
-        for class_id, name in names.items():
+        for (
+            class_id,
+            class_name,
+        ) in names.items():
 
             if (
-                name
+                class_name
                 in
                 self.target_class_names
             ):
@@ -246,17 +328,17 @@ class VehicleDetector:
             in class_ids
         }
 
-        missing = (
+        missing_names = (
             self.target_class_names
             -
             resolved_names
         )
 
-        if missing:
+        if missing_names:
 
             raise ValueError(
                 "YOLO 모델에 없는 클래스가 있습니다: "
-                f"{sorted(missing)}"
+                f"{sorted(missing_names)}"
             )
 
         return class_ids
@@ -319,7 +401,7 @@ class VehicleDetector:
             iou=self.iou,
             classes=self.class_ids,
             device=self.device,
-            half=self.half,
+            quantize=self.quantize,
             verbose=False,
         )
 
@@ -342,15 +424,17 @@ class VehicleDetector:
 
         all_detections = []
 
-        for start in range(
+        for start_index in range(
             0,
             len(frames),
             self.batch_size,
         ):
 
             batch = frames[
-                start:
-                start + self.batch_size
+                start_index:
+                start_index
+                +
+                self.batch_size
             ]
 
             results = self.model.predict(
@@ -360,16 +444,20 @@ class VehicleDetector:
                 iou=self.iou,
                 classes=self.class_ids,
                 device=self.device,
-                half=self.half,
+                quantize=self.quantize,
                 verbose=False,
             )
 
             for result in results:
 
-                all_detections.append(
+                detections = (
                     self._convert_result(
                         result
                     )
+                )
+
+                all_detections.append(
+                    detections
                 )
 
         return all_detections

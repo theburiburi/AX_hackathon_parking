@@ -6,11 +6,12 @@ inference:
   imgsz: 960
   conf: 0.20
   iou: 0.70
-  half: true
+
+  # 16 = FP16
+  # 32 = FP32
+  quantize: 16
 
   # 한 번의 YOLO inference에 넣을 카메라 수
-  # RTX 5070 12GB에서 먼저 7로 테스트
-  # OOM 발생 시 4 또는 2로 낮추면 됨
   batch_size: 7
 
 classes:
@@ -46,10 +47,6 @@ display:
   show: true
   show_confidence: true
   line_width: 2
-
-  # 7개 CCTV를 한 창에 표시
   grid_columns: 4
-
-  # 전체 OpenCV 창 크기
   width: 1600
   height: 850
