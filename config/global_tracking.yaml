@@ -1,36 +1,129 @@
 global_tracking:
+
+  # =======================================================
+  # BASIC
+  # =======================================================
+
+  # Global Tracking 기능 사용 여부.
   enabled: true
 
-  # 다른 local track을 기존 Global ID와 연결할 수 있는
-  # 최대 시간 차이.
+
+  # =======================================================
+  # EARLY GLOBAL PROBE
+  # =======================================================
+
+  # UNKNOWN 차량에서 움직임 후보가 이 시간 이상 지속되면
+  # ACTIVE 확정 전부터 기존 Global ID 탐색을 시작한다.
+  #
+  # LocalTracker의 unknown_to_active_sec보다 짧게 둬야
+  # 글로벌 ID를 미리 준비할 수 있다.
+  probe_motion_sec: 0.35
+
+  # UNKNOWN 차량의 provisional 후보 정보를
+  # 마지막 관측 후 얼마나 유지할지.
+  probe_retention_sec: 3.0
+
+  # 같은 Global ID가 연속으로 이 횟수만큼
+  # 최적 후보로 선택되어야 provisional GID로 인정한다.
+  provisional_confirm_count: 3
+
+  # 1등 후보와 2등 후보의 score 차이가
+  # 이 값보다 작으면 애매한 상황으로 보고
+  # provisional GID를 결정하지 않는다.
+  min_score_margin: 0.15
+
+
+  # =======================================================
+  # RE-ID TIME / DISTANCE
+  # =======================================================
+
+  # 기존 Global Track이 마지막으로 관측된 후
+  # 이 시간 이내에 등장한 Local Track만
+  # 같은 차량 후보로 고려한다.
   max_reid_gap_sec: 3.0
 
-  # 시간 차이가 거의 없을 때도 허용하는 기본 BEV 거리.
+  # 시간 차이가 거의 없을 때 허용할 기본 BEV 거리.
   base_match_distance_px: 80.0
 
-  # 아무리 시간이 지나도 이 거리 이상이면
+  # 시간이 지나더라도 이 거리보다 멀면
   # 같은 차량으로 연결하지 않는다.
   max_match_distance_px: 300.0
 
-  # 시간 차이에 따라 허용 BEV 거리를 증가시키는 값.
+  # 시간 차이에 따라 허용 거리를 늘릴 때 사용하는 값.
+  #
   # allowed_distance =
   # base_match_distance_px
   # + max_speed_px_per_sec * time_gap
   max_speed_px_per_sec: 180.0
 
-  # 매칭 score에서 시간 차이가 차지하는 비중.
-  time_weight: 0.25
 
-  # YOLO class가 서로 다를 경우 score에 추가되는 penalty.
-  # car <-> truck 오분류 때문에 hard reject는 하지 않는다.
+  # =======================================================
+  # BEV MOTION HISTORY
+  # =======================================================
+
+  # 최근 몇 초의 BEV 위치를 사용해서
+  # 진행 방향과 속도를 계산할지.
+  motion_history_sec: 0.8
+
+  # 방향 비교를 사용하기 위한 최소 BEV 속도.
+  #
+  # 너무 느린 차량은 bbox 흔들림으로 방향이 불안정하므로
+  # 방향 score를 사용하지 않는다.
+  min_direction_speed_px_per_sec: 15.0
+
+
+  # =======================================================
+  # MATCH SCORE
+  # =======================================================
+
+  # 예상 위치와 실제 위치 차이의 비중.
+  # 가장 중요하게 본다.
+  prediction_weight: 0.55
+
+  # 기존 차량 진행 방향과
+  # 새 차량 진행 방향 차이의 비중.
+  direction_weight: 0.25
+
+  # 두 차량의 시간 차이에 대한 비중.
+  time_weight: 0.10
+
+  # 기존 차량 속도와 새 차량 속도 차이의 비중.
+  speed_weight: 0.10
+
+  # 두 차량의 방향 차이가 이 각도 정도가 되면
+  # 방향 score가 상당히 나빠진다.
+  direction_soft_limit_deg: 60.0
+
+  # 방향 차이가 이 각도보다 크면
+  # 같은 차량 후보에서 완전히 제외한다.
+  direction_hard_limit_deg: 120.0
+
+  # YOLO class가 다를 경우 추가 penalty.
+  #
+  # car / truck 오분류 가능성이 있으므로
+  # hard reject는 하지 않는다.
   class_mismatch_penalty: 0.20
 
-  # 최종 score가 이 값보다 크면 기존 ID와 연결하지 않는다.
-  max_match_score: 1.25
+  # 최종 score가 이 값보다 크면
+  # 기존 Global ID와 연결하지 않는다.
+  #
+  # score는 낮을수록 같은 차량일 가능성이 높다.
+  max_match_score: 0.95
+
+
+  # =======================================================
+  # TRACK RETENTION
+  # =======================================================
 
   # 관측이 끊긴 GlobalTrack을 메모리에 보관하는 시간.
-  # 동일 local ID와의 binding 자체는 유지한다.
   retention_sec: 120.0
 
-  # Global ID 생성/연결 이벤트 출력
-  print_events: true
+
+  # =======================================================
+  # DEBUG
+  # =======================================================
+
+  # Global ID 생성/연결 이벤트 출력 여부.
+  # server.py에서는 현재 False로 강제하고 있으므로
+  # 일반 실행에서는 로그가 출력되지 않는다.
+  print_events: false

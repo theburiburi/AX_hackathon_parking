@@ -5,6 +5,8 @@ import copy
 import json
 import math
 import threading
+
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -22,50 +24,164 @@ from starlette.types import (
     Send,
 )
 
-
-ROOT = Path(__file__).resolve().parent
-
-WEB_DIR = ROOT / "web"
-VIDEO_DIR = ROOT / "data" / "videos"
-MAP_DIR = ROOT / "data" / "maps"
-PARKING_DIR = ROOT / "data" / "parking"
-
-DETECTION_CONFIG_PATH = (
-    ROOT
-    / "config"
-    / "detection.yaml"
-)
-
-TRACKING_CONFIG_PATH = (
-    ROOT
-    / "config"
-    / "tracking.yaml"
-)
-
-GLOBAL_TRACKING_CONFIG_PATH = (
-    ROOT
-    / "config"
-    / "global_tracking.yaml"
-)
-
-DETECTION_CACHE_PATH = (
-    ROOT
-    / "data"
-    / "detections"
-    / "scene1"
-    / "detections.jsonl"
-)
-
-CHECKPOINT_INTERVAL_SEC = 10.0
-
-
 from src.calibration import CameraProjector
 
 from src.tracking import (
     GlobalObservation,
     GlobalTracker,
     LocalTracker,
+    TrackState,
 )
+
+
+ROOT = Path(__file__).resolve().parent
+
+WEB_DIR = (
+    ROOT
+    /
+    "web"
+)
+
+VIDEO_DIR = (
+    ROOT
+    /
+    "data"
+    /
+    "videos"
+)
+
+MAP_DIR = (
+    ROOT
+    /
+    "data"
+    /
+    "maps"
+)
+
+PARKING_DIR = (
+    ROOT
+    /
+    "data"
+    /
+    "parking"
+)
+
+
+DETECTION_CONFIG_PATH = (
+    ROOT
+    /
+    "config"
+    /
+    "detection.yaml"
+)
+
+TRACKING_CONFIG_PATH = (
+    ROOT
+    /
+    "config"
+    /
+    "tracking.yaml"
+)
+
+GLOBAL_TRACKING_CONFIG_PATH = (
+    ROOT
+    /
+    "config"
+    /
+    "global_tracking.yaml"
+)
+
+DETECTION_CACHE_PATH = (
+    ROOT
+    /
+    "data"
+    /
+    "detections"
+    /
+    "scene1"
+    /
+    "detections.jsonl"
+)
+
+
+CHECKPOINT_INTERVAL_SEC = 10.0
+
+
+# =========================================================
+# Quiet asyncio errors
+# =========================================================
+
+
+def quiet_asyncio_exception_handler(
+    loop: asyncio.AbstractEventLoop,
+    context: dict,
+) -> None:
+
+    """
+    Windows에서 브라우저가 MP4 Range 연결을 먼저 끊을 때
+    ProactorEventLoop가 출력하는 WinError 10054만 무시한다.
+
+    그 외 asyncio 오류는 기존 기본 handler로 전달한다.
+    """
+
+    exception = context.get(
+        "exception"
+    )
+
+    if (
+        isinstance(
+            exception,
+            ConnectionResetError,
+        )
+        and
+        getattr(
+            exception,
+            "winerror",
+            None,
+        )
+        ==
+        10054
+    ):
+
+        return
+
+    # 일부 환경에서는 같은 오류가 OSError 계열로 들어올 수 있다.
+    if (
+        isinstance(
+            exception,
+            OSError,
+        )
+        and
+        getattr(
+            exception,
+            "winerror",
+            None,
+        )
+        ==
+        10054
+    ):
+
+        return
+
+    loop.default_exception_handler(
+        context
+    )
+
+
+@asynccontextmanager
+async def lifespan(
+    app: FastAPI,
+):
+
+    loop = (
+        asyncio.get_running_loop()
+    )
+
+    loop.set_exception_handler(
+        quiet_asyncio_exception_handler
+    )
+
+    yield
 
 
 # =========================================================
@@ -74,16 +190,18 @@ from src.tracking import (
 
 
 class QuietCancelledErrorMiddleware:
+
     """
-    Ctrl+C 종료 중 브라우저의 MP4 Range 요청이나
-    API 요청이 취소될 때 발생하는 CancelledError를
-    정상적인 서버 종료로 취급한다.
+    Ctrl+C 종료 중 브라우저의 MP4 요청이나
+    API 요청이 취소되면서 발생하는 CancelledError를
+    정상 종료로 처리한다.
     """
 
     def __init__(
         self,
         app: ASGIApp,
     ):
+
         self.app = app
 
     async def __call__(
@@ -92,7 +210,9 @@ class QuietCancelledErrorMiddleware:
         receive: Receive,
         send: Send,
     ) -> None:
+
         try:
+
             await self.app(
                 scope,
                 receive,
@@ -100,6 +220,7 @@ class QuietCancelledErrorMiddleware:
             )
 
         except asyncio.CancelledError:
+
             return
 
 
@@ -110,6 +231,7 @@ class QuietCancelledErrorMiddleware:
 
 app = FastAPI(
     title="AX Parking",
+    lifespan=lifespan,
 )
 
 
@@ -126,6 +248,7 @@ app.mount(
     name="web",
 )
 
+
 app.mount(
     "/media",
     StaticFiles(
@@ -134,6 +257,7 @@ app.mount(
     name="media",
 )
 
+
 app.mount(
     "/map",
     StaticFiles(
@@ -141,6 +265,7 @@ app.mount(
     ),
     name="map",
 )
+
 
 app.mount(
     "/parking",
@@ -161,6 +286,7 @@ def load_yaml(
 ) -> dict:
 
     if not path.exists():
+
         return {}
 
     with path.open(
@@ -173,6 +299,7 @@ def load_yaml(
         )
 
     if data is None:
+
         return {}
 
     return data
@@ -232,11 +359,16 @@ class DetectionCacheStore:
 
             while True:
 
-                offset = file.tell()
+                offset = (
+                    file.tell()
+                )
 
-                line = file.readline()
+                line = (
+                    file.readline()
+                )
 
                 if not line:
+
                     break
 
                 self.offsets.append(
@@ -260,7 +392,9 @@ class DetectionCacheStore:
         if (
             frame_index < 0
             or
-            frame_index >= self.frame_count
+            frame_index
+            >=
+            self.frame_count
         ):
 
             raise IndexError(
@@ -274,7 +408,9 @@ class DetectionCacheStore:
             ]
         )
 
-        line = self.file.readline()
+        line = (
+            self.file.readline()
+        )
 
         if not line:
 
@@ -283,9 +419,11 @@ class DetectionCacheStore:
                 f"frame {frame_index}"
             )
 
-        frame_data = json.loads(
-            line.decode(
-                "utf-8"
+        frame_data = (
+            json.loads(
+                line.decode(
+                    "utf-8"
+                )
             )
         )
 
@@ -401,6 +539,10 @@ class TrackingEngine:
 
         self.nominal_fps = 30.0
 
+        # UNKNOWN에서 움직임 후보가 시작된 뒤
+        # 이 시간이 지나면 Global Re-ID probe 시작.
+        self.global_probe_motion_sec = 0.35
+
         self.checkpoint_interval_frames = (
             300
         )
@@ -466,6 +608,15 @@ class TrackingEngine:
                 self.tracking_config.get(
                     "nominal_fps",
                     30.0,
+                )
+            )
+
+            self.global_probe_motion_sec = (
+                float(
+                    self.global_tracking_config.get(
+                        "probe_motion_sec",
+                        0.35,
+                    )
                 )
             )
 
@@ -747,7 +898,7 @@ class TrackingEngine:
             time_weight=float(
                 config.get(
                     "time_weight",
-                    0.25,
+                    0.10,
                 )
             ),
 
@@ -761,7 +912,7 @@ class TrackingEngine:
             max_match_score=float(
                 config.get(
                     "max_match_score",
-                    1.25,
+                    0.95,
                 )
             ),
 
@@ -772,11 +923,81 @@ class TrackingEngine:
                 )
             ),
 
+            motion_history_sec=float(
+                config.get(
+                    "motion_history_sec",
+                    0.8,
+                )
+            ),
+
+            prediction_weight=float(
+                config.get(
+                    "prediction_weight",
+                    0.55,
+                )
+            ),
+
+            direction_weight=float(
+                config.get(
+                    "direction_weight",
+                    0.25,
+                )
+            ),
+
+            speed_weight=float(
+                config.get(
+                    "speed_weight",
+                    0.10,
+                )
+            ),
+
+            direction_soft_limit_deg=float(
+                config.get(
+                    "direction_soft_limit_deg",
+                    60.0,
+                )
+            ),
+
+            direction_hard_limit_deg=float(
+                config.get(
+                    "direction_hard_limit_deg",
+                    120.0,
+                )
+            ),
+
+            min_direction_speed_px_per_sec=float(
+                config.get(
+                    "min_direction_speed_px_per_sec",
+                    15.0,
+                )
+            ),
+
+            provisional_confirm_count=int(
+                config.get(
+                    "provisional_confirm_count",
+                    3,
+                )
+            ),
+
+            min_score_margin=float(
+                config.get(
+                    "min_score_margin",
+                    0.15,
+                )
+            ),
+
+            probe_retention_sec=float(
+                config.get(
+                    "probe_retention_sec",
+                    3.0,
+                )
+            ),
+
             print_events=False,
         )
 
     # =====================================================
-    # Checkpoint
+    # Checkpoints
     # =====================================================
 
     def _save_checkpoint(
@@ -802,6 +1023,9 @@ class TrackingEngine:
         target_frame: int,
     ) -> None:
 
+        # 체크포인트는 해당 frame을 처리한 뒤의 상태다.
+        # target과 같은 checkpoint를 사용하면
+        # 같은 frame이 두 번 반영되므로 작은 checkpoint만 사용.
         available = [
 
             frame_index
@@ -809,9 +1033,11 @@ class TrackingEngine:
             for frame_index
             in self.checkpoints.keys()
 
-            if frame_index
-            <=
-            target_frame
+            if (
+                frame_index
+                <
+                target_frame
+            )
         ]
 
         if not available:
@@ -899,6 +1125,79 @@ class TrackingEngine:
             ),
         )
 
+    @staticmethod
+    def _make_global_observation(
+        camera_id: str,
+        track,
+        bev_x: float,
+        bev_y: float,
+        timestamp: float,
+    ) -> GlobalObservation:
+
+        return GlobalObservation(
+
+            camera_id=camera_id,
+
+            local_id=(
+                track.local_id
+            ),
+
+            state=(
+                track.state
+            ),
+
+            class_name=(
+                track.class_name
+            ),
+
+            confidence=(
+                track.confidence
+            ),
+
+            bev_x=bev_x,
+
+            bev_y=bev_y,
+
+            timestamp=timestamp,
+        )
+
+    def _should_probe_unknown(
+        self,
+        track,
+        timestamp: float,
+    ) -> bool:
+
+        if (
+            track.state
+            !=
+            TrackState.UNKNOWN
+        ):
+
+            return False
+
+        if track.has_moved:
+
+            return False
+
+        if (
+            track.moving_candidate_since
+            is None
+        ):
+
+            return False
+
+        moving_candidate_duration = (
+            timestamp
+            -
+            track.moving_candidate_since
+        )
+
+        return (
+            moving_candidate_duration
+            >=
+            self.global_probe_motion_sec
+        )
+
     # =====================================================
     # Frame Processing
     # =====================================================
@@ -926,7 +1225,7 @@ class TrackingEngine:
         cached_cameras = (
             frame_data.get(
                 "cameras",
-                {}
+                {},
             )
         )
 
@@ -936,7 +1235,7 @@ class TrackingEngine:
         ] = {}
 
         # -------------------------------------------------
-        # Local Tracking
+        # 1. Local Tracking
         # -------------------------------------------------
 
         for camera_id in (
@@ -961,10 +1260,13 @@ class TrackingEngine:
             ]
 
             tracked = (
+
                 self.local_trackers[
                     camera_id
                 ].update(
+
                     detections=detections,
+
                     timestamp=timestamp,
                 )
             )
@@ -974,12 +1276,14 @@ class TrackingEngine:
             ] = tracked
 
         # -------------------------------------------------
-        # BEV
+        # 2. BEV Projection
         # -------------------------------------------------
 
-        bev_items = []
+        confirmed_observations = []
 
-        global_observations = []
+        probe_observations = []
+
+        bev_items = []
 
         for camera_id in (
             self.camera_ids
@@ -1005,7 +1309,18 @@ class TrackingEngine:
                     tracked.track
                 )
 
-                if not track.has_moved:
+                should_probe = (
+                    self._should_probe_unknown(
+                        track,
+                        timestamp,
+                    )
+                )
+
+                if (
+                    not track.has_moved
+                    and
+                    not should_probe
+                ):
 
                     continue
 
@@ -1013,7 +1328,9 @@ class TrackingEngine:
 
                     bev_x, bev_y = (
                         projector.project(
+
                             track.ground_x,
+
                             track.ground_y,
                         )
                     )
@@ -1034,89 +1351,77 @@ class TrackingEngine:
 
                     continue
 
-                item = {
+                observation = (
+                    self._make_global_observation(
 
-                    "camera_id":
                         camera_id,
 
-                    "local_id":
-                        track.local_id,
+                        track,
 
-                    "global_id":
-                        None,
+                        bev_x,
 
-                    "state":
-                        track.state.value,
+                        bev_y,
 
-                    "class_name":
-                        track.class_name,
-
-                    "confidence":
-                        float(
-                            track.confidence
-                        ),
-
-                    "x":
-                        float(
-                            bev_x
-                        ),
-
-                    "y":
-                        float(
-                            bev_y
-                        ),
-
-                    "stopped_seconds":
-                        float(
-                            track.stopped_duration(
-                                timestamp
-                            )
-                        ),
-                }
-
-                bev_items.append(
-                    item
+                        timestamp,
+                    )
                 )
 
-                if (
-                    self.global_enabled
-                    and
-                    self.global_tracker
-                    is not None
-                ):
+                if track.has_moved:
 
-                    global_observations.append(
+                    confirmed_observations.append(
+                        observation
+                    )
 
-                        GlobalObservation(
+                    bev_items.append(
+                        {
 
-                            camera_id=
+                            "camera_id":
                                 camera_id,
 
-                            local_id=
+                            "local_id":
                                 track.local_id,
 
-                            state=
-                                track.state,
+                            "global_id":
+                                None,
 
-                            class_name=
+                            "state":
+                                track.state.value,
+
+                            "class_name":
                                 track.class_name,
 
-                            confidence=
-                                track.confidence,
+                            "confidence":
+                                float(
+                                    track.confidence
+                                ),
 
-                            bev_x=
-                                bev_x,
+                            "x":
+                                float(
+                                    bev_x
+                                ),
 
-                            bev_y=
-                                bev_y,
+                            "y":
+                                float(
+                                    bev_y
+                                ),
 
-                            timestamp=
-                                timestamp,
-                        )
+                            "stopped_seconds":
+                                float(
+                                    track.stopped_duration(
+                                        timestamp
+                                    )
+                                ),
+                        }
+                    )
+
+                elif should_probe:
+
+                    probe_observations.append(
+                        observation
                     )
 
         # -------------------------------------------------
-        # Global Tracking
+        # 3. Confirmed Global Tracking
         # -------------------------------------------------
 
         assignments = {}
@@ -1131,26 +1436,40 @@ class TrackingEngine:
             assignments = (
                 self.global_tracker.update(
 
-                    observations=
-                        global_observations,
+                    observations=(
+                        confirmed_observations
+                    ),
 
-                    timestamp=
-                        timestamp,
+                    timestamp=timestamp,
                 )
             )
 
+            for observation in (
+                probe_observations
+            ):
+
+                self.global_tracker.probe_existing(
+                    observation
+                )
+
+        # -------------------------------------------------
+        # 4. BEV Global IDs
+        # -------------------------------------------------
+
         for item in bev_items:
+
+            local_key = (
+                item[
+                    "camera_id"
+                ],
+                item[
+                    "local_id"
+                ],
+            )
 
             global_id = (
                 assignments.get(
-                    (
-                        item[
-                            "camera_id"
-                        ],
-                        item[
-                            "local_id"
-                        ],
-                    )
+                    local_key
                 )
             )
 
@@ -1163,14 +1482,7 @@ class TrackingEngine:
 
                 global_id = (
                     self.global_tracker.get_global_id(
-
-                        item[
-                            "camera_id"
-                        ],
-
-                        item[
-                            "local_id"
-                        ],
+                        *local_key
                     )
                 )
 
@@ -1179,7 +1491,7 @@ class TrackingEngine:
             ] = global_id
 
         # -------------------------------------------------
-        # Camera Overlay Result
+        # 5. Camera Overlay Result
         # -------------------------------------------------
 
         cameras_result = {}
@@ -1206,6 +1518,8 @@ class TrackingEngine:
 
                 global_id = None
 
+                provisional_global_id = None
+
                 if (
                     self.global_tracker
                     is not None
@@ -1213,6 +1527,15 @@ class TrackingEngine:
 
                     global_id = (
                         self.global_tracker.get_global_id(
+
+                            camera_id,
+
+                            track.local_id,
+                        )
+                    )
+
+                    provisional_global_id = (
+                        self.global_tracker.get_provisional_global_id(
 
                             camera_id,
 
@@ -1254,6 +1577,16 @@ class TrackingEngine:
                                     global_id
                                 )
                                 if global_id
+                                is not None
+                                else None
+                            ),
+
+                        "provisional_global_id":
+                            (
+                                int(
+                                    provisional_global_id
+                                )
+                                if provisional_global_id
                                 is not None
                                 else None
                             ),
@@ -1389,16 +1722,10 @@ class TrackingEngine:
                     target_frame
                 )
 
-            start_frame = (
-                self.current_frame
-                +
-                1
-            )
-
             result = None
 
             for frame_index in range(
-                start_frame,
+                self.current_frame + 1,
                 target_frame + 1,
             ):
 
@@ -1410,19 +1737,11 @@ class TrackingEngine:
 
             if result is None:
 
-                if self.last_result is None:
-
-                    result = (
-                        self._process_frame(
-                            target_frame
-                        )
+                result = (
+                    self._process_frame(
+                        target_frame
                     )
-
-                else:
-
-                    result = (
-                        self.last_result
-                    )
+                )
 
             return result
 
@@ -1465,6 +1784,11 @@ class TrackingEngine:
             "global_tracking":
                 bool(
                     self.global_enabled
+                ),
+
+            "global_probe_motion_sec":
+                float(
+                    self.global_probe_motion_sec
                 ),
         }
 
@@ -1566,7 +1890,7 @@ def tracking_reload():
 
 
 # =========================================================
-# Startup display
+# Startup
 # =========================================================
 
 
@@ -1638,6 +1962,11 @@ def print_startup_info() -> None:
         f"{global_status}"
     )
 
+    print(
+        f"Global probe    : "
+        f"{info['global_probe_motion_sec']:.2f}s"
+    )
+
     print()
 
     print(
@@ -1671,16 +2000,12 @@ if __name__ == "__main__":
 
         uvicorn.run(
 
-            # reload를 사용하지 않고
-            # 현재 app 객체를 직접 실행한다.
             app,
 
             host="127.0.0.1",
 
             port=8000,
 
-            # 정상 요청 로그는 숨기고
-            # 실제 warning/error만 표시.
             log_level="warning",
 
             access_log=False,
@@ -1688,6 +2013,4 @@ if __name__ == "__main__":
 
     except KeyboardInterrupt:
 
-        # Ctrl+C는 정상 종료이므로
-        # traceback을 출력하지 않는다.
         pass
