@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import argparse
+import json
 import math
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TextIO
 
 import cv2
 import numpy as np
@@ -97,13 +100,217 @@ STATE_COLORS = {
 }
 
 
+# =========================================================
+# Cached detection
+# =========================================================
+
+
+@dataclass
+class CachedDetection:
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+
+    class_name: str
+    confidence: float
+
+
+class DetectionCacheReader:
+    """
+    Sequential reader for detections.jsonl.
+
+    preprocess_yolo.py에서 생성한 다음 형식을 읽는다.
+
+    {
+        "frame_index": 123,
+        "timestamp": 4.1,
+        "cameras": {
+            "cam01": [
+                {
+                    "x1": ...,
+                    "y1": ...,
+                    "x2": ...,
+                    "y2": ...,
+                    "class_name": "car",
+                    "confidence": 0.95
+                }
+            ]
+        }
+    }
+    """
+
+    def __init__(
+        self,
+        path: Path,
+    ):
+        self.path = path
+
+        if not self.path.exists():
+            raise FileNotFoundError(
+                "Detection cache not found:\n"
+                f"{self.path}"
+            )
+
+        self.file: TextIO | None = None
+
+        self.line_number = 0
+
+    def open(
+        self,
+    ) -> None:
+        if self.file is not None:
+            return
+
+        self.file = self.path.open(
+            "r",
+            encoding="utf-8",
+        )
+
+        self.line_number = 0
+
+    def close(
+        self,
+    ) -> None:
+        if self.file is None:
+            return
+
+        self.file.close()
+        self.file = None
+
+    def __enter__(
+        self,
+    ):
+        self.open()
+        return self
+
+    def __exit__(
+        self,
+        exc_type,
+        exc_value,
+        traceback,
+    ):
+        self.close()
+
+    @staticmethod
+    def _make_detection(
+        data: dict,
+    ) -> CachedDetection:
+        return CachedDetection(
+            x1=float(
+                data["x1"]
+            ),
+            y1=float(
+                data["y1"]
+            ),
+            x2=float(
+                data["x2"]
+            ),
+            y2=float(
+                data["y2"]
+            ),
+            class_name=str(
+                data["class_name"]
+            ),
+            confidence=float(
+                data["confidence"]
+            ),
+        )
+
+    def read_frame(
+        self,
+        expected_frame_index: int,
+        camera_ids: list[str],
+    ) -> list[
+        list[CachedDetection]
+    ]:
+        if self.file is None:
+            raise RuntimeError(
+                "DetectionCacheReader is not open."
+            )
+
+        line = self.file.readline()
+
+        if not line:
+            raise EOFError(
+                "Reached the end of detection cache."
+            )
+
+        self.line_number += 1
+
+        try:
+            frame_data = json.loads(
+                line
+            )
+
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                "Invalid JSON in detection cache "
+                f"at line {self.line_number}: "
+                f"{exc}"
+            ) from exc
+
+        cached_frame_index = int(
+            frame_data.get(
+                "frame_index",
+                -1,
+            )
+        )
+
+        if (
+            cached_frame_index
+            !=
+            expected_frame_index
+        ):
+            raise RuntimeError(
+                "Video/cache frame mismatch.\n"
+                f"Video frame : {expected_frame_index}\n"
+                f"Cache frame : {cached_frame_index}\n"
+                f"Cache line  : {self.line_number}"
+            )
+
+        cameras = frame_data.get(
+            "cameras",
+            {},
+        )
+
+        all_detections = []
+
+        for camera_id in camera_ids:
+            camera_data = cameras.get(
+                camera_id,
+                [],
+            )
+
+            detections = [
+                self._make_detection(
+                    detection_data
+                )
+                for detection_data
+                in camera_data
+            ]
+
+            all_detections.append(
+                detections
+            )
+
+        return all_detections
+
+
+# =========================================================
+# Runtime data
+# =========================================================
+
+
 @dataclass
 class TimingStats:
     count: int = 0
 
     read_total_ms: float = 0.0
     queue_wait_total_ms: float = 0.0
-    inference_total_ms: float = 0.0
+
+    detection_total_ms: float = 0.0
+
     local_tracking_total_ms: float = 0.0
     projection_total_ms: float = 0.0
     global_tracking_total_ms: float = 0.0
@@ -127,7 +334,7 @@ class TimingStats:
         self,
         read_ms: float,
         queue_wait_ms: float,
-        inference_ms: float,
+        detection_ms: float,
         local_tracking_ms: float,
         projection_ms: float,
         global_tracking_ms: float,
@@ -138,13 +345,16 @@ class TimingStats:
     ) -> None:
         self.count += 1
 
-        self.read_total_ms += read_ms
+        self.read_total_ms += (
+            read_ms
+        )
+
         self.queue_wait_total_ms += (
             queue_wait_ms
         )
 
-        self.inference_total_ms += (
-            inference_ms
+        self.detection_total_ms += (
+            detection_ms
         )
 
         self.local_tracking_total_ms += (
@@ -240,6 +450,54 @@ class BEVDetection:
     global_id: int | None = None
 
 
+# =========================================================
+# Arguments
+# =========================================================
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Run AX Parking detection/tracking pipeline "
+            "using either live YOLO inference or cached "
+            "YOLO detections."
+        )
+    )
+
+    parser.add_argument(
+        "--source",
+        choices=[
+            "live",
+            "cache",
+        ],
+        default="live",
+        help=(
+            "Detection source. "
+            "'live' runs YOLO. "
+            "'cache' reads detections.jsonl. "
+            "Default: live"
+        ),
+    )
+
+    parser.add_argument(
+        "--cache",
+        type=str,
+        default=None,
+        help=(
+            "Path to detections.jsonl. "
+            "Only used with --source cache. "
+            "Default: data/detections/<scene>/detections.jsonl"
+        ),
+    )
+
+    return parser.parse_args()
+
+
+# =========================================================
+# Config
+# =========================================================
+
+
 def load_yaml(
     path: Path,
 ) -> dict:
@@ -275,6 +533,9 @@ def load_tracking_config() -> dict:
 
 
 def load_global_tracking_config() -> dict:
+    if not GLOBAL_TRACKING_CONFIG_PATH.exists():
+        return {}
+
     config = load_yaml(
         GLOBAL_TRACKING_CONFIG_PATH
     )
@@ -283,6 +544,75 @@ def load_global_tracking_config() -> dict:
         "global_tracking",
         {},
     )
+
+
+def detect_scene_name(
+    config: dict,
+) -> str:
+    videos = config.get(
+        "videos",
+        [],
+    )
+
+    if not videos:
+        return "scene"
+
+    first_video = videos[0]
+
+    video_path = first_video.get(
+        "path",
+        "",
+    )
+
+    if not video_path:
+        return "scene"
+
+    scene_name = Path(
+        video_path
+    ).parent.name
+
+    if not scene_name:
+        return "scene"
+
+    return scene_name
+
+
+def resolve_cache_path(
+    args: argparse.Namespace,
+    config: dict,
+) -> Path:
+    if args.cache:
+        path = Path(
+            args.cache
+        )
+
+        if not path.is_absolute():
+            path = (
+                ROOT
+                /
+                path
+            )
+
+        return path
+
+    scene_name = (
+        detect_scene_name(
+            config
+        )
+    )
+
+    return (
+        ROOT
+        / "data"
+        / "detections"
+        / scene_name
+        / "detections.jsonl"
+    )
+
+
+# =========================================================
+# BEV
+# =========================================================
 
 
 def load_bev_map() -> np.ndarray:
@@ -337,6 +667,7 @@ def load_projectors(
             print(
                 f"{camera_id}: unavailable"
             )
+
             print(
                 f"  {exc}"
             )
@@ -347,6 +678,11 @@ def load_projectors(
     print()
 
     return projectors
+
+
+# =========================================================
+# Local tracking
+# =========================================================
 
 
 def create_local_trackers(
@@ -473,6 +809,156 @@ def create_local_trackers(
     return trackers
 
 
+def update_local_tracking(
+    camera_ids: list[str],
+    all_detections,
+    trackers: dict[
+        str,
+        LocalTracker,
+    ],
+    timestamp: float,
+):
+    all_tracked = []
+
+    for (
+        camera_id,
+        detections,
+    ) in zip(
+        camera_ids,
+        all_detections,
+    ):
+        tracked = (
+            trackers[
+                camera_id
+            ].update(
+                detections=detections,
+                timestamp=timestamp,
+            )
+        )
+
+        all_tracked.append(
+            tracked
+        )
+
+    return all_tracked
+
+
+# =========================================================
+# BEV projection
+# =========================================================
+
+
+def project_tracked_detections(
+    camera_ids: list[str],
+    all_tracked,
+    projectors: dict[
+        str,
+        CameraProjector,
+    ],
+    timestamp: float,
+) -> list[
+    list[BEVDetection]
+]:
+    all_bev_detections = []
+
+    for (
+        camera_id,
+        tracked_detections,
+    ) in zip(
+        camera_ids,
+        all_tracked,
+    ):
+        camera_results = []
+
+        projector = (
+            projectors.get(
+                camera_id
+            )
+        )
+
+        if projector is None:
+            all_bev_detections.append(
+                camera_results
+            )
+            continue
+
+        for tracked in (
+            tracked_detections
+        ):
+            track = (
+                tracked.track
+            )
+
+            # 한 번도 움직인 적 없는 차량은
+            # BEV / Global Tracking으로 넘기지 않는다.
+            if not track.has_moved:
+                continue
+
+            try:
+                bev_x, bev_y = (
+                    projector.project(
+                        track.ground_x,
+                        track.ground_y,
+                    )
+                )
+
+            except Exception:
+                continue
+
+            if (
+                not math.isfinite(
+                    bev_x
+                )
+                or
+                not math.isfinite(
+                    bev_y
+                )
+            ):
+                continue
+
+            camera_results.append(
+                BEVDetection(
+                    camera_id=camera_id,
+                    local_id=(
+                        track.local_id
+                    ),
+                    state=(
+                        track.state
+                    ),
+                    class_name=(
+                        track.class_name
+                    ),
+                    confidence=(
+                        track.confidence
+                    ),
+                    image_x=(
+                        track.ground_x
+                    ),
+                    image_y=(
+                        track.ground_y
+                    ),
+                    bev_x=bev_x,
+                    bev_y=bev_y,
+                    stopped_seconds=(
+                        track.stopped_duration(
+                            timestamp
+                        )
+                    ),
+                )
+            )
+
+        all_bev_detections.append(
+            camera_results
+        )
+
+    return all_bev_detections
+
+
+# =========================================================
+# Global tracking
+# =========================================================
+
+
 def create_global_tracker(
     config: dict,
 ) -> GlobalTracker:
@@ -542,146 +1028,6 @@ def create_global_tracker(
     )
 
 
-def update_local_tracking(
-    camera_ids: list[str],
-    all_detections,
-    trackers: dict[
-        str,
-        LocalTracker,
-    ],
-    timestamp: float,
-):
-    all_tracked = []
-
-    for (
-        camera_id,
-        detections,
-    ) in zip(
-        camera_ids,
-        all_detections,
-    ):
-        tracked = (
-            trackers[
-                camera_id
-            ].update(
-                detections=detections,
-                timestamp=timestamp,
-            )
-        )
-
-        all_tracked.append(
-            tracked
-        )
-
-    return all_tracked
-
-
-def project_tracked_detections(
-    camera_ids: list[str],
-    all_tracked,
-    projectors: dict[
-        str,
-        CameraProjector,
-    ],
-    timestamp: float,
-) -> list[
-    list[BEVDetection]
-]:
-    all_bev_detections = []
-
-    for (
-        camera_id,
-        tracked_detections,
-    ) in zip(
-        camera_ids,
-        all_tracked,
-    ):
-        camera_results = []
-
-        projector = (
-            projectors.get(
-                camera_id
-            )
-        )
-
-        if projector is None:
-            all_bev_detections.append(
-                camera_results
-            )
-            continue
-
-        for tracked in (
-            tracked_detections
-        ):
-            track = (
-                tracked.track
-            )
-
-            # 한 번도 움직인 적 없는 차량은
-            # Global Tracking 대상으로 넘기지 않는다.
-            if not track.has_moved:
-                continue
-
-            try:
-                bev_x, bev_y = (
-                    projector.project(
-                        track.ground_x,
-                        track.ground_y,
-                    )
-                )
-
-            except Exception:
-                continue
-
-            if (
-                not math.isfinite(
-                    bev_x
-                )
-                or
-                not math.isfinite(
-                    bev_y
-                )
-            ):
-                continue
-
-            camera_results.append(
-                BEVDetection(
-                    camera_id=camera_id,
-                    local_id=(
-                        track.local_id
-                    ),
-                    state=(
-                        track.state
-                    ),
-                    class_name=(
-                        track.class_name
-                    ),
-                    confidence=(
-                        track.confidence
-                    ),
-                    image_x=(
-                        track.ground_x
-                    ),
-                    image_y=(
-                        track.ground_y
-                    ),
-                    bev_x=bev_x,
-                    bev_y=bev_y,
-                    stopped_seconds=(
-                        track.stopped_duration(
-                            timestamp
-                        )
-                    ),
-                )
-            )
-
-        all_bev_detections.append(
-            camera_results
-        )
-
-    return all_bev_detections
-
-
 def update_global_tracking(
     all_bev_detections: list[
         list[BEVDetection]
@@ -745,6 +1091,11 @@ def update_global_tracking(
                     )
                 )
             )
+
+
+# =========================================================
+# Drawing
+# =========================================================
 
 
 def draw_tracked_detections(
@@ -848,6 +1199,7 @@ def draw_tracked_detections(
             id_label = (
                 f"L{track.local_id:03d}"
             )
+
         else:
             id_label = (
                 f"G{global_id:03d} "
@@ -1022,7 +1374,10 @@ def draw_bev_detections(
                 detection.global_id
                 is None
             ):
-                global_label = "G---"
+                global_label = (
+                    "G---"
+                )
+
             else:
                 global_label = (
                     f"G{detection.global_id:03d}"
@@ -1088,6 +1443,11 @@ def draw_bev_detections(
     )
 
     return output
+
+
+# =========================================================
+# Grid
+# =========================================================
 
 
 def fit_frame(
@@ -1182,7 +1542,8 @@ def compose_grid(
     bev_frame: np.ndarray,
     frame_index: int,
     timestamp: float,
-    inference_ms: float,
+    detection_ms: float,
+    source_mode: str,
     display_width: int,
     display_height: int,
     columns: int,
@@ -1335,10 +1696,16 @@ def compose_grid(
         grid_rows
     )
 
+    source_label = (
+        "YOLO"
+        if source_mode == "live"
+        else "CACHE"
+    )
+
     info = (
         f"frame {frame_index} | "
         f"time {timestamp:.2f}s | "
-        f"YOLO {inference_ms:.1f} ms | "
+        f"{source_label} {detection_ms:.2f} ms | "
         f"Q/ESC: quit"
     )
 
@@ -1363,7 +1730,15 @@ def compose_grid(
     return grid
 
 
+# =========================================================
+# Stats
+# =========================================================
+
+
 def print_gpu_memory() -> None:
+    if not torch.cuda.is_available():
+        return
+
     allocated = (
         torch.cuda.memory_allocated()
         /
@@ -1400,20 +1775,27 @@ def print_gpu_memory() -> None:
 def print_stats(
     stats: TimingStats,
     camera_count: int,
+    source_mode: str,
 ) -> None:
     if stats.count == 0:
         return
 
-    avg_read = stats.average(
-        stats.read_total_ms
+    avg_read = (
+        stats.average(
+            stats.read_total_ms
+        )
     )
 
-    avg_queue_wait = stats.average(
-        stats.queue_wait_total_ms
+    avg_queue_wait = (
+        stats.average(
+            stats.queue_wait_total_ms
+        )
     )
 
-    avg_inference = stats.average(
-        stats.inference_total_ms
+    avg_detection = (
+        stats.average(
+            stats.detection_total_ms
+        )
     )
 
     avg_local_tracking = (
@@ -1422,8 +1804,10 @@ def print_stats(
         )
     )
 
-    avg_projection = stats.average(
-        stats.projection_total_ms
+    avg_projection = (
+        stats.average(
+            stats.projection_total_ms
+        )
     )
 
     avg_global_tracking = (
@@ -1432,16 +1816,22 @@ def print_stats(
         )
     )
 
-    avg_draw = stats.average(
-        stats.draw_total_ms
+    avg_draw = (
+        stats.average(
+            stats.draw_total_ms
+        )
     )
 
-    avg_grid = stats.average(
-        stats.grid_total_ms
+    avg_grid = (
+        stats.average(
+            stats.grid_total_ms
+        )
     )
 
-    avg_display = stats.average(
-        stats.display_total_ms
+    avg_display = (
+        stats.average(
+            stats.display_total_ms
+        )
     )
 
     avg_consumer_loop = (
@@ -1460,6 +1850,12 @@ def print_stats(
         camera_count
     )
 
+    detection_name = (
+        "YOLO inference"
+        if source_mode == "live"
+        else "Cache read"
+    )
+
     print()
     print(
         "======================================"
@@ -1469,6 +1865,11 @@ def print_stats(
     )
     print(
         "======================================"
+    )
+
+    print(
+        f"Source              : "
+        f"{source_mode}"
     )
 
     print(
@@ -1489,8 +1890,8 @@ def print_stats(
     )
 
     print(
-        f"YOLO inference      : "
-        f"{avg_inference:8.2f} ms"
+        f"{detection_name:<20}: "
+        f"{avg_detection:8.2f} ms"
     )
 
     print(
@@ -1547,7 +1948,14 @@ def print_stats(
     )
 
 
+# =========================================================
+# Main
+# =========================================================
+
+
 def main() -> None:
+    args = parse_args()
+
     config = (
         load_config()
     )
@@ -1658,27 +2066,80 @@ def main() -> None:
         )
     )
 
+    # -----------------------------------------------------
+    # Detection source
+    # -----------------------------------------------------
+
+    detector = None
+    cache_reader = None
+    cache_path = None
+
+    if args.source == "live":
+        detector = VehicleDetector(
+            CONFIG_PATH
+        )
+
+    else:
+        cache_path = (
+            resolve_cache_path(
+                args,
+                config,
+            )
+        )
+
+        cache_reader = (
+            DetectionCacheReader(
+                cache_path
+            )
+        )
+
+        cache_reader.open()
+
+    print()
     print(
-        f"Render enabled: {render}"
+        "======================================"
+    )
+    print(
+        "PIPELINE MODE"
+    )
+    print(
+        "======================================"
     )
 
     print(
-        f"Display enabled: {show}"
+        f"Detection source : "
+        f"{args.source}"
+    )
+
+    if cache_path is not None:
+        print(
+            f"Detection cache  : "
+            f"{cache_path}"
+        )
+
+    print(
+        f"Render enabled   : "
+        f"{render}"
     )
 
     print(
-        f"Show UNKNOWN tracks: "
-        f"{show_unknown}"
+        f"Display enabled  : "
+        f"{show}"
     )
 
     print(
-        f"Parked threshold: "
-        f"{tracking_config.get('parked_after_sec', 10.0)} sec"
+        f"Global tracking  : "
+        f"{global_enabled}"
     )
 
-    detector = VehicleDetector(
-        CONFIG_PATH
+    print(
+        "======================================"
     )
+    print()
+
+    # -----------------------------------------------------
+    # Video
+    # -----------------------------------------------------
 
     reader = (
         SynchronizedVideoReader(
@@ -1693,6 +2154,10 @@ def main() -> None:
     )
 
     reader.print_info()
+
+    # -----------------------------------------------------
+    # BEV / Trackers
+    # -----------------------------------------------------
 
     bev_map = (
         load_bev_map()
@@ -1741,9 +2206,15 @@ def main() -> None:
         "Video decode thread: enabled"
     )
 
-    print(
-        "YOLO worker: main thread"
-    )
+    if args.source == "live":
+        print(
+            "Detection: live YOLO"
+        )
+
+    else:
+        print(
+            "Detection: cached JSONL"
+        )
 
     print(
         "Local tracking: per camera"
@@ -1756,11 +2227,20 @@ def main() -> None:
 
     print()
 
-    torch.cuda.reset_peak_memory_stats()
+    # -----------------------------------------------------
+    # Runtime
+    # -----------------------------------------------------
 
     stats = (
         TimingStats()
     )
+
+    if (
+        torch.cuda.is_available()
+        and
+        args.source == "live"
+    ):
+        torch.cuda.reset_peak_memory_stats()
 
     if show and render:
         cv2.namedWindow(
@@ -1809,26 +2289,61 @@ def main() -> None:
                 break
 
             # =============================================
-            # 2. YOLO
+            # 2. DETECTION SOURCE
             # =============================================
 
-            inference_start = (
+            detection_start = (
                 time.perf_counter()
             )
 
-            all_detections = (
-                detector.detect_batch(
-                    frame_set.frames
+            if args.source == "live":
+                if detector is None:
+                    raise RuntimeError(
+                        "Detector is not initialized."
+                    )
+
+                all_detections = (
+                    detector.detect_batch(
+                        frame_set.frames
+                    )
                 )
-            )
 
-            torch.cuda.synchronize()
+                if torch.cuda.is_available():
+                    torch.cuda.synchronize()
 
-            inference_ms = (
+            else:
+                if cache_reader is None:
+                    raise RuntimeError(
+                        "Detection cache is not initialized."
+                    )
+
+                try:
+                    all_detections = (
+                        cache_reader.read_frame(
+                            expected_frame_index=(
+                                frame_set.frame_index
+                            ),
+                            camera_ids=(
+                                reader.camera_ids
+                            ),
+                        )
+                    )
+
+                except EOFError:
+                    print()
+                    print(
+                        "Detection cache reached EOF."
+                    )
+                    print(
+                        "Stopping playback."
+                    )
+                    break
+
+            detection_ms = (
                 (
                     time.perf_counter()
                     -
-                    inference_start
+                    detection_start
                 )
                 *
                 1000.0
@@ -2065,8 +2580,11 @@ def main() -> None:
                         timestamp=(
                             frame_set.timestamp
                         ),
-                        inference_ms=(
-                            inference_ms
+                        detection_ms=(
+                            detection_ms
+                        ),
+                        source_mode=(
+                            args.source
                         ),
                         display_width=(
                             display_width
@@ -2141,8 +2659,8 @@ def main() -> None:
                 queue_wait_ms=(
                     queue_wait_ms
                 ),
-                inference_ms=(
-                    inference_ms
+                detection_ms=(
+                    detection_ms
                 ),
                 local_tracking_ms=(
                     local_tracking_ms
@@ -2179,9 +2697,11 @@ def main() -> None:
                     len(
                         reader.cameras
                     ),
+                    args.source,
                 )
 
-                print_gpu_memory()
+                if args.source == "live":
+                    print_gpu_memory()
 
             if key in (
                 ord("q"),
@@ -2197,12 +2717,15 @@ def main() -> None:
 
     finally:
         reader.stop()
+
+        if cache_reader is not None:
+            cache_reader.close()
+
         cv2.destroyAllWindows()
 
     print()
-
     print(
-        "7-camera global tracking pipeline finished."
+        "7-camera detection/tracking pipeline finished."
     )
 
     print_stats(
@@ -2210,9 +2733,11 @@ def main() -> None:
         len(
             reader.cameras
         ),
+        args.source,
     )
 
-    print_gpu_memory()
+    if args.source == "live":
+        print_gpu_memory()
 
 
 if __name__ == "__main__":
