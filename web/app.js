@@ -1369,14 +1369,15 @@ function drawCameraOverlay(
             layout.scale;
 
         /*
-         * 모든 상태:
-         * bbox 색으로만 표시.
+         * bbox는 상태별 색상만 사용.
+         *
+         * 기존 2px -> 1px.
          */
         context.strokeStyle =
             color;
 
         context.lineWidth =
-            2;
+            1;
 
         context.strokeRect(
             x,
@@ -1386,7 +1387,7 @@ function drawCameraOverlay(
         );
 
         /*
-         * ACTIVE인 차량에만 ID를 표시한다.
+         * ACTIVE 차량만 번호 표시.
          */
         if (
             detection.state
@@ -1425,7 +1426,7 @@ function drawCameraOverlay(
         }
 
         context.font =
-            "bold 12px Arial";
+            "bold 11px Arial";
 
         const textWidth =
             context.measureText(
@@ -1438,17 +1439,17 @@ function drawCameraOverlay(
         const labelY =
             Math.max(
                 0,
-                y - 18
+                y - 16
             );
 
         context.fillStyle =
-            "rgba(0, 0, 0, 0.75)";
+            "rgba(0, 0, 0, 0.72)";
 
         context.fillRect(
             labelX,
             labelY,
-            textWidth + 8,
-            17
+            textWidth + 7,
+            15
         );
 
         context.fillStyle =
@@ -1456,8 +1457,8 @@ function drawCameraOverlay(
 
         context.fillText(
             label,
-            labelX + 4,
-            labelY + 12
+            labelX + 3,
+            labelY + 11
         );
     }
 }
@@ -1807,6 +1808,21 @@ function drawBevTracking(
         of latestTracking.bev
     ) {
 
+        /*
+         * BEV에는 ACTIVE 차량만 표시.
+         *
+         * STOPPED / PARKED는 CCTV bbox에는 남지만
+         * BEV에서는 사라진다.
+         */
+        if (
+            item.state
+            !==
+            "ACTIVE"
+        ) {
+
+            continue;
+        }
+
         const x =
             layout.offsetX
             +
@@ -1829,18 +1845,17 @@ function drawBevTracking(
             "#ffffff";
 
         const stateColor =
-            STATE_COLORS[
-                item.state
-            ]
-            ||
-            "#ffffff";
+            STATE_COLORS.ACTIVE;
 
+        /*
+         * 기존 outer 8px -> 6px.
+         */
         bevContext.beginPath();
 
         bevContext.arc(
             x,
             y,
-            8,
+            6,
             0,
             Math.PI * 2
         );
@@ -1850,12 +1865,15 @@ function drawBevTracking(
 
         bevContext.fill();
 
+        /*
+         * 기존 inner 5px -> 3.5px.
+         */
         bevContext.beginPath();
 
         bevContext.arc(
             x,
             y,
-            5,
+            3.5,
             0,
             Math.PI * 2
         );
@@ -1865,13 +1883,7 @@ function drawBevTracking(
 
         bevContext.fill();
 
-        let label =
-            `L${String(
-                item.local_id
-            ).padStart(
-                3,
-                "0"
-            )}`;
+        let label;
 
         if (
             item.global_id
@@ -1887,12 +1899,19 @@ function drawBevTracking(
                     "0"
                 )}`;
         }
+        else {
 
-        label +=
-            ` ${item.state}`;
+            label =
+                `L${String(
+                    item.local_id
+                ).padStart(
+                    3,
+                    "0"
+                )}`;
+        }
 
         bevContext.font =
-            "bold 10px Arial";
+            "bold 9px Arial";
 
         const textWidth =
             bevContext.measureText(
@@ -1900,13 +1919,13 @@ function drawBevTracking(
             ).width;
 
         bevContext.fillStyle =
-            "rgba(0, 0, 0, 0.75)";
+            "rgba(0, 0, 0, 0.72)";
 
         bevContext.fillRect(
-            x + 8,
-            y - 15,
-            textWidth + 6,
-            15
+            x + 6,
+            y - 12,
+            textWidth + 5,
+            13
         );
 
         bevContext.fillStyle =
@@ -1914,8 +1933,8 @@ function drawBevTracking(
 
         bevContext.fillText(
             label,
-            x + 11,
-            y - 4
+            x + 8,
+            y - 3
         );
     }
 }
