@@ -26,15 +26,26 @@
                 <h1>AX Parking</h1>
 
                 <p>
-                    Synchronized CCTV Playback
+                    Cached YOLO · Local Tracking · BEV · Global Tracking
                 </p>
             </div>
 
-            <div
-                id="camera-status"
-                class="camera-status loading"
-            >
-                0 / 7 cameras ready
+            <div class="status-group">
+
+                <div
+                    id="tracking-status"
+                    class="tracking-status"
+                >
+                    Tracking loading...
+                </div>
+
+                <div
+                    id="camera-status"
+                    class="camera-status loading"
+                >
+                    0 / 7 cameras ready
+                </div>
+
             </div>
 
         </header>
@@ -42,9 +53,7 @@
 
         <main class="content">
 
-            <section
-                class="video-grid"
-            >
+            <section class="video-grid">
 
                 <article class="camera-card">
 
@@ -56,13 +65,22 @@
                         </span>
                     </div>
 
-                    <video
-                        id="cam01"
-                        src="/media/scene1/260914_1.mp4"
-                        preload="metadata"
-                        muted
-                        playsinline
-                    ></video>
+                    <div class="video-stage">
+
+                        <video
+                            id="cam01"
+                            src="/media/scene1/260914_1.mp4"
+                            preload="metadata"
+                            muted
+                            playsinline
+                        ></video>
+
+                        <canvas
+                            id="cam01-overlay"
+                            class="video-overlay"
+                        ></canvas>
+
+                    </div>
 
                 </article>
 
@@ -77,13 +95,22 @@
                         </span>
                     </div>
 
-                    <video
-                        id="cam02"
-                        src="/media/scene1/260914_2.mp4"
-                        preload="metadata"
-                        muted
-                        playsinline
-                    ></video>
+                    <div class="video-stage">
+
+                        <video
+                            id="cam02"
+                            src="/media/scene1/260914_2.mp4"
+                            preload="metadata"
+                            muted
+                            playsinline
+                        ></video>
+
+                        <canvas
+                            id="cam02-overlay"
+                            class="video-overlay"
+                        ></canvas>
+
+                    </div>
 
                 </article>
 
@@ -98,13 +125,22 @@
                         </span>
                     </div>
 
-                    <video
-                        id="cam03"
-                        src="/media/scene1/260914_3.mp4"
-                        preload="metadata"
-                        muted
-                        playsinline
-                    ></video>
+                    <div class="video-stage">
+
+                        <video
+                            id="cam03"
+                            src="/media/scene1/260914_3.mp4"
+                            preload="metadata"
+                            muted
+                            playsinline
+                        ></video>
+
+                        <canvas
+                            id="cam03-overlay"
+                            class="video-overlay"
+                        ></canvas>
+
+                    </div>
 
                 </article>
 
@@ -119,13 +155,22 @@
                         </span>
                     </div>
 
-                    <video
-                        id="cam05"
-                        src="/media/scene1/260914_5.mp4"
-                        preload="metadata"
-                        muted
-                        playsinline
-                    ></video>
+                    <div class="video-stage">
+
+                        <video
+                            id="cam05"
+                            src="/media/scene1/260914_5.mp4"
+                            preload="metadata"
+                            muted
+                            playsinline
+                        ></video>
+
+                        <canvas
+                            id="cam05-overlay"
+                            class="video-overlay"
+                        ></canvas>
+
+                    </div>
 
                 </article>
 
@@ -140,13 +185,22 @@
                         </span>
                     </div>
 
-                    <video
-                        id="cam06"
-                        src="/media/scene1/260914_6.mp4"
-                        preload="metadata"
-                        muted
-                        playsinline
-                    ></video>
+                    <div class="video-stage">
+
+                        <video
+                            id="cam06"
+                            src="/media/scene1/260914_6.mp4"
+                            preload="metadata"
+                            muted
+                            playsinline
+                        ></video>
+
+                        <canvas
+                            id="cam06-overlay"
+                            class="video-overlay"
+                        ></canvas>
+
+                    </div>
 
                 </article>
 
@@ -161,13 +215,22 @@
                         </span>
                     </div>
 
-                    <video
-                        id="cam07"
-                        src="/media/scene1/260914_7.mp4"
-                        preload="metadata"
-                        muted
-                        playsinline
-                    ></video>
+                    <div class="video-stage">
+
+                        <video
+                            id="cam07"
+                            src="/media/scene1/260914_7.mp4"
+                            preload="metadata"
+                            muted
+                            playsinline
+                        ></video>
+
+                        <canvas
+                            id="cam07-overlay"
+                            class="video-overlay"
+                        ></canvas>
+
+                    </div>
 
                 </article>
 
@@ -182,18 +245,26 @@
                         </span>
                     </div>
 
-                    <video
-                        id="cam08"
-                        src="/media/scene1/260914_8.mp4"
-                        preload="metadata"
-                        muted
-                        playsinline
-                    ></video>
+                    <div class="video-stage">
+
+                        <video
+                            id="cam08"
+                            src="/media/scene1/260914_8.mp4"
+                            preload="metadata"
+                            muted
+                            playsinline
+                        ></video>
+
+                        <canvas
+                            id="cam08-overlay"
+                            class="video-overlay"
+                        ></canvas>
+
+                    </div>
 
                 </article>
 
 
-                <!-- BEV MAP -->
                 <article class="camera-card bev-card">
 
                     <div class="camera-header">
@@ -228,6 +299,10 @@
 
             <div class="button-row">
 
+                <button id="back-30-button">
+                    -30초
+                </button>
+
                 <button id="back-button">
                     -5초
                 </button>
@@ -244,8 +319,50 @@
                     +5초
                 </button>
 
+                <button id="forward-30-button">
+                    +30초
+                </button>
+
                 <button id="reset-button">
                     처음
+                </button>
+
+                <select
+                    id="speed-select"
+                    title="재생 속도"
+                >
+                    <option value="0.5">
+                        0.5×
+                    </option>
+
+                    <option
+                        value="1"
+                        selected
+                    >
+                        1×
+                    </option>
+
+                    <option value="2">
+                        2×
+                    </option>
+                </select>
+
+                <label class="check-control">
+
+                    <input
+                        id="show-unknown"
+                        type="checkbox"
+                        checked
+                    >
+
+                    UNKNOWN 표시
+
+                </label>
+
+                <button
+                    id="reload-tracking-button"
+                >
+                    트래킹 설정 재로드
                 </button>
 
             </div>
@@ -277,6 +394,8 @@
                 Space : 재생/일시정지
                 ·
                 A/D : -5초/+5초
+                ·
+                Shift+A/D : -30초/+30초
                 ·
                 R : 처음
             </div>

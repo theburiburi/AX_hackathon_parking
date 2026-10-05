@@ -14,40 +14,135 @@ const videos = CAMERA_IDS.map(
 );
 
 
+const videoMap = {};
+
+for (const video of videos) {
+    videoMap[
+        video.id
+    ] = video;
+}
+
+
+const overlayCanvases = {};
+
+const overlayContexts = {};
+
+for (const cameraId of CAMERA_IDS) {
+
+    const canvas =
+        document.getElementById(
+            `${cameraId}-overlay`
+        );
+
+    overlayCanvases[
+        cameraId
+    ] = canvas;
+
+    overlayContexts[
+        cameraId
+    ] = canvas.getContext(
+        "2d"
+    );
+}
+
+
+/* =========================================================
+ * UI
+ * =========================================================
+ */
+
+
 const playButton =
-    document.getElementById("play-button");
+    document.getElementById(
+        "play-button"
+    );
 
 const backButton =
-    document.getElementById("back-button");
+    document.getElementById(
+        "back-button"
+    );
 
 const forwardButton =
-    document.getElementById("forward-button");
+    document.getElementById(
+        "forward-button"
+    );
+
+const back30Button =
+    document.getElementById(
+        "back-30-button"
+    );
+
+const forward30Button =
+    document.getElementById(
+        "forward-30-button"
+    );
 
 const resetButton =
-    document.getElementById("reset-button");
+    document.getElementById(
+        "reset-button"
+    );
+
+const reloadTrackingButton =
+    document.getElementById(
+        "reload-tracking-button"
+    );
+
+const speedSelect =
+    document.getElementById(
+        "speed-select"
+    );
+
+const showUnknownCheckbox =
+    document.getElementById(
+        "show-unknown"
+    );
 
 const timeline =
-    document.getElementById("timeline");
+    document.getElementById(
+        "timeline"
+    );
 
 const currentTimeLabel =
-    document.getElementById("current-time");
+    document.getElementById(
+        "current-time"
+    );
 
 const durationLabel =
-    document.getElementById("duration-time");
+    document.getElementById(
+        "duration-time"
+    );
 
 const cameraStatus =
-    document.getElementById("camera-status");
+    document.getElementById(
+        "camera-status"
+    );
+
+const trackingStatus =
+    document.getElementById(
+        "tracking-status"
+    );
 
 const cameraTimeLabels =
-    document.querySelectorAll(".camera-time");
+    document.querySelectorAll(
+        ".camera-time"
+    );
 
 
-const SEEK_SECONDS = 5;
+const HARD_SYNC_THRESHOLD =
+    0.15;
+
+const IGNORE_SYNC_THRESHOLD =
+    0.04;
 
 
-const HARD_SYNC_THRESHOLD = 0.15;
-
-const IGNORE_SYNC_THRESHOLD = 0.04;
+/*
+ * Tracking overlay는 20 FPS 정도로 갱신한다.
+ *
+ * 서버에서는 요청 프레임 사이에 빠진 frame도
+ * 순서대로 처리하기 때문에 tracker 상태는 30 FPS를 유지한다.
+ */
+const TRACKING_REQUEST_INTERVAL_MS =
+    50;
 
 
 let readyCount = 0;
@@ -58,6 +153,7 @@ let playing = false;
 
 let masterTime = 0;
 
+let playbackRate = 1.0;
 
 let playStartedAt = 0;
 
@@ -67,30 +163,76 @@ let animationFrame = null;
 
 
 /* =========================================================
- * VIDEO PLAYER
+ * TRACKING STATE
  * =========================================================
  */
 
 
-function formatTime(seconds) {
+let trackingInfo = null;
+
+let latestTracking = null;
+
+let trackingRequestInFlight = false;
+
+let pendingTrackingFrame = null;
+
+let lastRenderedTrackingFrame = -1;
+
+let lastTrackingRequestAt = 0;
+
+let timelineTrackingTimer = null;
+
+
+/* =========================================================
+ * COLORS
+ * =========================================================
+ */
+
+
+const STATE_COLORS = {
+    UNKNOWN: "#8b929c",
+    ACTIVE: "#22e86f",
+    STOPPED: "#ffd740",
+    PARKED: "#ff4fdb",
+};
+
+
+const CAMERA_COLORS = {
+    cam01: "#ff3b3b",
+    cam02: "#ff9800",
+    cam03: "#ffeb3b",
+    cam05: "#34df65",
+    cam06: "#00d9ff",
+    cam07: "#4c76ff",
+    cam08: "#e34cff",
+};
+
+
+/* =========================================================
+ * TIME
+ * =========================================================
+ */
+
+
+function formatTime(
+    seconds
+) {
 
     if (!Number.isFinite(seconds)) {
         return "00:00.000";
     }
-
 
     const minutes =
         Math.floor(
             seconds / 60
         );
 
-
     const remaining =
         seconds % 60;
 
-
     return (
-        String(minutes).padStart(2, "0")
+        String(minutes)
+            .padStart(2, "0")
         +
         ":"
         +
@@ -101,7 +243,9 @@ function formatTime(seconds) {
 }
 
 
-function clampTime(value) {
+function clampTime(
+    value
+) {
 
     if (duration <= 0) {
 
@@ -111,7 +255,6 @@ function clampTime(value) {
         );
     }
 
-
     return Math.min(
         Math.max(
             0,
@@ -120,6 +263,40 @@ function clampTime(value) {
         duration
     );
 }
+
+
+function timeToFrame(
+    seconds
+) {
+
+    if (!trackingInfo) {
+        return 0;
+    }
+
+    const frame =
+        Math.floor(
+            Math.max(
+                0,
+                seconds
+            )
+            *
+            trackingInfo.fps
+        );
+
+    return Math.max(
+        0,
+        Math.min(
+            frame,
+            trackingInfo.frame_count - 1
+        )
+    );
+}
+
+
+/* =========================================================
+ * VIDEO SYNC
+ * =========================================================
+ */
 
 
 function setAllVideosTime(
@@ -132,7 +309,6 @@ function setAllVideosTime(
             targetTime
         );
 
-
     for (const video of videos) {
 
         if (
@@ -140,16 +316,13 @@ function setAllVideosTime(
             <
             HTMLMediaElement.HAVE_METADATA
         ) {
-
             continue;
         }
-
 
         const drift =
             video.currentTime
             -
             time;
-
 
         if (
             force
@@ -165,13 +338,11 @@ function setAllVideosTime(
                     video.duration || time
                 );
 
-
-            video.playbackRate = 1;
-
+            video.playbackRate =
+                playbackRate;
 
             continue;
         }
-
 
         if (
             Math.abs(drift)
@@ -179,21 +350,24 @@ function setAllVideosTime(
             IGNORE_SYNC_THRESHOLD
         ) {
 
-            video.playbackRate = 1;
+            video.playbackRate =
+                playbackRate;
 
             continue;
         }
 
-
         if (drift < 0) {
 
             video.playbackRate =
+                playbackRate
+                *
                 1.02;
-
         }
         else {
 
             video.playbackRate =
+                playbackRate
+                *
                 0.98;
         }
     }
@@ -207,10 +381,8 @@ function updateLabels() {
             masterTime
         );
 
-
     timeline.value =
         masterTime;
-
 
     for (
         const label
@@ -225,16 +397,20 @@ function updateLabels() {
 }
 
 
+/* =========================================================
+ * PLAYBACK
+ * =========================================================
+ */
+
+
 function updateMasterClock() {
 
     if (!playing) {
         return;
     }
 
-
     const now =
         performance.now();
-
 
     const elapsed =
         (
@@ -245,12 +421,12 @@ function updateMasterClock() {
         /
         1000;
 
-
     masterTime =
         playStartedMasterTime
         +
-        elapsed;
-
+        elapsed
+        *
+        playbackRate;
 
     if (
         duration > 0
@@ -261,25 +437,29 @@ function updateMasterClock() {
         masterTime =
             duration;
 
-
         pausePlayback();
-
 
         updateLabels();
 
+        requestTrackingForTime(
+            masterTime,
+            true
+        );
 
         return;
     }
-
 
     setAllVideosTime(
         masterTime,
         false
     );
 
-
     updateLabels();
 
+    requestTrackingForTime(
+        masterTime,
+        false
+    );
 
     animationFrame =
         requestAnimationFrame(
@@ -295,25 +475,20 @@ async function startPlayback() {
         <
         videos.length
     ) {
-
         return;
     }
-
 
     setAllVideosTime(
         masterTime,
         true
     );
 
-
     const playPromises = [];
-
 
     for (const video of videos) {
 
         video.playbackRate =
-            1;
-
+            playbackRate;
 
         playPromises.push(
             video
@@ -326,37 +501,29 @@ async function startPlayback() {
                             video.id,
                             error
                         );
-
                     }
                 )
         );
     }
 
-
     await Promise.all(
         playPromises
     );
 
-
     playing = true;
-
 
     playStartedAt =
         performance.now();
 
-
     playStartedMasterTime =
         masterTime;
-
 
     playButton.textContent =
         "일시정지";
 
-
     cancelAnimationFrame(
         animationFrame
     );
-
 
     animationFrame =
         requestAnimationFrame(
@@ -372,7 +539,6 @@ function pausePlayback() {
         const now =
             performance.now();
 
-
         const elapsed =
             (
                 now
@@ -382,106 +548,143 @@ function pausePlayback() {
             /
             1000;
 
-
         masterTime =
             clampTime(
                 playStartedMasterTime
                 +
                 elapsed
+                *
+                playbackRate
             );
     }
 
-
     playing = false;
-
 
     cancelAnimationFrame(
         animationFrame
     );
-
 
     for (const video of videos) {
 
         video.pause();
 
         video.playbackRate =
-            1;
+            playbackRate;
     }
-
 
     setAllVideosTime(
         masterTime,
         true
     );
 
-
     playButton.textContent =
         "재생";
 
-
     updateLabels();
+
+    requestTrackingForTime(
+        masterTime,
+        true
+    );
 }
 
 
 function togglePlayback() {
 
     if (playing) {
-
         pausePlayback();
-
     }
     else {
-
         startPlayback();
     }
 }
 
 
-function seekTo(value) {
+function seekTo(
+    value,
+    requestTracking = true
+) {
 
     masterTime =
         clampTime(
             Number(value)
         );
 
-
     setAllVideosTime(
         masterTime,
         true
     );
 
-
     updateLabels();
-
 
     if (playing) {
 
         playStartedAt =
             performance.now();
 
-
         playStartedMasterTime =
             masterTime;
+    }
+
+    if (requestTracking) {
+
+        requestTrackingForTime(
+            masterTime,
+            true
+        );
     }
 }
 
 
-function seekRelative(seconds) {
+function seekRelative(
+    seconds
+) {
 
     seekTo(
         masterTime
         +
-        seconds
+        seconds,
+        true
     );
 }
 
 
-function resetPlayback() {
+async function resetPlayback() {
 
     pausePlayback();
 
-    seekTo(0);
+    try {
+
+        await fetch(
+            "/api/tracking/reset",
+            {
+                method: "POST"
+            }
+        );
+    }
+    catch (error) {
+
+        console.error(
+            "Tracking reset failed:",
+            error
+        );
+    }
+
+    latestTracking = null;
+
+    lastRenderedTrackingFrame = -1;
+
+    seekTo(
+        0,
+        true
+    );
 }
+
+
+/* =========================================================
+ * VIDEO READY
+ * =========================================================
+ */
 
 
 function updateReadyState() {
@@ -494,10 +697,8 @@ function updateReadyState() {
                 )
         ).length;
 
-
     cameraStatus.textContent =
         `${readyCount} / ${videos.length} cameras ready`;
-
 
     if (
         readyCount
@@ -509,11 +710,9 @@ function updateReadyState() {
             "loading"
         );
 
-
         cameraStatus.classList.add(
             "ready"
         );
-
 
         duration =
             Math.min(
@@ -523,22 +722,38 @@ function updateReadyState() {
                 )
             );
 
+        if (
+            trackingInfo
+            &&
+            Number.isFinite(
+                trackingInfo.duration
+            )
+        ) {
+
+            duration =
+                Math.min(
+                    duration,
+                    trackingInfo.duration
+                );
+        }
 
         timeline.max =
             duration;
-
 
         durationLabel.textContent =
             formatTime(
                 duration
             );
 
-
         playButton.disabled =
             false;
 
-
         setAllVideosTime(
+            0,
+            true
+        );
+
+        requestTrackingForTime(
             0,
             true
         );
@@ -546,121 +761,759 @@ function updateReadyState() {
 }
 
 
-for (const video of videos) {
+/* =========================================================
+ * TRACKING API
+ * =========================================================
+ */
 
-    video.controls = false;
+
+function setTrackingStatus(
+    text,
+    className = ""
+) {
+
+    trackingStatus.textContent =
+        text;
+
+    trackingStatus.classList.remove(
+        "busy",
+        "error"
+    );
+
+    if (className) {
+
+        trackingStatus.classList.add(
+            className
+        );
+    }
+}
 
 
-    video.addEventListener(
-        "loadedmetadata",
-        updateReadyState
+async function loadTrackingInfo() {
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/tracking/info"
+            );
+
+        if (!response.ok) {
+
+            throw new Error(
+                `HTTP ${response.status}`
+            );
+        }
+
+        trackingInfo =
+            await response.json();
+
+        setTrackingStatus(
+            `Tracking ready · ${trackingInfo.fps.toFixed(1)} FPS · ${trackingInfo.frame_count} frames`
+        );
+
+        if (
+            readyCount
+            ===
+            videos.length
+        ) {
+
+            duration =
+                Math.min(
+                    duration,
+                    trackingInfo.duration
+                );
+
+            timeline.max =
+                duration;
+
+            durationLabel.textContent =
+                formatTime(
+                    duration
+                );
+
+            requestTrackingForTime(
+                masterTime,
+                true
+            );
+        }
+    }
+    catch (error) {
+
+        console.error(
+            "Failed to load tracking info:",
+            error
+        );
+
+        setTrackingStatus(
+            "Tracking API error",
+            "error"
+        );
+    }
+}
+
+
+function requestTrackingForTime(
+    seconds,
+    force = false
+) {
+
+    if (!trackingInfo) {
+        return;
+    }
+
+    const now =
+        performance.now();
+
+    if (
+        !force
+        &&
+        now
+        -
+        lastTrackingRequestAt
+        <
+        TRACKING_REQUEST_INTERVAL_MS
+    ) {
+        return;
+    }
+
+    lastTrackingRequestAt =
+        now;
+
+    const frameIndex =
+        timeToFrame(
+            seconds
+        );
+
+    requestTrackingFrame(
+        frameIndex
     );
 }
 
 
-playButton.addEventListener(
-    "click",
-    togglePlayback
-);
+function requestTrackingFrame(
+    frameIndex
+) {
 
-
-backButton.addEventListener(
-    "click",
-    () => {
-
-        seekRelative(
-            -SEEK_SECONDS
-        );
+    if (
+        frameIndex
+        ===
+        lastRenderedTrackingFrame
+        &&
+        latestTracking
+    ) {
+        return;
     }
-);
 
+    pendingTrackingFrame =
+        frameIndex;
 
-forwardButton.addEventListener(
-    "click",
-    () => {
+    if (!trackingRequestInFlight) {
 
-        seekRelative(
-            SEEK_SECONDS
-        );
+        pumpTrackingRequest();
     }
-);
+}
 
 
-resetButton.addEventListener(
-    "click",
-    resetPlayback
-);
+async function pumpTrackingRequest() {
 
-
-timeline.addEventListener(
-    "input",
-    event => {
-
-        seekTo(
-            event.target.value
-        );
+    if (
+        trackingRequestInFlight
+        ||
+        pendingTrackingFrame
+        ===
+        null
+    ) {
+        return;
     }
-);
 
+    const frameIndex =
+        pendingTrackingFrame;
 
-window.addEventListener(
-    "keydown",
-    event => {
+    pendingTrackingFrame =
+        null;
 
-        if (
-            event.code === "Space"
-        ) {
+    trackingRequestInFlight =
+        true;
 
-            event.preventDefault();
+    setTrackingStatus(
+        `Tracking frame ${frameIndex}...`,
+        "busy"
+    );
 
-            togglePlayback();
+    try {
 
-            return;
-        }
-
-
-        if (
-            event.key === "a"
-            ||
-            event.key === "A"
-        ) {
-
-            seekRelative(
-                -SEEK_SECONDS
+        const response =
+            await fetch(
+                `/api/tracking/frame/${frameIndex}`
             );
 
-            return;
-        }
+        if (!response.ok) {
 
+            let message =
+                `HTTP ${response.status}`;
 
-        if (
-            event.key === "d"
-            ||
-            event.key === "D"
-        ) {
+            try {
 
-            seekRelative(
-                SEEK_SECONDS
+                const errorData =
+                    await response.json();
+
+                if (errorData.detail) {
+
+                    message =
+                        errorData.detail;
+                }
+            }
+            catch {
+                // ignore
+            }
+
+            throw new Error(
+                message
             );
-
-            return;
         }
 
+        const result =
+            await response.json();
+
+        latestTracking =
+            result;
+
+        lastRenderedTrackingFrame =
+            result.frame_index;
+
+        drawAllCameraOverlays();
+
+        drawBev();
+
+        setTrackingStatus(
+            `Frame ${result.frame_index} · ${result.timestamp.toFixed(2)}s`
+        );
+    }
+    catch (error) {
+
+        console.error(
+            "Tracking request failed:",
+            error
+        );
+
+        setTrackingStatus(
+            `Tracking error: ${error.message}`,
+            "error"
+        );
+    }
+    finally {
+
+        trackingRequestInFlight =
+            false;
 
         if (
-            event.key === "r"
-            ||
-            event.key === "R"
+            pendingTrackingFrame
+            !==
+            null
+            &&
+            pendingTrackingFrame
+            !==
+            lastRenderedTrackingFrame
         ) {
 
-            resetPlayback();
+            pumpTrackingRequest();
         }
     }
-);
+}
 
 
 /* =========================================================
- * BEV MAP
+ * TRACKING CONFIG RELOAD
+ * =========================================================
+ */
+
+
+async function reloadTrackingConfig() {
+
+    const wasPlaying =
+        playing;
+
+    if (wasPlaying) {
+        pausePlayback();
+    }
+
+    reloadTrackingButton.disabled =
+        true;
+
+    setTrackingStatus(
+        "Reloading tracking config...",
+        "busy"
+    );
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/tracking/reload",
+                {
+                    method: "POST"
+                }
+            );
+
+        if (!response.ok) {
+
+            throw new Error(
+                `HTTP ${response.status}`
+            );
+        }
+
+        trackingInfo =
+            await response.json();
+
+        latestTracking = null;
+
+        lastRenderedTrackingFrame = -1;
+
+        setTrackingStatus(
+            "Tracking config reloaded"
+        );
+
+        requestTrackingForTime(
+            masterTime,
+            true
+        );
+    }
+    catch (error) {
+
+        console.error(
+            "Tracking reload failed:",
+            error
+        );
+
+        setTrackingStatus(
+            `Reload error: ${error.message}`,
+            "error"
+        );
+    }
+    finally {
+
+        reloadTrackingButton.disabled =
+            false;
+    }
+}
+
+
+/* =========================================================
+ * CAMERA OVERLAY CANVAS
+ * =========================================================
+ */
+
+
+function resizeCameraCanvas(
+    cameraId
+) {
+
+    const canvas =
+        overlayCanvases[
+            cameraId
+        ];
+
+    const video =
+        videoMap[
+            cameraId
+        ];
+
+    const stage =
+        video.parentElement;
+
+    const width =
+        stage.clientWidth;
+
+    const height =
+        stage.clientHeight;
+
+    const dpr =
+        window.devicePixelRatio
+        ||
+        1;
+
+    canvas.width =
+        Math.max(
+            1,
+            Math.floor(
+                width
+                *
+                dpr
+            )
+        );
+
+    canvas.height =
+        Math.max(
+            1,
+            Math.floor(
+                height
+                *
+                dpr
+            )
+        );
+
+    canvas.style.width =
+        `${width}px`;
+
+    canvas.style.height =
+        `${height}px`;
+
+    const context =
+        overlayContexts[
+            cameraId
+        ];
+
+    context.setTransform(
+        dpr,
+        0,
+        0,
+        dpr,
+        0,
+        0
+    );
+
+    drawCameraOverlay(
+        cameraId
+    );
+}
+
+
+function calculateVideoLayout(
+    cameraId
+) {
+
+    const video =
+        videoMap[
+            cameraId
+        ];
+
+    const stage =
+        video.parentElement;
+
+    const containerWidth =
+        stage.clientWidth;
+
+    const containerHeight =
+        stage.clientHeight;
+
+    const videoWidth =
+        video.videoWidth;
+
+    const videoHeight =
+        video.videoHeight;
+
+    if (
+        videoWidth <= 0
+        ||
+        videoHeight <= 0
+    ) {
+        return null;
+    }
+
+    const scale =
+        Math.min(
+            containerWidth
+            /
+            videoWidth,
+
+            containerHeight
+            /
+            videoHeight
+        );
+
+    const drawWidth =
+        videoWidth
+        *
+        scale;
+
+    const drawHeight =
+        videoHeight
+        *
+        scale;
+
+    const offsetX =
+        (
+            containerWidth
+            -
+            drawWidth
+        )
+        /
+        2;
+
+    const offsetY =
+        (
+            containerHeight
+            -
+            drawHeight
+        )
+        /
+        2;
+
+    return {
+        scale,
+        offsetX,
+        offsetY,
+        containerWidth,
+        containerHeight,
+    };
+}
+
+
+function drawCameraOverlay(
+    cameraId
+) {
+
+    const canvas =
+        overlayCanvases[
+            cameraId
+        ];
+
+    const context =
+        overlayContexts[
+            cameraId
+        ];
+
+    const stage =
+        videoMap[
+            cameraId
+        ].parentElement;
+
+    const width =
+        stage.clientWidth;
+
+    const height =
+        stage.clientHeight;
+
+    context.clearRect(
+        0,
+        0,
+        width,
+        height
+    );
+
+    if (
+        !latestTracking
+        ||
+        !latestTracking.cameras
+    ) {
+        return;
+    }
+
+    const detections =
+        latestTracking.cameras[
+            cameraId
+        ]
+        ||
+        [];
+
+    const layout =
+        calculateVideoLayout(
+            cameraId
+        );
+
+    if (!layout) {
+        return;
+    }
+
+    for (
+        const detection
+        of detections
+    ) {
+
+        if (
+            detection.state
+            ===
+            "UNKNOWN"
+            &&
+            !showUnknownCheckbox.checked
+        ) {
+            continue;
+        }
+
+        const color =
+            STATE_COLORS[
+                detection.state
+            ]
+            ||
+            "#ffffff";
+
+        const x =
+            layout.offsetX
+            +
+            detection.x1
+            *
+            layout.scale;
+
+        const y =
+            layout.offsetY
+            +
+            detection.y1
+            *
+            layout.scale;
+
+        const boxWidth =
+            (
+                detection.x2
+                -
+                detection.x1
+            )
+            *
+            layout.scale;
+
+        const boxHeight =
+            (
+                detection.y2
+                -
+                detection.y1
+            )
+            *
+            layout.scale;
+
+        context.strokeStyle =
+            color;
+
+        context.lineWidth =
+            2;
+
+        context.strokeRect(
+            x,
+            y,
+            boxWidth,
+            boxHeight
+        );
+
+        const groundX =
+            layout.offsetX
+            +
+            detection.ground_x
+            *
+            layout.scale;
+
+        const groundY =
+            layout.offsetY
+            +
+            detection.ground_y
+            *
+            layout.scale;
+
+        context.beginPath();
+
+        context.arc(
+            groundX,
+            groundY,
+            3.5,
+            0,
+            Math.PI * 2
+        );
+
+        context.fillStyle =
+            color;
+
+        context.fill();
+
+        let idLabel =
+            `L${String(
+                detection.local_id
+            ).padStart(
+                3,
+                "0"
+            )}`;
+
+        if (
+            detection.global_id
+            !==
+            null
+        ) {
+
+            idLabel =
+                `G${String(
+                    detection.global_id
+                ).padStart(
+                    3,
+                    "0"
+                )}`
+                +
+                " / "
+                +
+                idLabel;
+        }
+
+        let label =
+            `${idLabel} ${detection.state}`;
+
+        if (
+            detection.state
+            ===
+            "STOPPED"
+            ||
+            detection.state
+            ===
+            "PARKED"
+        ) {
+
+            label +=
+                ` ${detection.stopped_seconds.toFixed(1)}s`;
+        }
+
+        const fontSize =
+            11;
+
+        context.font =
+            `bold ${fontSize}px Arial`;
+
+        const textWidth =
+            context.measureText(
+                label
+            ).width;
+
+        const labelX =
+            x;
+
+        const labelY =
+            Math.max(
+                0,
+                y - 18
+            );
+
+        context.fillStyle =
+            "rgba(0, 0, 0, 0.75)";
+
+        context.fillRect(
+            labelX,
+            labelY,
+            textWidth + 8,
+            17
+        );
+
+        context.fillStyle =
+            color;
+
+        context.fillText(
+            label,
+            labelX + 4,
+            labelY + 12
+        );
+    }
+}
+
+
+function drawAllCameraOverlays() {
+
+    for (
+        const cameraId
+        of CAMERA_IDS
+    ) {
+
+        drawCameraOverlay(
+            cameraId
+        );
+    }
+}
+
+
+/* =========================================================
+ * BEV
  * =========================================================
  */
 
@@ -687,16 +1540,13 @@ const bevStatus =
         "bev-status"
     );
 
-
 const bevContext =
     bevCanvas.getContext(
         "2d"
     );
 
-
 const bevImage =
     new Image();
-
 
 let zoneData = null;
 
@@ -719,10 +1569,6 @@ const ZONE_COLORS = {
 };
 
 
-/*
- * 현재 occupancy는 아직 실제 추적 결과가 없으므로
- * 모두 0으로 시작한다.
- */
 const zoneOccupancy = {};
 
 
@@ -731,7 +1577,6 @@ function initializeOccupancy() {
     if (!zoneData) {
         return;
     }
-
 
     for (
         const zone
@@ -745,14 +1590,6 @@ function initializeOccupancy() {
 }
 
 
-/*
- * Canvas 실제 픽셀 크기를
- * 화면 크기에 맞춘다.
- *
- * 고해상도 모니터에서도
- * 선과 글자가 흐려지지 않도록
- * devicePixelRatio를 적용한다.
- */
 function resizeBevCanvas() {
 
     const width =
@@ -761,38 +1598,36 @@ function resizeBevCanvas() {
     const height =
         bevContainer.clientHeight;
 
-
     const dpr =
         window.devicePixelRatio
         ||
         1;
 
-
     bevCanvas.width =
         Math.max(
             1,
             Math.floor(
-                width * dpr
+                width
+                *
+                dpr
             )
         );
-
 
     bevCanvas.height =
         Math.max(
             1,
             Math.floor(
-                height * dpr
+                height
+                *
+                dpr
             )
         );
-
 
     bevCanvas.style.width =
         `${width}px`;
 
-
     bevCanvas.style.height =
         `${height}px`;
-
 
     bevContext.setTransform(
         dpr,
@@ -803,16 +1638,10 @@ function resizeBevCanvas() {
         0
     );
 
-
     drawBev();
 }
 
 
-/*
- * 지도 이미지가 카드 안에
- * object-fit: contain처럼 들어가도록
- * 실제 표시 영역을 계산한다.
- */
 function calculateMapLayout() {
 
     const canvasWidth =
@@ -821,23 +1650,19 @@ function calculateMapLayout() {
     const canvasHeight =
         bevContainer.clientHeight;
 
-
     const imageWidth =
         bevImage.naturalWidth;
 
     const imageHeight =
         bevImage.naturalHeight;
 
-
     if (
         imageWidth <= 0
         ||
         imageHeight <= 0
     ) {
-
         return null;
     }
-
 
     const scale =
         Math.min(
@@ -850,18 +1675,15 @@ function calculateMapLayout() {
             imageHeight
         );
 
-
     const drawWidth =
         imageWidth
         *
         scale;
 
-
     const drawHeight =
         imageHeight
         *
         scale;
-
 
     const offsetX =
         (
@@ -872,7 +1694,6 @@ function calculateMapLayout() {
         /
         2;
 
-
     const offsetY =
         (
             canvasHeight
@@ -881,7 +1702,6 @@ function calculateMapLayout() {
         )
         /
         2;
-
 
     return {
         scale,
@@ -901,7 +1721,6 @@ function drawZone(
     const box =
         zone.bndbox;
 
-
     const x =
         layout.offsetX
         +
@@ -909,14 +1728,12 @@ function drawZone(
         *
         layout.scale;
 
-
     const y =
         layout.offsetY
         +
         box.ymin
         *
         layout.scale;
-
 
     const width =
         (
@@ -927,7 +1744,6 @@ function drawZone(
         *
         layout.scale;
 
-
     const height =
         (
             box.ymax
@@ -937,7 +1753,6 @@ function drawZone(
         *
         layout.scale;
 
-
     const color =
         ZONE_COLORS[
             zone.id
@@ -945,17 +1760,11 @@ function drawZone(
         ||
         "#ffffff";
 
-
-    /*
-     * BBOX
-     */
     bevContext.strokeStyle =
         color;
 
-
     bevContext.lineWidth =
         2;
-
 
     bevContext.strokeRect(
         x,
@@ -964,10 +1773,6 @@ function drawZone(
         height
     );
 
-
-    /*
-     * Label
-     */
     const occupancy =
         zoneOccupancy[
             zone.id
@@ -975,37 +1780,27 @@ function drawZone(
         ??
         0;
 
-
     const label =
         `${zone.id} ${occupancy}/${zone.capacity}`;
 
-
     bevContext.font =
         "bold 12px Arial";
-
 
     const textWidth =
         bevContext.measureText(
             label
         ).width;
 
-
     const labelHeight =
         19;
-
 
     const labelWidth =
         textWidth
         +
         10;
 
-
-    /*
-     * 라벨 배경
-     */
     bevContext.fillStyle =
         color;
-
 
     bevContext.fillRect(
         x,
@@ -1014,19 +1809,147 @@ function drawZone(
         labelHeight
     );
 
-
-    /*
-     * 라벨 글자
-     */
     bevContext.fillStyle =
         "#ffffff";
-
 
     bevContext.fillText(
         label,
         x + 5,
         y + 14
     );
+}
+
+
+function drawBevTracking(
+    layout
+) {
+
+    if (
+        !latestTracking
+        ||
+        !Array.isArray(
+            latestTracking.bev
+        )
+    ) {
+        return;
+    }
+
+    for (
+        const item
+        of latestTracking.bev
+    ) {
+
+        const x =
+            layout.offsetX
+            +
+            item.x
+            *
+            layout.scale;
+
+        const y =
+            layout.offsetY
+            +
+            item.y
+            *
+            layout.scale;
+
+        const cameraColor =
+            CAMERA_COLORS[
+                item.camera_id
+            ]
+            ||
+            "#ffffff";
+
+        const stateColor =
+            STATE_COLORS[
+                item.state
+            ]
+            ||
+            "#ffffff";
+
+        bevContext.beginPath();
+
+        bevContext.arc(
+            x,
+            y,
+            8,
+            0,
+            Math.PI * 2
+        );
+
+        bevContext.fillStyle =
+            cameraColor;
+
+        bevContext.fill();
+
+        bevContext.beginPath();
+
+        bevContext.arc(
+            x,
+            y,
+            5,
+            0,
+            Math.PI * 2
+        );
+
+        bevContext.fillStyle =
+            stateColor;
+
+        bevContext.fill();
+
+        let label =
+            `L${String(
+                item.local_id
+            ).padStart(
+                3,
+                "0"
+            )}`;
+
+        if (
+            item.global_id
+            !==
+            null
+        ) {
+
+            label =
+                `G${String(
+                    item.global_id
+                ).padStart(
+                    3,
+                    "0"
+                )}`;
+        }
+
+        label +=
+            ` ${item.state}`;
+
+        bevContext.font =
+            "bold 10px Arial";
+
+        const textWidth =
+            bevContext.measureText(
+                label
+            ).width;
+
+        bevContext.fillStyle =
+            "rgba(0, 0, 0, 0.75)";
+
+        bevContext.fillRect(
+            x + 8,
+            y - 15,
+            textWidth + 6,
+            15
+        );
+
+        bevContext.fillStyle =
+            stateColor;
+
+        bevContext.fillText(
+            label,
+            x + 11,
+            y - 4
+        );
+    }
 }
 
 
@@ -1038,7 +1961,6 @@ function drawBev() {
     const canvasHeight =
         bevContainer.clientHeight;
 
-
     bevContext.clearRect(
         0,
         0,
@@ -1046,29 +1968,21 @@ function drawBev() {
         canvasHeight
     );
 
-
     if (
         !bevImage.complete
         ||
         bevImage.naturalWidth === 0
     ) {
-
         return;
     }
 
-
     const layout =
         calculateMapLayout();
-
 
     if (!layout) {
         return;
     }
 
-
-    /*
-     * 지도
-     */
     bevContext.drawImage(
         bevImage,
         layout.offsetX,
@@ -1077,10 +1991,6 @@ function drawBev() {
         layout.drawHeight
     );
 
-
-    /*
-     * Zone BBOX
-     */
     if (zoneData) {
 
         for (
@@ -1094,45 +2004,19 @@ function drawBev() {
             );
         }
     }
-}
 
+    drawBevTracking(
+        layout
+    );
 
-/*
- * 나중에 Tracking 결과를 연결할 때
- * 이 함수만 호출하면 occupancy를 갱신할 수 있다.
- *
- * 예:
- *
- * setZoneOccupancy("A", 3)
- */
-function setZoneOccupancy(
-    zoneId,
-    count
-) {
+    if (latestTracking) {
 
-    if (
-        !Object.prototype.hasOwnProperty.call(
-            zoneOccupancy,
-            zoneId
-        )
-    ) {
-
-        return;
+        bevStatus.textContent =
+            `frame ${latestTracking.frame_index}`;
     }
-
-
-    zoneOccupancy[
-        zoneId
-    ] = count;
-
-
-    drawBev();
 }
 
 
-/*
- * zones.json 로딩
- */
 async function loadZones() {
 
     try {
@@ -1142,7 +2026,6 @@ async function loadZones() {
                 ZONES_PATH
             );
 
-
         if (!response.ok) {
 
             throw new Error(
@@ -1150,20 +2033,15 @@ async function loadZones() {
             );
         }
 
-
         zoneData =
             await response.json();
 
-
         initializeOccupancy();
-
 
         drawBev();
 
-
         bevStatus.textContent =
             `${zoneData.zones.length} zones`;
-
     }
     catch (error) {
 
@@ -1172,16 +2050,339 @@ async function loadZones() {
             error
         );
 
-
         bevStatus.textContent =
             "zone error";
     }
 }
 
 
-/*
- * 지도 이미지 로딩
+/* =========================================================
+ * EVENTS
+ * =========================================================
  */
+
+
+for (const video of videos) {
+
+    video.controls =
+        false;
+
+    video.addEventListener(
+        "loadedmetadata",
+        () => {
+
+            updateReadyState();
+
+            resizeCameraCanvas(
+                video.id
+            );
+        }
+    );
+}
+
+
+playButton.addEventListener(
+    "click",
+    togglePlayback
+);
+
+
+backButton.addEventListener(
+    "click",
+    () => {
+
+        seekRelative(
+            -5
+        );
+    }
+);
+
+
+forwardButton.addEventListener(
+    "click",
+    () => {
+
+        seekRelative(
+            5
+        );
+    }
+);
+
+
+back30Button.addEventListener(
+    "click",
+    () => {
+
+        seekRelative(
+            -30
+        );
+    }
+);
+
+
+forward30Button.addEventListener(
+    "click",
+    () => {
+
+        seekRelative(
+            30
+        );
+    }
+);
+
+
+resetButton.addEventListener(
+    "click",
+    resetPlayback
+);
+
+
+reloadTrackingButton.addEventListener(
+    "click",
+    reloadTrackingConfig
+);
+
+
+speedSelect.addEventListener(
+    "change",
+    event => {
+
+        playbackRate =
+            Number(
+                event.target.value
+            );
+
+        if (
+            !Number.isFinite(
+                playbackRate
+            )
+            ||
+            playbackRate <= 0
+        ) {
+
+            playbackRate =
+                1;
+        }
+
+        if (playing) {
+
+            const now =
+                performance.now();
+
+            const elapsed =
+                (
+                    now
+                    -
+                    playStartedAt
+                )
+                /
+                1000;
+
+            masterTime =
+                clampTime(
+                    playStartedMasterTime
+                    +
+                    elapsed
+                    *
+                    playbackRate
+                );
+
+            playStartedAt =
+                performance.now();
+
+            playStartedMasterTime =
+                masterTime;
+        }
+
+        for (const video of videos) {
+
+            video.playbackRate =
+                playbackRate;
+        }
+    }
+);
+
+
+showUnknownCheckbox.addEventListener(
+    "change",
+    () => {
+
+        drawAllCameraOverlays();
+    }
+);
+
+
+timeline.addEventListener(
+    "input",
+    event => {
+
+        seekTo(
+            event.target.value,
+            false
+        );
+
+        clearTimeout(
+            timelineTrackingTimer
+        );
+
+        timelineTrackingTimer =
+            setTimeout(
+                () => {
+
+                    requestTrackingForTime(
+                        masterTime,
+                        true
+                    );
+                },
+                150
+            );
+    }
+);
+
+
+timeline.addEventListener(
+    "change",
+    event => {
+
+        clearTimeout(
+            timelineTrackingTimer
+        );
+
+        seekTo(
+            event.target.value,
+            true
+        );
+    }
+);
+
+
+window.addEventListener(
+    "keydown",
+    event => {
+
+        if (
+            event.code
+            ===
+            "Space"
+        ) {
+
+            event.preventDefault();
+
+            togglePlayback();
+
+            return;
+        }
+
+        if (
+            event.key === "a"
+            ||
+            event.key === "A"
+        ) {
+
+            if (event.shiftKey) {
+
+                seekRelative(
+                    -30
+                );
+            }
+            else {
+
+                seekRelative(
+                    -5
+                );
+            }
+
+            return;
+        }
+
+        if (
+            event.key === "d"
+            ||
+            event.key === "D"
+        ) {
+
+            if (event.shiftKey) {
+
+                seekRelative(
+                    30
+                );
+            }
+            else {
+
+                seekRelative(
+                    5
+                );
+            }
+
+            return;
+        }
+
+        if (
+            event.key === "r"
+            ||
+            event.key === "R"
+        ) {
+
+            resetPlayback();
+        }
+    }
+);
+
+
+/* =========================================================
+ * RESIZE
+ * =========================================================
+ */
+
+
+for (
+    const cameraId
+    of CAMERA_IDS
+) {
+
+    const video =
+        videoMap[
+            cameraId
+        ];
+
+    const stage =
+        video.parentElement;
+
+    const observer =
+        new ResizeObserver(
+            () => {
+
+                resizeCameraCanvas(
+                    cameraId
+                );
+            }
+        );
+
+    observer.observe(
+        stage
+    );
+}
+
+
+const bevResizeObserver =
+    new ResizeObserver(
+        () => {
+
+            resizeBevCanvas();
+        }
+    );
+
+bevResizeObserver.observe(
+    bevContainer
+);
+
+
+/* =========================================================
+ * BEV LOAD
+ * =========================================================
+ */
+
+
 bevImage.addEventListener(
     "load",
     () => {
@@ -1199,7 +2400,6 @@ bevImage.addEventListener(
             "Failed to load BEV map"
         );
 
-
         bevStatus.textContent =
             "map error";
     }
@@ -1208,24 +2408,6 @@ bevImage.addEventListener(
 
 bevImage.src =
     BEV_MAP_PATH;
-
-
-/*
- * BEV 카드 크기가 변하면
- * Canvas도 자동 재계산한다.
- */
-const bevResizeObserver =
-    new ResizeObserver(
-        () => {
-
-            resizeBevCanvas();
-        }
-    );
-
-
-bevResizeObserver.observe(
-    bevContainer
-);
 
 
 loadZones();
@@ -1238,3 +2420,5 @@ loadZones();
 
 
 updateLabels();
+
+loadTrackingInfo();

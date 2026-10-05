@@ -28,7 +28,8 @@ body {
 
 
 button,
-input {
+input,
+select {
     font: inherit;
 }
 
@@ -93,9 +94,21 @@ input {
 }
 
 
-.camera-status {
+.status-group {
+    display: flex;
+
+    flex-direction: column;
+
+    align-items: flex-end;
+
+    gap: 4px;
+}
+
+
+.camera-status,
+.tracking-status {
     font-size:
-        13px;
+        12px;
 
     font-weight:
         bold;
@@ -114,6 +127,24 @@ input {
 }
 
 
+.tracking-status {
+    color:
+        #77bdfb;
+}
+
+
+.tracking-status.busy {
+    color:
+        #e8bd63;
+}
+
+
+.tracking-status.error {
+    color:
+        #ff6b6b;
+}
+
+
 /* =========================================================
  * CONTENT
  * =========================================================
@@ -129,11 +160,6 @@ input {
 }
 
 
-/*
- * 정확히 4 × 2
- *
- * CCTV 7개 + BEV 1개
- */
 .video-grid {
     width: 100%;
     height: 100%;
@@ -221,7 +247,33 @@ input {
 }
 
 
-.camera-card video {
+/* =========================================================
+ * VIDEO + OVERLAY
+ * =========================================================
+ */
+
+
+.video-stage {
+    position: relative;
+
+    width: 100%;
+    height: 100%;
+
+    min-width: 0;
+    min-height: 0;
+
+    overflow: hidden;
+
+    background:
+        black;
+}
+
+
+.video-stage video {
+    position: absolute;
+
+    inset: 0;
+
     width: 100%;
     height: 100%;
 
@@ -231,6 +283,20 @@ input {
 
     background:
         black;
+}
+
+
+.video-overlay {
+    position: absolute;
+
+    inset: 0;
+
+    width: 100%;
+    height: 100%;
+
+    display: block;
+
+    pointer-events: none;
 }
 
 
@@ -294,12 +360,12 @@ input {
 
 .controls {
     padding:
-        10px
-        20px;
+        9px
+        18px;
 
     display: grid;
 
-    gap: 9px;
+    gap: 8px;
 
     background:
         #181b20;
@@ -315,17 +381,22 @@ input {
     justify-content:
         center;
 
-    gap: 8px;
+    align-items: center;
+
+    flex-wrap: wrap;
+
+    gap: 7px;
 }
 
 
-button {
+button,
+select {
     min-width:
-        72px;
+        68px;
 
     padding:
-        7px
-        14px;
+        6px
+        11px;
 
     background:
         #282d35;
@@ -344,7 +415,8 @@ button {
 }
 
 
-button:hover {
+button:hover,
+select:hover {
     background:
         #343a44;
 }
@@ -380,6 +452,23 @@ button:disabled {
 .primary-button:hover {
     background:
         white;
+}
+
+
+.check-control {
+    display: flex;
+
+    align-items: center;
+
+    gap: 5px;
+
+    color:
+        #c5cad1;
+
+    font-size:
+        12px;
+
+    user-select: none;
 }
 
 
