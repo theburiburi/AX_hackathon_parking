@@ -1,0 +1,50 @@
+local_tracking:
+  # 이전 track과 현재 detection을 매칭할 때 허용하는 최대 거리.
+  match_distance_px: 80.0
+  match_distance_bbox_ratio: 0.60
+
+  # bbox IoU가 이 이상이면 같은 차량 후보로 허용.
+  match_iou_threshold: 0.10
+
+  # 이동량을 계산할 시간 구간.
+  motion_window_sec: 0.8
+
+  # 기본 이동 판정 최소 픽셀.
+  min_motion_px: 7.0
+
+  # bbox 크기에 비례한 이동 threshold.
+  motion_bbox_ratio: 0.035
+
+  # 최근 몇 개 위치의 median을 사용할지.
+  # 순간적인 bbox 튐을 줄이기 위한 값.
+  smoothing_window: 7
+
+  # UNKNOWN 상태에서 처음 ACTIVE로 승격될 때
+  # 움직임이 이 시간 이상 지속되어야 함.
+  unknown_to_active_sec: 0.35
+
+  # STOPPED 상태에서 ACTIVE로 돌아갈 때
+  # 연속 움직임이 이 시간 이상 필요.
+  stopped_to_active_sec: 0.50
+
+  # PARKED 상태에서 ACTIVE로 돌아갈 때는
+  # 더 확실한 움직임을 요구.
+  parked_to_active_sec: 1.00
+
+  # STOPPED / PARKED에서 재출발 판단 시
+  # 기본 움직임 threshold에 곱할 값.
+  stopped_motion_multiplier: 1.6
+  parked_motion_multiplier: 2.2
+
+  # STOPPED 상태가 이 시간 이상 지속되면 PARKED.
+  # 테스트용.
+  parked_after_sec: 10.0
+
+  # detection이 이 시간 이상 사라지면 track 제거.
+  max_missing_sec: 1.5
+
+  # 처음부터 주차되어 있던 UNKNOWN 차량 표시 여부.
+  show_unknown: false
+
+  # 상태 변화 로그 출력.
+  print_transitions: true
