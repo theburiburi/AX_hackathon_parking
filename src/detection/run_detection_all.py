@@ -101,7 +101,7 @@ STATE_COLORS = {
 
 
 # =========================================================
-# Cached detection
+# Cached YOLO detection
 # =========================================================
 
 
@@ -117,29 +117,6 @@ class CachedDetection:
 
 
 class DetectionCacheReader:
-    """
-    Sequential reader for detections.jsonl.
-
-    preprocess_yolo.py에서 생성한 다음 형식을 읽는다.
-
-    {
-        "frame_index": 123,
-        "timestamp": 4.1,
-        "cameras": {
-            "cam01": [
-                {
-                    "x1": ...,
-                    "y1": ...,
-                    "x2": ...,
-                    "y2": ...,
-                    "class_name": "car",
-                    "confidence": 0.95
-                }
-            ]
-        }
-    }
-    """
-
     def __init__(
         self,
         path: Path,
@@ -153,7 +130,6 @@ class DetectionCacheReader:
             )
 
         self.file: TextIO | None = None
-
         self.line_number = 0
 
     def open(
@@ -177,20 +153,6 @@ class DetectionCacheReader:
 
         self.file.close()
         self.file = None
-
-    def __enter__(
-        self,
-    ):
-        self.open()
-        return self
-
-    def __exit__(
-        self,
-        exc_type,
-        exc_value,
-        traceback,
-    ):
-        self.close()
 
     @staticmethod
     def _make_detection(
@@ -298,7 +260,7 @@ class DetectionCacheReader:
 
 
 # =========================================================
-# Runtime data
+# Runtime structures
 # =========================================================
 
 
@@ -308,7 +270,6 @@ class TimingStats:
 
     read_total_ms: float = 0.0
     queue_wait_total_ms: float = 0.0
-
     detection_total_ms: float = 0.0
 
     local_tracking_total_ms: float = 0.0
@@ -345,17 +306,9 @@ class TimingStats:
     ) -> None:
         self.count += 1
 
-        self.read_total_ms += (
-            read_ms
-        )
-
-        self.queue_wait_total_ms += (
-            queue_wait_ms
-        )
-
-        self.detection_total_ms += (
-            detection_ms
-        )
+        self.read_total_ms += read_ms
+        self.queue_wait_total_ms += queue_wait_ms
+        self.detection_total_ms += detection_ms
 
         self.local_tracking_total_ms += (
             local_tracking_ms
@@ -369,17 +322,9 @@ class TimingStats:
             global_tracking_ms
         )
 
-        self.draw_total_ms += (
-            draw_ms
-        )
-
-        self.grid_total_ms += (
-            grid_ms
-        )
-
-        self.display_total_ms += (
-            display_ms
-        )
+        self.draw_total_ms += draw_ms
+        self.grid_total_ms += grid_ms
+        self.display_total_ms += display_ms
 
         self.consumer_loop_total_ms += (
             consumer_loop_ms
@@ -402,7 +347,7 @@ class TimingStats:
     def elapsed_seconds(
         self,
     ) -> float:
-        if self.started_at <= 0:
+        if self.started_at <= 0.0:
             return 0.0
 
         return (
@@ -419,7 +364,7 @@ class TimingStats:
             self.elapsed_seconds
         )
 
-        if elapsed <= 0:
+        if elapsed <= 0.0:
             return 0.0
 
         return (
@@ -458,9 +403,7 @@ class BEVDetection:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Run AX Parking detection/tracking pipeline "
-            "using either live YOLO inference or cached "
-            "YOLO detections."
+            "AX Parking detection/tracking pipeline."
         )
     )
 
@@ -472,10 +415,8 @@ def parse_args() -> argparse.Namespace:
         ],
         default="live",
         help=(
-            "Detection source. "
-            "'live' runs YOLO. "
-            "'cache' reads detections.jsonl. "
-            "Default: live"
+            "live = run YOLO, "
+            "cache = use preprocessed detections"
         ),
     )
 
@@ -484,9 +425,7 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default=None,
         help=(
-            "Path to detections.jsonl. "
-            "Only used with --source cache. "
-            "Default: data/detections/<scene>/detections.jsonl"
+            "Optional path to detections.jsonl."
         ),
     )
 
@@ -557,9 +496,7 @@ def detect_scene_name(
     if not videos:
         return "scene"
 
-    first_video = videos[0]
-
-    video_path = first_video.get(
+    video_path = videos[0].get(
         "path",
         "",
     )
@@ -681,7 +618,7 @@ def load_projectors(
 
 
 # =========================================================
-# Local tracking
+# Local Tracking
 # =========================================================
 
 
@@ -700,17 +637,21 @@ def create_local_trackers(
         ] = LocalTracker(
             camera_id=camera_id,
 
+            # ---------------------------------------------
+            # Association
+            # ---------------------------------------------
+
             match_distance_px=float(
                 config.get(
                     "match_distance_px",
-                    80.0,
+                    60.0,
                 )
             ),
 
             match_distance_bbox_ratio=float(
                 config.get(
                     "match_distance_bbox_ratio",
-                    0.60,
+                    0.45,
                 )
             ),
 
@@ -720,6 +661,10 @@ def create_local_trackers(
                     0.10,
                 )
             ),
+
+            # ---------------------------------------------
+            # Motion detection
+            # ---------------------------------------------
 
             motion_window_sec=float(
                 config.get(
@@ -731,14 +676,14 @@ def create_local_trackers(
             min_motion_px=float(
                 config.get(
                     "min_motion_px",
-                    7.0,
+                    10.0,
                 )
             ),
 
             motion_bbox_ratio=float(
                 config.get(
                     "motion_bbox_ratio",
-                    0.035,
+                    0.050,
                 )
             ),
 
@@ -749,40 +694,49 @@ def create_local_trackers(
                 )
             ),
 
+            # ---------------------------------------------
+            # UNKNOWN -> ACTIVE
+            # ---------------------------------------------
+
             unknown_to_active_sec=float(
                 config.get(
                     "unknown_to_active_sec",
-                    0.35,
+                    0.50,
+                )
+            ),
+
+            # ---------------------------------------------
+            # ACTIVE -> STOPPED
+            # ---------------------------------------------
+
+            active_to_stopped_sec=float(
+                config.get(
+                    "active_to_stopped_sec",
+                    1.00,
+                )
+            ),
+
+            # ---------------------------------------------
+            # STOPPED -> ACTIVE
+            # ---------------------------------------------
+
+            stopped_motion_multiplier=float(
+                config.get(
+                    "stopped_motion_multiplier",
+                    2.0,
                 )
             ),
 
             stopped_to_active_sec=float(
                 config.get(
                     "stopped_to_active_sec",
-                    0.50,
+                    0.70,
                 )
             ),
 
-            parked_to_active_sec=float(
-                config.get(
-                    "parked_to_active_sec",
-                    1.00,
-                )
-            ),
-
-            stopped_motion_multiplier=float(
-                config.get(
-                    "stopped_motion_multiplier",
-                    1.6,
-                )
-            ),
-
-            parked_motion_multiplier=float(
-                config.get(
-                    "parked_motion_multiplier",
-                    2.2,
-                )
-            ),
+            # ---------------------------------------------
+            # STOPPED -> PARKED
+            # ---------------------------------------------
 
             parked_after_sec=float(
                 config.get(
@@ -791,10 +745,67 @@ def create_local_trackers(
                 )
             ),
 
+            stop_anchor_min_px=float(
+                config.get(
+                    "stop_anchor_min_px",
+                    12.0,
+                )
+            ),
+
+            stop_anchor_bbox_ratio=float(
+                config.get(
+                    "stop_anchor_bbox_ratio",
+                    0.060,
+                )
+            ),
+
+            # ---------------------------------------------
+            # PARKED -> ACTIVE
+            # ---------------------------------------------
+
+            parked_motion_multiplier=float(
+                config.get(
+                    "parked_motion_multiplier",
+                    2.8,
+                )
+            ),
+
+            parked_to_active_sec=float(
+                config.get(
+                    "parked_to_active_sec",
+                    1.20,
+                )
+            ),
+
+            parked_exit_min_px=float(
+                config.get(
+                    "parked_exit_min_px",
+                    20.0,
+                )
+            ),
+
+            parked_exit_bbox_ratio=float(
+                config.get(
+                    "parked_exit_bbox_ratio",
+                    0.12,
+                )
+            ),
+
+            # ---------------------------------------------
+            # Track management
+            # ---------------------------------------------
+
             max_missing_sec=float(
                 config.get(
                     "max_missing_sec",
                     1.5,
+                )
+            ),
+
+            nominal_fps=float(
+                config.get(
+                    "nominal_fps",
+                    30.0,
                 )
             ),
 
@@ -807,6 +818,55 @@ def create_local_trackers(
         )
 
     return trackers
+
+
+def print_tracking_config(
+    config: dict,
+) -> None:
+    print()
+    print(
+        "======================================"
+    )
+    print(
+        "LOCAL TRACKING CONFIG"
+    )
+    print(
+        "======================================"
+    )
+
+    keys = [
+        "match_distance_px",
+        "match_distance_bbox_ratio",
+        "match_iou_threshold",
+        "motion_window_sec",
+        "min_motion_px",
+        "motion_bbox_ratio",
+        "smoothing_window",
+        "unknown_to_active_sec",
+        "active_to_stopped_sec",
+        "stopped_motion_multiplier",
+        "stopped_to_active_sec",
+        "parked_after_sec",
+        "stop_anchor_min_px",
+        "stop_anchor_bbox_ratio",
+        "parked_motion_multiplier",
+        "parked_to_active_sec",
+        "parked_exit_min_px",
+        "parked_exit_bbox_ratio",
+        "max_missing_sec",
+        "nominal_fps",
+    ]
+
+    for key in keys:
+        print(
+            f"{key:<30}: "
+            f"{config.get(key)}"
+        )
+
+    print(
+        "======================================"
+    )
+    print()
 
 
 def update_local_tracking(
@@ -889,8 +949,6 @@ def project_tracked_detections(
                 tracked.track
             )
 
-            # 한 번도 움직인 적 없는 차량은
-            # BEV / Global Tracking으로 넘기지 않는다.
             if not track.has_moved:
                 continue
 
@@ -1108,9 +1166,7 @@ def draw_tracked_detections(
     line_width: int,
     global_tracker: GlobalTracker,
 ) -> None:
-    for tracked in (
-        tracked_detections
-    ):
+    for tracked in tracked_detections:
         detection = (
             tracked.detection
         )
@@ -1199,7 +1255,6 @@ def draw_tracked_detections(
             id_label = (
                 f"L{track.local_id:03d}"
             )
-
         else:
             id_label = (
                 f"G{global_id:03d} "
@@ -1377,7 +1432,6 @@ def draw_bev_detections(
                 global_label = (
                     "G---"
                 )
-
             else:
                 global_label = (
                     f"G{detection.global_id:03d}"
@@ -1640,15 +1694,13 @@ def compose_grid(
             cv2.LINE_AA,
         )
 
-        tile = np.vstack(
-            [
-                header,
-                content,
-            ]
-        )
-
         tiles.append(
-            tile
+            np.vstack(
+                [
+                    header,
+                    content,
+                ]
+            )
         )
 
     while (
@@ -1731,7 +1783,7 @@ def compose_grid(
 
 
 # =========================================================
-# Stats
+# Performance
 # =========================================================
 
 
@@ -1780,66 +1832,6 @@ def print_stats(
     if stats.count == 0:
         return
 
-    avg_read = (
-        stats.average(
-            stats.read_total_ms
-        )
-    )
-
-    avg_queue_wait = (
-        stats.average(
-            stats.queue_wait_total_ms
-        )
-    )
-
-    avg_detection = (
-        stats.average(
-            stats.detection_total_ms
-        )
-    )
-
-    avg_local_tracking = (
-        stats.average(
-            stats.local_tracking_total_ms
-        )
-    )
-
-    avg_projection = (
-        stats.average(
-            stats.projection_total_ms
-        )
-    )
-
-    avg_global_tracking = (
-        stats.average(
-            stats.global_tracking_total_ms
-        )
-    )
-
-    avg_draw = (
-        stats.average(
-            stats.draw_total_ms
-        )
-    )
-
-    avg_grid = (
-        stats.average(
-            stats.grid_total_ms
-        )
-    )
-
-    avg_display = (
-        stats.average(
-            stats.display_total_ms
-        )
-    )
-
-    avg_consumer_loop = (
-        stats.average(
-            stats.consumer_loop_total_ms
-        )
-    )
-
     sets_per_second = (
         stats.throughput
     )
@@ -1877,56 +1869,54 @@ def print_stats(
         f"{stats.count}"
     )
 
-    print()
-
     print(
         f"Video read/thread   : "
-        f"{avg_read:8.2f} ms"
+        f"{stats.average(stats.read_total_ms):8.2f} ms"
     )
 
     print(
         f"Queue wait/main     : "
-        f"{avg_queue_wait:8.2f} ms"
+        f"{stats.average(stats.queue_wait_total_ms):8.2f} ms"
     )
 
     print(
         f"{detection_name:<20}: "
-        f"{avg_detection:8.2f} ms"
+        f"{stats.average(stats.detection_total_ms):8.2f} ms"
     )
 
     print(
         f"Local tracking      : "
-        f"{avg_local_tracking:8.2f} ms"
+        f"{stats.average(stats.local_tracking_total_ms):8.2f} ms"
     )
 
     print(
         f"BEV projection      : "
-        f"{avg_projection:8.2f} ms"
+        f"{stats.average(stats.projection_total_ms):8.2f} ms"
     )
 
     print(
         f"Global tracking     : "
-        f"{avg_global_tracking:8.2f} ms"
+        f"{stats.average(stats.global_tracking_total_ms):8.2f} ms"
     )
 
     print(
         f"Drawing             : "
-        f"{avg_draw:8.2f} ms"
+        f"{stats.average(stats.draw_total_ms):8.2f} ms"
     )
 
     print(
         f"Grid compose        : "
-        f"{avg_grid:8.2f} ms"
+        f"{stats.average(stats.grid_total_ms):8.2f} ms"
     )
 
     print(
         f"imshow/waitKey      : "
-        f"{avg_display:8.2f} ms"
+        f"{stats.average(stats.display_total_ms):8.2f} ms"
     )
 
     print(
         f"Consumer loop       : "
-        f"{avg_consumer_loop:8.2f} ms"
+        f"{stats.average(stats.consumer_loop_total_ms):8.2f} ms"
     )
 
     print(
@@ -2135,7 +2125,10 @@ def main() -> None:
     print(
         "======================================"
     )
-    print()
+
+    print_tracking_config(
+        tracking_config
+    )
 
     # -----------------------------------------------------
     # Video
@@ -2156,7 +2149,7 @@ def main() -> None:
     reader.print_info()
 
     # -----------------------------------------------------
-    # BEV / Trackers
+    # Tracking
     # -----------------------------------------------------
 
     bev_map = (
@@ -2185,51 +2178,6 @@ def main() -> None:
             global_tracking_config
         )
     )
-
-    print(
-        f"BEV map: "
-        f"{BEV_MAP_PATH}"
-    )
-
-    print(
-        f"BEV size: "
-        f"{bev_map.shape[1]}x"
-        f"{bev_map.shape[0]}"
-    )
-
-    print(
-        f"Pipeline queue size: "
-        f"{queue_size}"
-    )
-
-    print(
-        "Video decode thread: enabled"
-    )
-
-    if args.source == "live":
-        print(
-            "Detection: live YOLO"
-        )
-
-    else:
-        print(
-            "Detection: cached JSONL"
-        )
-
-    print(
-        "Local tracking: per camera"
-    )
-
-    print(
-        f"Global tracking: "
-        f"{'enabled' if global_enabled else 'disabled'}"
-    )
-
-    print()
-
-    # -----------------------------------------------------
-    # Runtime
-    # -----------------------------------------------------
 
     stats = (
         TimingStats()
@@ -2263,10 +2211,6 @@ def main() -> None:
                 time.perf_counter()
             )
 
-            # =============================================
-            # 1. SYNCHRONIZED FRAME SET
-            # =============================================
-
             queue_wait_start = (
                 time.perf_counter()
             )
@@ -2288,9 +2232,9 @@ def main() -> None:
             if frame_set is None:
                 break
 
-            # =============================================
-            # 2. DETECTION SOURCE
-            # =============================================
+            # =================================================
+            # Detection
+            # =================================================
 
             detection_start = (
                 time.perf_counter()
@@ -2314,7 +2258,7 @@ def main() -> None:
             else:
                 if cache_reader is None:
                     raise RuntimeError(
-                        "Detection cache is not initialized."
+                        "Cache reader is not initialized."
                     )
 
                 try:
@@ -2334,9 +2278,6 @@ def main() -> None:
                     print(
                         "Detection cache reached EOF."
                     )
-                    print(
-                        "Stopping playback."
-                    )
                     break
 
             detection_ms = (
@@ -2349,11 +2290,11 @@ def main() -> None:
                 1000.0
             )
 
-            # =============================================
-            # 3. LOCAL TRACKING
-            # =============================================
+            # =================================================
+            # Local tracking
+            # =================================================
 
-            local_tracking_start = (
+            start = (
                 time.perf_counter()
             )
 
@@ -2378,17 +2319,17 @@ def main() -> None:
                 (
                     time.perf_counter()
                     -
-                    local_tracking_start
+                    start
                 )
                 *
                 1000.0
             )
 
-            # =============================================
-            # 4. MOVING TRACKS -> BEV
-            # =============================================
+            # =================================================
+            # BEV
+            # =================================================
 
-            projection_start = (
+            start = (
                 time.perf_counter()
             )
 
@@ -2413,17 +2354,17 @@ def main() -> None:
                 (
                     time.perf_counter()
                     -
-                    projection_start
+                    start
                 )
                 *
                 1000.0
             )
 
-            # =============================================
-            # 5. GLOBAL TRACKING
-            # =============================================
+            # =================================================
+            # Global tracking
+            # =================================================
 
-            global_tracking_start = (
+            start = (
                 time.perf_counter()
             )
 
@@ -2444,15 +2385,15 @@ def main() -> None:
                 (
                     time.perf_counter()
                     -
-                    global_tracking_start
+                    start
                 )
                 *
                 1000.0
             )
 
-            # =============================================
-            # 6. OPTIONAL RENDER
-            # =============================================
+            # =================================================
+            # Render
+            # =================================================
 
             draw_ms = 0.0
             grid_ms = 0.0
@@ -2461,7 +2402,7 @@ def main() -> None:
             key = 255
 
             if render:
-                draw_start = (
+                start = (
                     time.perf_counter()
                 )
 
@@ -2486,9 +2427,7 @@ def main() -> None:
 
                     draw_tracked_detections(
                         frame=output,
-                        camera_id=(
-                            camera_id
-                        ),
+                        camera_id=camera_id,
                         tracked_detections=(
                             tracked_detections
                         ),
@@ -2543,17 +2482,13 @@ def main() -> None:
                     (
                         time.perf_counter()
                         -
-                        draw_start
+                        start
                     )
                     *
                     1000.0
                 )
 
-                # =========================================
-                # 7. GRID
-                # =========================================
-
-                grid_start = (
+                start = (
                     time.perf_counter()
                 )
 
@@ -2602,18 +2537,14 @@ def main() -> None:
                     (
                         time.perf_counter()
                         -
-                        grid_start
+                        start
                     )
                     *
                     1000.0
                 )
 
-                # =========================================
-                # 8. DISPLAY
-                # =========================================
-
                 if show:
-                    display_start = (
+                    start = (
                         time.perf_counter()
                     )
 
@@ -2632,15 +2563,11 @@ def main() -> None:
                         (
                             time.perf_counter()
                             -
-                            display_start
+                            start
                         )
                         *
                         1000.0
                     )
-
-            # =============================================
-            # 9. STATS
-            # =============================================
 
             consumer_loop_ms = (
                 (
@@ -2699,9 +2626,6 @@ def main() -> None:
                     ),
                     args.source,
                 )
-
-                if args.source == "live":
-                    print_gpu_memory()
 
             if key in (
                 ord("q"),

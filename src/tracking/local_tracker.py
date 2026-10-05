@@ -43,12 +43,28 @@ class LocalTrack:
 
     state: TrackState = TrackState.UNKNOWN
 
+    # 한 번이라도 확실하게 실제 이동이 확인되었는지.
     has_moved: bool = False
 
+    # 마지막 ACTIVE 이동이 확정된 시각.
     last_moving_at: float | None = None
+
+    # 연속 정지가 시작된 시각.
     stopped_since: float | None = None
 
+    # 움직임이 시작됐을 가능성이 있는 시각.
     moving_candidate_since: float | None = None
+
+    # ACTIVE 차량이 정지하기 시작했을 가능성이 있는 시각.
+    stationary_candidate_since: float | None = None
+
+    # STOPPED 상태에서 연속 정지를 확인하기 위한 기준 위치.
+    stop_anchor_x: float | None = None
+    stop_anchor_y: float | None = None
+
+    # PARKED 확정 위치.
+    parked_anchor_x: float | None = None
+    parked_anchor_y: float | None = None
 
     raw_history: deque[PositionSample] = field(
         default_factory=deque
@@ -62,7 +78,6 @@ class LocalTrack:
     def label(
         self,
     ) -> str:
-
         return (
             f"{self.camera_id.upper()}"
             f"-L{self.local_id:03d}"
@@ -96,7 +111,6 @@ class LocalTrack:
     def width(
         self,
     ) -> float:
-
         return max(
             1.0,
             self.x2 - self.x1,
@@ -106,7 +120,6 @@ class LocalTrack:
     def height(
         self,
     ) -> float:
-
         return max(
             1.0,
             self.y2 - self.y1,
@@ -116,7 +129,6 @@ class LocalTrack:
     def diagonal(
         self,
     ) -> float:
-
         return math.hypot(
             self.width,
             self.height,
@@ -126,7 +138,6 @@ class LocalTrack:
     def raw_ground_x(
         self,
     ) -> float:
-
         return (
             self.x1
             +
@@ -137,16 +148,16 @@ class LocalTrack:
     def raw_ground_y(
         self,
     ) -> float:
-
         return self.y2
 
     @property
     def ground_x(
         self,
     ) -> float:
-
         if self.smoothed_history:
-            return self.smoothed_history[-1].x
+            return (
+                self.smoothed_history[-1].x
+            )
 
         return self.raw_ground_x
 
@@ -154,9 +165,10 @@ class LocalTrack:
     def ground_y(
         self,
     ) -> float:
-
         if self.smoothed_history:
-            return self.smoothed_history[-1].y
+            return (
+                self.smoothed_history[-1].y
+            )
 
         return self.raw_ground_y
 
@@ -164,15 +176,12 @@ class LocalTrack:
         self,
         timestamp: float,
     ) -> float:
-
         if self.stopped_since is None:
             return 0.0
 
         return max(
             0.0,
-            timestamp
-            -
-            self.stopped_since,
+            timestamp - self.stopped_since,
         )
 
 
@@ -206,21 +215,40 @@ class LocalTracker:
     def __init__(
         self,
         camera_id: str,
+
         match_distance_px: float = 80.0,
         match_distance_bbox_ratio: float = 0.60,
         match_iou_threshold: float = 0.10,
+
         motion_window_sec: float = 0.8,
         min_motion_px: float = 7.0,
         motion_bbox_ratio: float = 0.035,
+
         smoothing_window: int = 7,
+
         unknown_to_active_sec: float = 0.35,
         stopped_to_active_sec: float = 0.50,
         parked_to_active_sec: float = 1.00,
+
         stopped_motion_multiplier: float = 1.6,
         parked_motion_multiplier: float = 2.2,
+
         parked_after_sec: float = 10.0,
+
         max_missing_sec: float = 1.5,
+
         print_transitions: bool = True,
+
+        # 신규 값.
+        active_to_stopped_sec: float = 1.0,
+
+        stop_anchor_min_px: float = 12.0,
+        stop_anchor_bbox_ratio: float = 0.06,
+
+        parked_exit_min_px: float = 20.0,
+        parked_exit_bbox_ratio: float = 0.12,
+
+        nominal_fps: float = 30.0,
     ):
         self.camera_id = camera_id
 
@@ -287,12 +315,43 @@ class LocalTracker:
             print_transitions
         )
 
+        self.active_to_stopped_sec = float(
+            active_to_stopped_sec
+        )
+
+        self.stop_anchor_min_px = float(
+            stop_anchor_min_px
+        )
+
+        self.stop_anchor_bbox_ratio = float(
+            stop_anchor_bbox_ratio
+        )
+
+        self.parked_exit_min_px = float(
+            parked_exit_min_px
+        )
+
+        self.parked_exit_bbox_ratio = float(
+            parked_exit_bbox_ratio
+        )
+
+        self.nominal_fps = max(
+            1.0,
+            float(
+                nominal_fps
+            ),
+        )
+
         self.tracks: dict[
             int,
             LocalTrack,
         ] = {}
 
         self.next_local_id = 1
+
+    # =====================================================
+    # Detection geometry
+    # =====================================================
 
     @staticmethod
     def _bbox_from_detection(
@@ -303,12 +362,19 @@ class LocalTracker:
         float,
         float,
     ]:
-
         return (
-            float(detection.x1),
-            float(detection.y1),
-            float(detection.x2),
-            float(detection.y2),
+            float(
+                detection.x1
+            ),
+            float(
+                detection.y1
+            ),
+            float(
+                detection.x2
+            ),
+            float(
+                detection.y2
+            ),
         )
 
     @staticmethod
@@ -320,7 +386,6 @@ class LocalTracker:
             float,
         ],
     ) -> float:
-
         x1, y1, x2, y2 = bbox
 
         width = max(
@@ -350,7 +415,6 @@ class LocalTracker:
         float,
         float,
     ]:
-
         x1, _, x2, y2 = bbox
 
         return (
@@ -379,7 +443,6 @@ class LocalTracker:
             float,
         ],
     ) -> float:
-
         ax1, ay1, ax2, ay2 = bbox_a
         bx1, by1, bx2, by2 = bbox_b
 
@@ -458,13 +521,11 @@ class LocalTracker:
     ) -> list[
         DetectionCandidate
     ]:
-
         candidates = []
 
         for index, detection in enumerate(
             detections
         ):
-
             bbox = (
                 self._bbox_from_detection(
                     detection
@@ -495,12 +556,16 @@ class LocalTracker:
 
         return candidates
 
+    # =====================================================
+    # Local association
+    # =====================================================
+
     def _match_threshold(
         self,
         track: LocalTrack,
         candidate: DetectionCandidate,
+        timestamp: float,
     ) -> float:
-
         track_diagonal = (
             track.diagonal
         )
@@ -511,18 +576,59 @@ class LocalTracker:
             )
         )
 
-        bbox_based_threshold = (
-            max(
-                track_diagonal,
-                candidate_diagonal,
-            )
-            *
-            self.match_distance_bbox_ratio
+        max_diagonal = max(
+            track_diagonal,
+            candidate_diagonal,
         )
 
-        return max(
+        # 기존 설정에서 허용하는 최대 거리.
+        configured_threshold = max(
             self.match_distance_px,
-            bbox_based_threshold,
+            (
+                max_diagonal
+                *
+                self.match_distance_bbox_ratio
+            ),
+        )
+
+        # 정상적인 30fps 연속 프레임에서는 차량 중심이
+        # 한 프레임에 수십 px씩 순간 이동하지 않는다.
+        #
+        # YOLO 누락 때문에 몇 프레임 비었다면
+        # gap에 비례해서 허용 거리를 늘린다.
+        time_gap = max(
+            0.0,
+            timestamp - track.last_seen,
+        )
+
+        estimated_gap_frames = max(
+            1.0,
+            time_gap
+            *
+            self.nominal_fps,
+        )
+
+        # 너무 긴 gap에서 다른 차량과 연결되는 것을 막기 위해
+        # 최대 8프레임 정도까지만 확장한다.
+        estimated_gap_frames = min(
+            8.0,
+            estimated_gap_frames,
+        )
+
+        per_frame_distance = max(
+            25.0,
+            max_diagonal * 0.20,
+        )
+
+        temporal_threshold = (
+            per_frame_distance
+            *
+            estimated_gap_frames
+        )
+
+        return min(
+            configured_threshold,
+            temporal_threshold,
         )
 
     def _build_matches(
@@ -530,21 +636,19 @@ class LocalTracker:
         candidates: list[
             DetectionCandidate
         ],
+        timestamp: float,
     ) -> list[
         tuple[
             int,
             int,
         ]
     ]:
-
         possible_matches = []
 
         for track_id, track in (
             self.tracks.items()
         ):
-
             for candidate in candidates:
-
                 distance = math.hypot(
                     track.raw_ground_x
                     -
@@ -563,15 +667,69 @@ class LocalTracker:
                     self._match_threshold(
                         track,
                         candidate,
+                        timestamp,
                     )
                 )
 
+                # IoU도 없고 중심도 멀다면 즉시 제외.
                 if (
                     distance > threshold
                     and
                     iou
                     <
                     self.match_iou_threshold
+                ):
+                    continue
+
+                track_diagonal = (
+                    track.diagonal
+                )
+
+                candidate_diagonal = (
+                    self._bbox_diagonal(
+                        candidate.bbox
+                    )
+                )
+
+                max_diagonal = max(
+                    track_diagonal,
+                    candidate_diagonal,
+                )
+
+                time_gap = max(
+                    0.0,
+                    timestamp - track.last_seen,
+                )
+
+                gap_frames = max(
+                    1.0,
+                    time_gap
+                    *
+                    self.nominal_fps,
+                )
+
+                gap_frames = min(
+                    8.0,
+                    gap_frames,
+                )
+
+                # IoU가 거의 없는 상태에서 갑자기 옆 차량으로
+                # Local ID가 튀는 것을 방지하는 추가 guard.
+                hard_jump_threshold = (
+                    max(
+                        30.0,
+                        max_diagonal * 0.28,
+                    )
+                    *
+                    gap_frames
+                )
+
+                if (
+                    iou < 0.02
+                    and
+                    distance
+                    >
+                    hard_jump_threshold
                 ):
                     continue
 
@@ -584,13 +742,14 @@ class LocalTracker:
                     )
                 )
 
+                # IoU가 클수록 cost 감소.
                 cost = (
                     normalized_distance
                     -
                     (
                         iou
                         *
-                        0.50
+                        0.65
                     )
                 )
 
@@ -616,7 +775,6 @@ class LocalTracker:
             track_id,
             detection_index,
         ) in possible_matches:
-
             if track_id in matched_tracks:
                 continue
 
@@ -644,13 +802,16 @@ class LocalTracker:
 
         return matches
 
+    # =====================================================
+    # State helpers
+    # =====================================================
+
     def _change_state(
         self,
         track: LocalTrack,
         new_state: TrackState,
         timestamp: float,
     ) -> None:
-
         old_state = (
             track.state
         )
@@ -661,7 +822,6 @@ class LocalTracker:
         track.state = new_state
 
         if self.print_transitions:
-
             print(
                 f"[{track.label}] "
                 f"{old_state.value} "
@@ -670,6 +830,104 @@ class LocalTracker:
                 f"at {timestamp:.2f}s"
             )
 
+    def _clear_stop_state(
+        self,
+        track: LocalTrack,
+    ) -> None:
+        track.stopped_since = None
+
+        track.stationary_candidate_since = None
+
+        track.stop_anchor_x = None
+        track.stop_anchor_y = None
+
+    def _set_stop_anchor(
+        self,
+        track: LocalTrack,
+        timestamp: float,
+    ) -> None:
+        track.stop_anchor_x = (
+            track.ground_x
+        )
+
+        track.stop_anchor_y = (
+            track.ground_y
+        )
+
+        track.stopped_since = (
+            timestamp
+        )
+
+    def _stop_anchor_threshold(
+        self,
+        track: LocalTrack,
+    ) -> float:
+        return max(
+            self.stop_anchor_min_px,
+            (
+                track.diagonal
+                *
+                self.stop_anchor_bbox_ratio
+            ),
+        )
+
+    def _parked_exit_threshold(
+        self,
+        track: LocalTrack,
+    ) -> float:
+        return max(
+            self.parked_exit_min_px,
+            (
+                track.diagonal
+                *
+                self.parked_exit_bbox_ratio
+            ),
+        )
+
+    def _distance_from_stop_anchor(
+        self,
+        track: LocalTrack,
+    ) -> float:
+        if (
+            track.stop_anchor_x is None
+            or
+            track.stop_anchor_y is None
+        ):
+            return 0.0
+
+        return math.hypot(
+            track.ground_x
+            -
+            track.stop_anchor_x,
+            track.ground_y
+            -
+            track.stop_anchor_y,
+        )
+
+    def _distance_from_parked_anchor(
+        self,
+        track: LocalTrack,
+    ) -> float:
+        if (
+            track.parked_anchor_x is None
+            or
+            track.parked_anchor_y is None
+        ):
+            return 0.0
+
+        return math.hypot(
+            track.ground_x
+            -
+            track.parked_anchor_x,
+            track.ground_y
+            -
+            track.parked_anchor_y,
+        )
+
+    # =====================================================
+    # Position smoothing
+    # =====================================================
+
     def _append_position(
         self,
         track: LocalTrack,
@@ -677,7 +935,6 @@ class LocalTracker:
         x: float,
         y: float,
     ) -> None:
-
         track.raw_history.append(
             PositionSample(
                 timestamp=timestamp,
@@ -693,7 +950,6 @@ class LocalTracker:
             >
             self.smoothing_window
         ):
-
             track.raw_history.popleft()
 
         xs = np.array(
@@ -756,19 +1012,24 @@ class LocalTracker:
             <
             keep_after
         ):
-
             track.smoothed_history.popleft()
+
+    # =====================================================
+    # Motion
+    # =====================================================
 
     def _motion_distance(
         self,
         track: LocalTrack,
         timestamp: float,
     ) -> float:
-
-        if len(
-            track.smoothed_history
-        ) < 2:
-
+        if (
+            len(
+                track.smoothed_history
+            )
+            <
+            2
+        ):
             return 0.0
 
         target_time = (
@@ -784,13 +1045,11 @@ class LocalTracker:
         for sample in (
             track.smoothed_history
         ):
-
             if (
                 sample.timestamp
                 >=
                 target_time
             ):
-
                 reference = sample
                 break
 
@@ -811,7 +1070,6 @@ class LocalTracker:
         self,
         track: LocalTrack,
     ) -> float:
-
         bbox_threshold = (
             track.diagonal
             *
@@ -827,7 +1085,6 @@ class LocalTracker:
         self,
         track: LocalTrack,
     ) -> float:
-
         threshold = (
             self._base_motion_threshold(
                 track
@@ -839,7 +1096,6 @@ class LocalTracker:
             ==
             TrackState.STOPPED
         ):
-
             threshold *= (
                 self.stopped_motion_multiplier
             )
@@ -849,95 +1105,24 @@ class LocalTracker:
             ==
             TrackState.PARKED
         ):
-
             threshold *= (
                 self.parked_motion_multiplier
             )
 
         return threshold
 
-    def _required_motion_time(
+    def _history_ready(
         self,
         track: LocalTrack,
-    ) -> float:
-
-        if (
-            track.state
-            ==
-            TrackState.PARKED
-        ):
-
-            return (
-                self.parked_to_active_sec
-            )
-
-        if (
-            track.state
-            ==
-            TrackState.STOPPED
-        ):
-
-            return (
-                self.stopped_to_active_sec
-            )
-
-        return (
-            self.unknown_to_active_sec
-        )
-
-    def _confirm_moving(
-        self,
-        track: LocalTrack,
-        timestamp: float,
-        moving: bool,
     ) -> bool:
-
-        if not moving:
-
-            track.moving_candidate_since = None
-
-            return False
-
         if (
-            track.moving_candidate_since
-            is None
+            len(
+                track.smoothed_history
+            )
+            <
+            2
         ):
-
-            track.moving_candidate_since = (
-                timestamp
-            )
-
             return False
-
-        required_time = (
-            self._required_motion_time(
-                track
-            )
-        )
-
-        duration = (
-            timestamp
-            -
-            track.moving_candidate_since
-        )
-
-        return (
-            duration
-            >=
-            required_time
-        )
-
-    def _update_motion_state(
-        self,
-        track: LocalTrack,
-        timestamp: float,
-    ) -> None:
-
-        if len(
-            track.smoothed_history
-        ) < 2:
-
-            return
 
         history_duration = (
             track.smoothed_history[-1].timestamp
@@ -945,14 +1130,377 @@ class LocalTracker:
             track.smoothed_history[0].timestamp
         )
 
-        if (
+        return (
             history_duration
-            <
+            >=
             self.motion_window_sec
             *
             0.70
-        ):
+        )
 
+    # =====================================================
+    # State machine
+    # =====================================================
+
+    def _update_unknown_state(
+        self,
+        track: LocalTrack,
+        timestamp: float,
+        moving: bool,
+    ) -> None:
+        if not moving:
+            track.moving_candidate_since = None
+            return
+
+        if (
+            track.moving_candidate_since
+            is None
+        ):
+            track.moving_candidate_since = (
+                timestamp
+            )
+            return
+
+        duration = (
+            timestamp
+            -
+            track.moving_candidate_since
+        )
+
+        if (
+            duration
+            <
+            self.unknown_to_active_sec
+        ):
+            return
+
+        track.has_moved = True
+
+        track.last_moving_at = (
+            timestamp
+        )
+
+        track.moving_candidate_since = None
+
+        self._clear_stop_state(
+            track
+        )
+
+        track.parked_anchor_x = None
+        track.parked_anchor_y = None
+
+        self._change_state(
+            track,
+            TrackState.ACTIVE,
+            timestamp,
+        )
+
+    def _update_active_state(
+        self,
+        track: LocalTrack,
+        timestamp: float,
+        moving: bool,
+    ) -> None:
+        if moving:
+            track.last_moving_at = (
+                timestamp
+            )
+
+            track.stationary_candidate_since = None
+            track.stopped_since = None
+
+            return
+
+        # 첫 정지 후보.
+        if (
+            track.stationary_candidate_since
+            is None
+        ):
+            track.stationary_candidate_since = (
+                timestamp
+            )
+
+            return
+
+        stationary_duration = (
+            timestamp
+            -
+            track.stationary_candidate_since
+        )
+
+        if (
+            stationary_duration
+            <
+            self.active_to_stopped_sec
+        ):
+            return
+
+        # STOPPED로 확정.
+        track.stopped_since = (
+            track.stationary_candidate_since
+        )
+
+        track.stop_anchor_x = (
+            track.ground_x
+        )
+
+        track.stop_anchor_y = (
+            track.ground_y
+        )
+
+        track.moving_candidate_since = None
+
+        self._change_state(
+            track,
+            TrackState.STOPPED,
+            timestamp,
+        )
+
+    def _update_stopped_state(
+        self,
+        track: LocalTrack,
+        timestamp: float,
+        moving: bool,
+    ) -> None:
+        if moving:
+            # 매우 중요:
+            # ACTIVE 복귀가 아직 확정되지 않았더라도
+            # 움직임 증거가 나온 순간 PARKED 누적 시간은 폐기.
+            track.stopped_since = None
+
+            track.stop_anchor_x = None
+            track.stop_anchor_y = None
+
+            track.stationary_candidate_since = None
+
+            if (
+                track.moving_candidate_since
+                is None
+            ):
+                track.moving_candidate_since = (
+                    timestamp
+                )
+
+                return
+
+            moving_duration = (
+                timestamp
+                -
+                track.moving_candidate_since
+            )
+
+            if (
+                moving_duration
+                <
+                self.stopped_to_active_sec
+            ):
+                return
+
+            track.has_moved = True
+
+            track.last_moving_at = (
+                timestamp
+            )
+
+            track.moving_candidate_since = None
+
+            self._clear_stop_state(
+                track
+            )
+
+            track.parked_anchor_x = None
+            track.parked_anchor_y = None
+
+            self._change_state(
+                track,
+                TrackState.ACTIVE,
+                timestamp,
+            )
+
+            return
+
+        # 움직임 후보가 끊기면 다시 처음부터.
+        track.moving_candidate_since = None
+
+        # STOPPED 상태인데 직전에 움직임 후보가 있었을 경우
+        # stopped_since가 None으로 초기화되어 있다.
+        if (
+            track.stopped_since
+            is None
+            or
+            track.stop_anchor_x is None
+            or
+            track.stop_anchor_y is None
+        ):
+            self._set_stop_anchor(
+                track,
+                timestamp,
+            )
+
+            return
+
+        anchor_distance = (
+            self._distance_from_stop_anchor(
+                track
+            )
+        )
+
+        anchor_threshold = (
+            self._stop_anchor_threshold(
+                track
+            )
+        )
+
+        # 순간 motion threshold에는 못 미쳤더라도
+        # 차량이 천천히 계속 이동해서 정지 기준 위치에서
+        # 벗어난 경우 주차 타이머를 다시 시작한다.
+        if (
+            anchor_distance
+            >
+            anchor_threshold
+        ):
+            self._set_stop_anchor(
+                track,
+                timestamp,
+            )
+
+            return
+
+        stopped_duration = (
+            track.stopped_duration(
+                timestamp
+            )
+        )
+
+        if (
+            stopped_duration
+            <
+            self.parked_after_sec
+        ):
+            return
+
+        # 충분히 오랫동안 같은 위치에 머문 경우에만 PARKED.
+        track.parked_anchor_x = (
+            track.ground_x
+        )
+
+        track.parked_anchor_y = (
+            track.ground_y
+        )
+
+        track.moving_candidate_since = None
+        track.stationary_candidate_since = None
+
+        self._change_state(
+            track,
+            TrackState.PARKED,
+            timestamp,
+        )
+
+    def _update_parked_state(
+        self,
+        track: LocalTrack,
+        timestamp: float,
+        moving: bool,
+    ) -> None:
+        # PARKED가 되었을 때 anchor가 없는 예외 상황 방어.
+        if (
+            track.parked_anchor_x
+            is None
+            or
+            track.parked_anchor_y
+            is None
+        ):
+            track.parked_anchor_x = (
+                track.ground_x
+            )
+
+            track.parked_anchor_y = (
+                track.ground_y
+            )
+
+        exit_distance = (
+            self._distance_from_parked_anchor(
+                track
+            )
+        )
+
+        exit_threshold = (
+            self._parked_exit_threshold(
+                track
+            )
+        )
+
+        # PARKED에서는 단순 motion뿐 아니라
+        # 실제 주차 위치에서 벗어났는지를 함께 확인.
+        leaving_parked_position = (
+            exit_distance
+            >
+            exit_threshold
+        )
+
+        movement_evidence = (
+            moving
+            or
+            leaving_parked_position
+        )
+
+        if not movement_evidence:
+            track.moving_candidate_since = None
+            return
+
+        if (
+            track.moving_candidate_since
+            is None
+        ):
+            track.moving_candidate_since = (
+                timestamp
+            )
+
+            return
+
+        moving_duration = (
+            timestamp
+            -
+            track.moving_candidate_since
+        )
+
+        if (
+            moving_duration
+            <
+            self.parked_to_active_sec
+        ):
+            return
+
+        track.has_moved = True
+
+        track.last_moving_at = (
+            timestamp
+        )
+
+        track.moving_candidate_since = None
+
+        self._clear_stop_state(
+            track
+        )
+
+        track.parked_anchor_x = None
+        track.parked_anchor_y = None
+
+        self._change_state(
+            track,
+            TrackState.ACTIVE,
+            timestamp,
+        )
+
+    def _update_motion_state(
+        self,
+        track: LocalTrack,
+        timestamp: float,
+    ) -> None:
+        if not self._history_ready(
+            track
+        ):
             return
 
         motion_distance = (
@@ -974,46 +1522,15 @@ class LocalTracker:
             threshold
         )
 
-        confirmed_moving = (
-            self._confirm_moving(
+        if (
+            track.state
+            ==
+            TrackState.UNKNOWN
+        ):
+            self._update_unknown_state(
                 track,
                 timestamp,
                 moving,
-            )
-        )
-
-        if confirmed_moving:
-
-            track.has_moved = True
-
-            track.last_moving_at = (
-                timestamp
-            )
-
-            track.stopped_since = None
-
-            track.moving_candidate_since = None
-
-            self._change_state(
-                track,
-                TrackState.ACTIVE,
-                timestamp,
-            )
-
-            return
-
-        if moving:
-
-            # 움직임 후보는 맞지만 아직
-            # 연속시간 조건을 만족하지 못함.
-            return
-
-        if not track.has_moved:
-
-            self._change_state(
-                track,
-                TrackState.UNKNOWN,
-                timestamp,
             )
 
             return
@@ -1023,20 +1540,10 @@ class LocalTracker:
             ==
             TrackState.ACTIVE
         ):
-
-            if (
-                track.stopped_since
-                is None
-            ):
-
-                track.stopped_since = (
-                    timestamp
-                )
-
-            self._change_state(
+            self._update_active_state(
                 track,
-                TrackState.STOPPED,
                 timestamp,
+                moving,
             )
 
             return
@@ -1046,33 +1553,11 @@ class LocalTracker:
             ==
             TrackState.STOPPED
         ):
-
-            if (
-                track.stopped_since
-                is None
-            ):
-
-                track.stopped_since = (
-                    timestamp
-                )
-
-            stopped_duration = (
-                track.stopped_duration(
-                    timestamp
-                )
+            self._update_stopped_state(
+                track,
+                timestamp,
+                moving,
             )
-
-            if (
-                stopped_duration
-                >=
-                self.parked_after_sec
-            ):
-
-                self._change_state(
-                    track,
-                    TrackState.PARKED,
-                    timestamp,
-                )
 
             return
 
@@ -1081,11 +1566,15 @@ class LocalTracker:
             ==
             TrackState.PARKED
         ):
+            self._update_parked_state(
+                track,
+                timestamp,
+                moving,
+            )
 
-            # PARKED는 작은 흔들림이나
-            # 순간적인 bbox 변동으로는
-            # 상태가 바뀌지 않는다.
-            return
+    # =====================================================
+    # Track update
+    # =====================================================
 
     def _update_track(
         self,
@@ -1093,7 +1582,6 @@ class LocalTracker:
         candidate: DetectionCandidate,
         timestamp: float,
     ) -> None:
-
         track.bbox = (
             candidate.bbox
         )
@@ -1127,7 +1615,6 @@ class LocalTracker:
         candidate: DetectionCandidate,
         timestamp: float,
     ) -> LocalTrack:
-
         local_id = (
             self.next_local_id
         )
@@ -1173,13 +1660,11 @@ class LocalTracker:
         self,
         timestamp: float,
     ) -> None:
-
         stale_ids = []
 
         for track_id, track in (
             self.tracks.items()
         ):
-
             missing_duration = (
                 timestamp
                 -
@@ -1191,16 +1676,18 @@ class LocalTracker:
                 >
                 self.max_missing_sec
             ):
-
                 stale_ids.append(
                     track_id
                 )
 
         for track_id in stale_ids:
-
             del self.tracks[
                 track_id
             ]
+
+    # =====================================================
+    # Public API
+    # =====================================================
 
     def update(
         self,
@@ -1209,7 +1696,6 @@ class LocalTracker:
     ) -> list[
         TrackedDetection
     ]:
-
         timestamp = float(
             timestamp
         )
@@ -1222,13 +1708,12 @@ class LocalTracker:
 
         matches = (
             self._build_matches(
-                candidates
+                candidates,
+                timestamp,
             )
         )
 
-        matched_detection_indices = (
-            set()
-        )
+        matched_detection_indices = set()
 
         result_by_detection: dict[
             int,
@@ -1239,7 +1724,6 @@ class LocalTracker:
             track_id,
             detection_index,
         ) in matches:
-
             track = (
                 self.tracks[
                     track_id
@@ -1267,7 +1751,6 @@ class LocalTracker:
             ] = track
 
         for candidate in candidates:
-
             if (
                 candidate.index
                 in
@@ -1293,7 +1776,6 @@ class LocalTracker:
         tracked_detections = []
 
         for candidate in candidates:
-
             track = (
                 result_by_detection.get(
                     candidate.index
@@ -1317,7 +1799,6 @@ class LocalTracker:
     def active_track_count(
         self,
     ) -> int:
-
         return sum(
             1
             for track
@@ -1331,7 +1812,6 @@ class LocalTracker:
         TrackState,
         int,
     ]:
-
         counts = {
             TrackState.UNKNOWN: 0,
             TrackState.ACTIVE: 0,
@@ -1342,7 +1822,6 @@ class LocalTracker:
         for track in (
             self.tracks.values()
         ):
-
             counts[
                 track.state
             ] += 1

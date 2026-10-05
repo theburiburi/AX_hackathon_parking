@@ -1,50 +1,167 @@
 local_tracking:
-  # 이전 track과 현재 detection을 매칭할 때 허용하는 최대 거리.
-  match_distance_px: 80.0
-  match_distance_bbox_ratio: 0.60
 
-  # bbox IoU가 이 이상이면 같은 차량 후보로 허용.
+  # =======================================================
+  # LOCAL ID MATCHING
+  # =======================================================
+
+  # 이전 프레임의 차량과 현재 detection을
+  # 같은 Local ID라고 볼 수 있는 기본 최대 거리.
+  #
+  # 너무 크면 옆 차량로 ID가 튈 수 있음.
+  # 너무 작으면 빠르게 움직이는 차량의 ID가 끊길 수 있음.
+  match_distance_px: 60.0
+
+  # bbox 대각선 길이에 비례한 매칭 거리.
+  #
+  # 큰 차량은 bbox 자체가 크기 때문에
+  # 고정 px 기준만 사용하는 것을 보완한다.
+  match_distance_bbox_ratio: 0.45
+
+  # bbox IoU 기준.
+  #
+  # 값이 높을수록 bbox가 많이 겹쳐야
+  # 같은 차량으로 판단하기 쉬워짐.
   match_iou_threshold: 0.10
 
-  # 이동량을 계산할 시간 구간.
+
+  # =======================================================
+  # MOTION DETECTION
+  # =======================================================
+
+  # 이동량을 측정하는 시간 구간.
+  #
+  # 예:
+  # 0.8초 전 위치와 현재 위치의 차이를 계산.
   motion_window_sec: 0.8
 
-  # 기본 이동 판정 최소 픽셀.
-  min_motion_px: 7.0
+  # 차량이 움직였다고 보기 위한 최소 이동 픽셀.
+  #
+  # 높이면 bbox 흔들림에 덜 민감해짐.
+  min_motion_px: 10.0
 
   # bbox 크기에 비례한 이동 threshold.
-  motion_bbox_ratio: 0.035
+  #
+  # 실제 threshold는 대략:
+  #
+  # max(
+  #   min_motion_px,
+  #   bbox_diagonal * motion_bbox_ratio
+  # )
+  motion_bbox_ratio: 0.050
 
-  # 최근 몇 개 위치의 median을 사용할지.
-  # 순간적인 bbox 튐을 줄이기 위한 값.
+  # 위치 median smoothing에 사용할 최근 detection 수.
+  #
+  # 높이면 안정적이지만 반응이 느려짐.
   smoothing_window: 7
 
-  # UNKNOWN 상태에서 처음 ACTIVE로 승격될 때
-  # 움직임이 이 시간 이상 지속되어야 함.
-  unknown_to_active_sec: 0.35
 
-  # STOPPED 상태에서 ACTIVE로 돌아갈 때
-  # 연속 움직임이 이 시간 이상 필요.
-  stopped_to_active_sec: 0.50
+  # =======================================================
+  # UNKNOWN -> ACTIVE
+  # =======================================================
 
-  # PARKED 상태에서 ACTIVE로 돌아갈 때는
-  # 더 확실한 움직임을 요구.
-  parked_to_active_sec: 1.00
+  # 처음부터 주차되어 있던 차량이
+  # bbox 흔들림 때문에 ACTIVE가 되는 것을 방지.
+  #
+  # motion threshold를 넘은 상태가 이 시간 이상
+  # 유지되어야 최초 이동으로 인정.
+  unknown_to_active_sec: 0.50
 
-  # STOPPED / PARKED에서 재출발 판단 시
-  # 기본 움직임 threshold에 곱할 값.
-  stopped_motion_multiplier: 1.6
-  parked_motion_multiplier: 2.2
 
-  # STOPPED 상태가 이 시간 이상 지속되면 PARKED.
-  # 테스트용.
+  # =======================================================
+  # ACTIVE -> STOPPED
+  # =======================================================
+
+  # 이동 중 차량이 순간적으로 motion threshold 아래로
+  # 내려갔다고 바로 STOPPED가 되지 않도록 한다.
+  #
+  # 이 시간 동안 연속으로 정지해야 STOPPED.
+  active_to_stopped_sec: 1.00
+
+
+  # =======================================================
+  # STOPPED -> ACTIVE
+  # =======================================================
+
+  # STOPPED 상태에서는 기본 motion threshold보다
+  # 더 큰 움직임이 있어야 움직임 후보로 본다.
+  stopped_motion_multiplier: 2.0
+
+  # STOPPED 상태에서 움직임이 이 시간 이상
+  # 지속되어야 다시 ACTIVE.
+  stopped_to_active_sec: 0.70
+
+
+  # =======================================================
+  # STOPPED -> PARKED
+  # =======================================================
+
+  # STOPPED 상태를 이 시간 이상 유지해야
+  # PARKED 후보가 된다.
   parked_after_sec: 10.0
 
-  # detection이 이 시간 이상 사라지면 track 제거.
+  # STOPPED가 시작된 위치에서 허용할 최소 흔들림 반경.
+  #
+  # 이 범위 안에서 계속 있어야
+  # "같은 위치에 정지 중"이라고 판단.
+  stop_anchor_min_px: 12.0
+
+  # bbox 크기에 비례한 stop anchor 허용 범위.
+  #
+  # 실제 threshold:
+  #
+  # max(
+  #   stop_anchor_min_px,
+  #   bbox_diagonal * stop_anchor_bbox_ratio
+  # )
+  stop_anchor_bbox_ratio: 0.060
+
+
+  # =======================================================
+  # PARKED -> ACTIVE
+  # =======================================================
+
+  # PARKED 상태에서는 bbox 흔들림에 더욱 보수적으로 반응.
+  parked_motion_multiplier: 2.8
+
+  # PARKED에서 움직임이 이 시간 이상
+  # 지속되어야 ACTIVE.
+  parked_to_active_sec: 1.20
+
+  # PARKED 위치에서 최소 이 거리 이상 벗어나야
+  # 출차 움직임의 증거로 사용.
+  parked_exit_min_px: 20.0
+
+  # bbox 크기에 비례한 PARKED 위치 이탈 threshold.
+  parked_exit_bbox_ratio: 0.12
+
+
+  # =======================================================
+  # TRACK MANAGEMENT
+  # =======================================================
+
+  # 이 시간 이상 detection이 사라지면
+  # 해당 LocalTrack을 제거.
   max_missing_sec: 1.5
 
-  # 처음부터 주차되어 있던 UNKNOWN 차량 표시 여부.
+  # 현재 영상 FPS.
+  #
+  # ID association에서 프레임 간 시간 차이를
+  # 거리 허용량 계산에 사용.
+  nominal_fps: 30.0
+
+
+  # =======================================================
+  # DISPLAY / DEBUG
+  # =======================================================
+
+  # UNKNOWN 차량까지 bbox를 화면에 표시할지 여부.
+  #
+  # false이면 한 번도 움직임이 확인되지 않은
+  # 기존 주차차량은 화면에서 숨김.
   show_unknown: false
 
   # 상태 변화 로그 출력.
+  #
+  # 예:
+  # CAM01-L003 UNKNOWN -> ACTIVE
   print_transitions: true
