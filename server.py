@@ -6,7 +6,6 @@ import math
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import yaml
 from fastapi import FastAPI, HTTPException
@@ -55,7 +54,6 @@ from src.tracking import (
     GlobalObservation,
     GlobalTracker,
     LocalTracker,
-    TrackState,
 )
 
 
@@ -90,7 +88,7 @@ app.mount(
 
 
 # =========================================================
-# Basic helpers
+# Helpers
 # =========================================================
 
 
@@ -115,7 +113,7 @@ def load_yaml(
 
 
 # =========================================================
-# Cached YOLO detection
+# Cached YOLO
 # =========================================================
 
 
@@ -131,13 +129,6 @@ class CachedDetection:
 
 
 class DetectionCacheStore:
-    """
-    detections.jsonl의 각 줄 시작 위치만 메모리에 저장한다.
-
-    실제 JSON 전체를 RAM에 올리지 않기 때문에
-    10분 × 7카메라 cache가 커져도 메모리 사용량이 작다.
-    """
-
     def __init__(
         self,
         path: Path,
@@ -242,7 +233,7 @@ class DetectionCacheStore:
 
 
 # =========================================================
-# Tracking engine
+# Tracking Engine
 # =========================================================
 
 
@@ -298,18 +289,11 @@ class TrackingEngine:
                     camera_id
                 )
 
-                print(
-                    f"[WEB] calibration loaded: "
-                    f"{camera_id}"
-                )
-
-            except Exception as exc:
-                print(
-                    f"[WEB] calibration unavailable: "
-                    f"{camera_id} | {exc}"
-                )
+            except Exception:
+                pass
 
         self.tracking_config: dict = {}
+
         self.global_tracking_config: dict = {}
 
         self.local_trackers: dict[
@@ -351,7 +335,7 @@ class TrackingEngine:
         self.reload_config()
 
     # =====================================================
-    # Config / runtime reset
+    # Config
     # =====================================================
 
     def reload_config(
@@ -406,42 +390,6 @@ class TrackingEngine:
                 clear_checkpoints=True
             )
 
-            print()
-            print(
-                "======================================"
-            )
-            print(
-                "WEB TRACKING CONFIG RELOADED"
-            )
-            print(
-                "======================================"
-            )
-
-            print(
-                f"FPS                 : "
-                f"{self.nominal_fps}"
-            )
-
-            print(
-                f"Cache frames        : "
-                f"{self.cache.frame_count}"
-            )
-
-            print(
-                f"Checkpoint interval : "
-                f"{self.checkpoint_interval_frames} frames"
-            )
-
-            print(
-                f"Global tracking     : "
-                f"{self.global_enabled}"
-            )
-
-            print(
-                "======================================"
-            )
-            print()
-
     def _reset_runtime(
         self,
         clear_checkpoints: bool,
@@ -461,10 +409,12 @@ class TrackingEngine:
             self.global_tracker = (
                 self._create_global_tracker()
             )
+
         else:
             self.global_tracker = None
 
         self.current_frame = -1
+
         self.last_result = None
 
         if clear_checkpoints:
@@ -479,7 +429,7 @@ class TrackingEngine:
             )
 
     # =====================================================
-    # Tracker constructors
+    # Local Tracker
     # =====================================================
 
     def _create_local_trackers(
@@ -642,15 +592,15 @@ class TrackingEngine:
                     )
                 ),
 
-                print_transitions=bool(
-                    config.get(
-                        "print_transitions",
-                        True,
-                    )
-                ),
+                # 상태 전이 로그 출력 안 함.
+                print_transitions=False,
             )
 
         return trackers
+
+    # =====================================================
+    # Global Tracker
+    # =====================================================
 
     def _create_global_tracker(
         self,
@@ -716,16 +666,12 @@ class TrackingEngine:
                 )
             ),
 
-            print_events=bool(
-                config.get(
-                    "print_events",
-                    True,
-                )
-            ),
+            # Global ID 생성 로그 출력 안 함.
+            print_events=False,
         )
 
     # =====================================================
-    # Checkpoints
+    # Checkpoint
     # =====================================================
 
     def _save_checkpoint(
@@ -822,7 +768,7 @@ class TrackingEngine:
         )
 
     # =====================================================
-    # Frame processing
+    # Frame Processing
     # =====================================================
 
     def _process_frame(
@@ -857,7 +803,7 @@ class TrackingEngine:
         ] = {}
 
         # -------------------------------------------------
-        # Local tracking
+        # Local Tracking
         # -------------------------------------------------
 
         for camera_id in (
@@ -892,7 +838,7 @@ class TrackingEngine:
             ] = tracked
 
         # -------------------------------------------------
-        # BEV projection
+        # BEV
         # -------------------------------------------------
 
         bev_items = []
@@ -1009,7 +955,7 @@ class TrackingEngine:
                     )
 
         # -------------------------------------------------
-        # Global tracking
+        # Global Tracking
         # -------------------------------------------------
 
         assignments = {}
@@ -1065,7 +1011,7 @@ class TrackingEngine:
             ] = global_id
 
         # -------------------------------------------------
-        # Camera overlay result
+        # Camera Overlay Result
         # -------------------------------------------------
 
         cameras_result = {}
@@ -1196,7 +1142,7 @@ class TrackingEngine:
         return result
 
     # =====================================================
-    # Public frame access
+    # Public Frame Access
     # =====================================================
 
     def get_frame(
@@ -1228,7 +1174,6 @@ class TrackingEngine:
                     self.last_result
                 )
 
-            # 뒤로 seek
             if (
                 target_frame
                 <
@@ -1238,7 +1183,6 @@ class TrackingEngine:
                     target_frame
                 )
 
-            # 앞으로 seek 또는 일반 재생.
             start_frame = (
                 self.current_frame
                 +
@@ -1264,6 +1208,7 @@ class TrackingEngine:
                             target_frame
                         )
                     )
+
                 else:
                     result = (
                         self.last_result
@@ -1381,12 +1326,110 @@ def tracking_reload():
     }
 
 
+# =========================================================
+# Startup display
+# =========================================================
+
+
+def print_startup_info() -> None:
+    info = (
+        tracking_engine.info()
+    )
+
+    try:
+        relative_cache_path = (
+            DETECTION_CACHE_PATH.relative_to(
+                ROOT
+            )
+        )
+
+    except ValueError:
+        relative_cache_path = (
+            DETECTION_CACHE_PATH
+        )
+
+    global_status = (
+        "enabled"
+        if info[
+            "global_tracking"
+        ]
+        else
+        "disabled"
+    )
+
+    print()
+    print(
+        "========================================"
+    )
+    print(
+        "AX PARKING WEB SERVER"
+    )
+    print(
+        "========================================"
+    )
+
+    print(
+        f"Cameras         : "
+        f"{len(info['camera_ids'])}"
+    )
+
+    print(
+        f"Detection cache : "
+        f"{relative_cache_path}"
+    )
+
+    print(
+        f"Cached frames   : "
+        f"{info['frame_count']}"
+    )
+
+    print(
+        f"Tracking FPS    : "
+        f"{info['fps']:.1f}"
+    )
+
+    print(
+        f"Global tracking : "
+        f"{global_status}"
+    )
+
+    print()
+
+    print(
+        "Web             : "
+        "http://127.0.0.1:8000"
+    )
+
+    print(
+        "========================================"
+    )
+
+    print(
+        "Press Ctrl+C to stop."
+    )
+
+    print()
+
+
+# =========================================================
+# Main
+# =========================================================
+
+
 if __name__ == "__main__":
     import uvicorn
+
+    print_startup_info()
 
     uvicorn.run(
         "server:app",
         host="127.0.0.1",
         port=8000,
+
+        # 개발 중 코드 변경 자동 반영.
         reload=True,
+
+        # 요청마다 INFO 로그가 쏟아지는 것을 방지.
+        log_level="warning",
+        access_log=False,
     )

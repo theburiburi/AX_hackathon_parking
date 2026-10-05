@@ -17,6 +17,7 @@ const videos = CAMERA_IDS.map(
 const videoMap = {};
 
 for (const video of videos) {
+
     videoMap[
         video.id
     ] = video;
@@ -92,11 +93,6 @@ const speedSelect =
         "speed-select"
     );
 
-const showUnknownCheckbox =
-    document.getElementById(
-        "show-unknown"
-    );
-
 const timeline =
     document.getElementById(
         "timeline"
@@ -134,13 +130,6 @@ const HARD_SYNC_THRESHOLD =
 const IGNORE_SYNC_THRESHOLD =
     0.04;
 
-
-/*
- * Tracking overlay는 20 FPS 정도로 갱신한다.
- *
- * 서버에서는 요청 프레임 사이에 빠진 frame도
- * 순서대로 처리하기 때문에 tracker 상태는 30 FPS를 유지한다.
- */
 const TRACKING_REQUEST_INTERVAL_MS =
     50;
 
@@ -163,7 +152,7 @@ let animationFrame = null;
 
 
 /* =========================================================
- * TRACKING STATE
+ * Tracking state
  * =========================================================
  */
 
@@ -184,7 +173,7 @@ let timelineTrackingTimer = null;
 
 
 /* =========================================================
- * COLORS
+ * Colors
  * =========================================================
  */
 
@@ -209,7 +198,7 @@ const CAMERA_COLORS = {
 
 
 /* =========================================================
- * TIME
+ * Time
  * =========================================================
  */
 
@@ -219,6 +208,7 @@ function formatTime(
 ) {
 
     if (!Number.isFinite(seconds)) {
+
         return "00:00.000";
     }
 
@@ -232,13 +222,19 @@ function formatTime(
 
     return (
         String(minutes)
-            .padStart(2, "0")
+            .padStart(
+                2,
+                "0"
+            )
         +
         ":"
         +
         remaining
             .toFixed(3)
-            .padStart(6, "0")
+            .padStart(
+                6,
+                "0"
+            )
     );
 }
 
@@ -270,6 +266,7 @@ function timeToFrame(
 ) {
 
     if (!trackingInfo) {
+
         return 0;
     }
 
@@ -294,7 +291,7 @@ function timeToFrame(
 
 
 /* =========================================================
- * VIDEO SYNC
+ * Video sync
  * =========================================================
  */
 
@@ -316,6 +313,7 @@ function setAllVideosTime(
             <
             HTMLMediaElement.HAVE_METADATA
         ) {
+
             continue;
         }
 
@@ -327,7 +325,9 @@ function setAllVideosTime(
         if (
             force
             ||
-            Math.abs(drift)
+            Math.abs(
+                drift
+            )
             >
             HARD_SYNC_THRESHOLD
         ) {
@@ -345,7 +345,9 @@ function setAllVideosTime(
         }
 
         if (
-            Math.abs(drift)
+            Math.abs(
+                drift
+            )
             <
             IGNORE_SYNC_THRESHOLD
         ) {
@@ -398,7 +400,7 @@ function updateLabels() {
 
 
 /* =========================================================
- * PLAYBACK
+ * Playback
  * =========================================================
  */
 
@@ -406,6 +408,7 @@ function updateLabels() {
 function updateMasterClock() {
 
     if (!playing) {
+
         return;
     }
 
@@ -475,6 +478,7 @@ async function startPlayback() {
         <
         videos.length
     ) {
+
         return;
     }
 
@@ -592,9 +596,11 @@ function pausePlayback() {
 function togglePlayback() {
 
     if (playing) {
+
         pausePlayback();
     }
     else {
+
         startPlayback();
     }
 }
@@ -607,7 +613,9 @@ function seekTo(
 
     masterTime =
         clampTime(
-            Number(value)
+            Number(
+                value
+            )
         );
 
     setAllVideosTime(
@@ -682,7 +690,7 @@ async function resetPlayback() {
 
 
 /* =========================================================
- * VIDEO READY
+ * Ready
  * =========================================================
  */
 
@@ -762,7 +770,7 @@ function updateReadyState() {
 
 
 /* =========================================================
- * TRACKING API
+ * Tracking API
  * =========================================================
  */
 
@@ -809,7 +817,7 @@ async function loadTrackingInfo() {
             await response.json();
 
         setTrackingStatus(
-            `Tracking ready · ${trackingInfo.fps.toFixed(1)} FPS · ${trackingInfo.frame_count} frames`
+            `Tracking ready · ${trackingInfo.fps.toFixed(1)} FPS`
         );
 
         if (
@@ -859,6 +867,7 @@ function requestTrackingForTime(
 ) {
 
     if (!trackingInfo) {
+
         return;
     }
 
@@ -874,6 +883,7 @@ function requestTrackingForTime(
         <
         TRACKING_REQUEST_INTERVAL_MS
     ) {
+
         return;
     }
 
@@ -902,6 +912,7 @@ function requestTrackingFrame(
         &&
         latestTracking
     ) {
+
         return;
     }
 
@@ -924,6 +935,7 @@ async function pumpTrackingRequest() {
         ===
         null
     ) {
+
         return;
     }
 
@@ -935,11 +947,6 @@ async function pumpTrackingRequest() {
 
     trackingRequestInFlight =
         true;
-
-    setTrackingStatus(
-        `Tracking frame ${frameIndex}...`,
-        "busy"
-    );
 
     try {
 
@@ -987,7 +994,7 @@ async function pumpTrackingRequest() {
         drawBev();
 
         setTrackingStatus(
-            `Frame ${result.frame_index} · ${result.timestamp.toFixed(2)}s`
+            `frame ${result.frame_index}`
         );
     }
     catch (error) {
@@ -998,7 +1005,7 @@ async function pumpTrackingRequest() {
         );
 
         setTrackingStatus(
-            `Tracking error: ${error.message}`,
+            "Tracking error",
             "error"
         );
     }
@@ -1024,7 +1031,7 @@ async function pumpTrackingRequest() {
 
 
 /* =========================================================
- * TRACKING CONFIG RELOAD
+ * Config reload
  * =========================================================
  */
 
@@ -1035,6 +1042,7 @@ async function reloadTrackingConfig() {
         playing;
 
     if (wasPlaying) {
+
         pausePlayback();
     }
 
@@ -1042,7 +1050,7 @@ async function reloadTrackingConfig() {
         true;
 
     setTrackingStatus(
-        "Reloading tracking config...",
+        "Reloading...",
         "busy"
     );
 
@@ -1066,9 +1074,11 @@ async function reloadTrackingConfig() {
         trackingInfo =
             await response.json();
 
-        latestTracking = null;
+        latestTracking =
+            null;
 
-        lastRenderedTrackingFrame = -1;
+        lastRenderedTrackingFrame =
+            -1;
 
         setTrackingStatus(
             "Tracking config reloaded"
@@ -1087,7 +1097,7 @@ async function reloadTrackingConfig() {
         );
 
         setTrackingStatus(
-            `Reload error: ${error.message}`,
+            "Reload error",
             "error"
         );
     }
@@ -1100,7 +1110,7 @@ async function reloadTrackingConfig() {
 
 
 /* =========================================================
- * CAMERA OVERLAY CANVAS
+ * Camera Canvas
  * =========================================================
  */
 
@@ -1208,6 +1218,7 @@ function calculateVideoLayout(
         ||
         videoHeight <= 0
     ) {
+
         return null;
     }
 
@@ -1264,11 +1275,6 @@ function drawCameraOverlay(
     cameraId
 ) {
 
-    const canvas =
-        overlayCanvases[
-            cameraId
-        ];
-
     const context =
         overlayContexts[
             cameraId
@@ -1297,6 +1303,7 @@ function drawCameraOverlay(
         ||
         !latestTracking.cameras
     ) {
+
         return;
     }
 
@@ -1313,6 +1320,7 @@ function drawCameraOverlay(
         );
 
     if (!layout) {
+
         return;
     }
 
@@ -1320,16 +1328,6 @@ function drawCameraOverlay(
         const detection
         of detections
     ) {
-
-        if (
-            detection.state
-            ===
-            "UNKNOWN"
-            &&
-            !showUnknownCheckbox.checked
-        ) {
-            continue;
-        }
 
         const color =
             STATE_COLORS[
@@ -1370,6 +1368,10 @@ function drawCameraOverlay(
             *
             layout.scale;
 
+        /*
+         * 모든 상태:
+         * bbox 색으로만 표시.
+         */
         context.strokeStyle =
             color;
 
@@ -1383,42 +1385,19 @@ function drawCameraOverlay(
             boxHeight
         );
 
-        const groundX =
-            layout.offsetX
-            +
-            detection.ground_x
-            *
-            layout.scale;
+        /*
+         * ACTIVE인 차량에만 ID를 표시한다.
+         */
+        if (
+            detection.state
+            !==
+            "ACTIVE"
+        ) {
 
-        const groundY =
-            layout.offsetY
-            +
-            detection.ground_y
-            *
-            layout.scale;
+            continue;
+        }
 
-        context.beginPath();
-
-        context.arc(
-            groundX,
-            groundY,
-            3.5,
-            0,
-            Math.PI * 2
-        );
-
-        context.fillStyle =
-            color;
-
-        context.fill();
-
-        let idLabel =
-            `L${String(
-                detection.local_id
-            ).padStart(
-                3,
-                "0"
-            )}`;
+        let label;
 
         if (
             detection.global_id
@@ -1426,41 +1405,27 @@ function drawCameraOverlay(
             null
         ) {
 
-            idLabel =
+            label =
                 `G${String(
                     detection.global_id
                 ).padStart(
                     3,
                     "0"
-                )}`
-                +
-                " / "
-                +
-                idLabel;
+                )}`;
         }
+        else {
 
-        let label =
-            `${idLabel} ${detection.state}`;
-
-        if (
-            detection.state
-            ===
-            "STOPPED"
-            ||
-            detection.state
-            ===
-            "PARKED"
-        ) {
-
-            label +=
-                ` ${detection.stopped_seconds.toFixed(1)}s`;
+            label =
+                `L${String(
+                    detection.local_id
+                ).padStart(
+                    3,
+                    "0"
+                )}`;
         }
-
-        const fontSize =
-            11;
 
         context.font =
-            `bold ${fontSize}px Arial`;
+            "bold 12px Arial";
 
         const textWidth =
             context.measureText(
@@ -1575,6 +1540,7 @@ const zoneOccupancy = {};
 function initializeOccupancy() {
 
     if (!zoneData) {
+
         return;
     }
 
@@ -1661,6 +1627,7 @@ function calculateMapLayout() {
         ||
         imageHeight <= 0
     ) {
+
         return null;
     }
 
@@ -1831,6 +1798,7 @@ function drawBevTracking(
             latestTracking.bev
         )
     ) {
+
         return;
     }
 
@@ -1973,6 +1941,7 @@ function drawBev() {
         ||
         bevImage.naturalWidth === 0
     ) {
+
         return;
     }
 
@@ -1980,6 +1949,7 @@ function drawBev() {
         calculateMapLayout();
 
     if (!layout) {
+
         return;
     }
 
@@ -2057,7 +2027,7 @@ async function loadZones() {
 
 
 /* =========================================================
- * EVENTS
+ * Events
  * =========================================================
  */
 
@@ -2147,6 +2117,9 @@ speedSelect.addEventListener(
     "change",
     event => {
 
+        const oldRate =
+            playbackRate;
+
         playbackRate =
             Number(
                 event.target.value
@@ -2184,7 +2157,7 @@ speedSelect.addEventListener(
                     +
                     elapsed
                     *
-                    playbackRate
+                    oldRate
                 );
 
             playStartedAt =
@@ -2199,15 +2172,6 @@ speedSelect.addEventListener(
             video.playbackRate =
                 playbackRate;
         }
-    }
-);
-
-
-showUnknownCheckbox.addEventListener(
-    "change",
-    () => {
-
-        drawAllCameraOverlays();
     }
 );
 
@@ -2330,7 +2294,7 @@ window.addEventListener(
 
 
 /* =========================================================
- * RESIZE
+ * Resize
  * =========================================================
  */
 
@@ -2378,7 +2342,7 @@ bevResizeObserver.observe(
 
 
 /* =========================================================
- * BEV LOAD
+ * BEV load
  * =========================================================
  */
 
@@ -2396,10 +2360,6 @@ bevImage.addEventListener(
     "error",
     () => {
 
-        console.error(
-            "Failed to load BEV map"
-        );
-
         bevStatus.textContent =
             "map error";
     }
@@ -2414,7 +2374,7 @@ loadZones();
 
 
 /* =========================================================
- * INITIALIZE
+ * Initialize
  * =========================================================
  */
 
