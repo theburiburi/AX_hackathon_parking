@@ -24,6 +24,8 @@ if str(ROOT) not in sys.path:
 from src.calibration import CameraProjector
 from src.detection.detector import VehicleDetector
 from src.tracking import (
+    GlobalObservation,
+    GlobalTracker,
     LocalTracker,
     TrackState,
 )
@@ -42,6 +44,12 @@ TRACKING_CONFIG_PATH = (
     / "tracking.yaml"
 )
 
+GLOBAL_TRACKING_CONFIG_PATH = (
+    ROOT
+    / "config"
+    / "global_tracking.yaml"
+)
+
 BEV_MAP_PATH = (
     ROOT
     / "data"
@@ -50,46 +58,18 @@ BEV_MAP_PATH = (
 )
 
 WINDOW_NAME = (
-    "AX Parking - Local Tracking + BEV"
+    "AX Parking - Global Tracking + BEV"
 )
 
 
 CAMERA_COLORS = {
-    "cam01": (
-        0,
-        0,
-        255,
-    ),
-    "cam02": (
-        0,
-        165,
-        255,
-    ),
-    "cam03": (
-        0,
-        255,
-        255,
-    ),
-    "cam05": (
-        0,
-        255,
-        0,
-    ),
-    "cam06": (
-        255,
-        255,
-        0,
-    ),
-    "cam07": (
-        255,
-        0,
-        0,
-    ),
-    "cam08": (
-        255,
-        0,
-        255,
-    ),
+    "cam01": (0, 0, 255),
+    "cam02": (0, 165, 255),
+    "cam03": (0, 255, 255),
+    "cam05": (0, 255, 0),
+    "cam06": (255, 255, 0),
+    "cam07": (255, 0, 0),
+    "cam08": (255, 0, 255),
 }
 
 
@@ -124,8 +104,9 @@ class TimingStats:
     read_total_ms: float = 0.0
     queue_wait_total_ms: float = 0.0
     inference_total_ms: float = 0.0
-    tracking_total_ms: float = 0.0
+    local_tracking_total_ms: float = 0.0
     projection_total_ms: float = 0.0
+    global_tracking_total_ms: float = 0.0
 
     draw_total_ms: float = 0.0
     grid_total_ms: float = 0.0
@@ -138,7 +119,6 @@ class TimingStats:
     def start(
         self,
     ) -> None:
-
         self.started_at = (
             time.perf_counter()
         )
@@ -148,20 +128,17 @@ class TimingStats:
         read_ms: float,
         queue_wait_ms: float,
         inference_ms: float,
-        tracking_ms: float,
+        local_tracking_ms: float,
         projection_ms: float,
+        global_tracking_ms: float,
         draw_ms: float,
         grid_ms: float,
         display_ms: float,
         consumer_loop_ms: float,
     ) -> None:
-
         self.count += 1
 
-        self.read_total_ms += (
-            read_ms
-        )
-
+        self.read_total_ms += read_ms
         self.queue_wait_total_ms += (
             queue_wait_ms
         )
@@ -170,12 +147,16 @@ class TimingStats:
             inference_ms
         )
 
-        self.tracking_total_ms += (
-            tracking_ms
+        self.local_tracking_total_ms += (
+            local_tracking_ms
         )
 
         self.projection_total_ms += (
             projection_ms
+        )
+
+        self.global_tracking_total_ms += (
+            global_tracking_ms
         )
 
         self.draw_total_ms += (
@@ -198,7 +179,6 @@ class TimingStats:
         self,
         total: float,
     ) -> float:
-
         if self.count == 0:
             return 0.0
 
@@ -212,7 +192,6 @@ class TimingStats:
     def elapsed_seconds(
         self,
     ) -> float:
-
         if self.started_at <= 0:
             return 0.0
 
@@ -226,7 +205,6 @@ class TimingStats:
     def throughput(
         self,
     ) -> float:
-
         elapsed = (
             self.elapsed_seconds
         )
@@ -259,16 +237,16 @@ class BEVDetection:
 
     stopped_seconds: float
 
+    global_id: int | None = None
+
 
 def load_yaml(
     path: Path,
 ) -> dict:
-
     with path.open(
         "r",
         encoding="utf-8",
     ) as file:
-
         data = yaml.safe_load(
             file
         )
@@ -280,14 +258,12 @@ def load_yaml(
 
 
 def load_config() -> dict:
-
     return load_yaml(
         CONFIG_PATH
     )
 
 
 def load_tracking_config() -> dict:
-
     config = load_yaml(
         TRACKING_CONFIG_PATH
     )
@@ -298,8 +274,18 @@ def load_tracking_config() -> dict:
     )
 
 
-def load_bev_map() -> np.ndarray:
+def load_global_tracking_config() -> dict:
+    config = load_yaml(
+        GLOBAL_TRACKING_CONFIG_PATH
+    )
 
+    return config.get(
+        "global_tracking",
+        {},
+    )
+
+
+def load_bev_map() -> np.ndarray:
     bev_map = cv2.imread(
         str(
             BEV_MAP_PATH
@@ -308,7 +294,6 @@ def load_bev_map() -> np.ndarray:
     )
 
     if bev_map is None:
-
         raise RuntimeError(
             "Failed to load BEV map: "
             f"{BEV_MAP_PATH}"
@@ -323,27 +308,21 @@ def load_projectors(
     str,
     CameraProjector,
 ]:
-
     projectors = {}
 
     print()
-
     print(
         "======================================"
     )
-
     print(
         "CAMERA CALIBRATION"
     )
-
     print(
         "======================================"
     )
 
     for camera_id in camera_ids:
-
         try:
-
             projectors[
                 camera_id
             ] = CameraProjector(
@@ -355,11 +334,9 @@ def load_projectors(
             )
 
         except Exception as exc:
-
             print(
                 f"{camera_id}: unavailable"
             )
-
             print(
                 f"  {exc}"
             )
@@ -367,7 +344,6 @@ def load_projectors(
     print(
         "======================================"
     )
-
     print()
 
     return projectors
@@ -380,11 +356,9 @@ def create_local_trackers(
     str,
     LocalTracker,
 ]:
-
     trackers = {}
 
     for camera_id in camera_ids:
-
         trackers[
             camera_id
         ] = LocalTracker(
@@ -432,6 +406,48 @@ def create_local_trackers(
                 )
             ),
 
+            smoothing_window=int(
+                config.get(
+                    "smoothing_window",
+                    7,
+                )
+            ),
+
+            unknown_to_active_sec=float(
+                config.get(
+                    "unknown_to_active_sec",
+                    0.35,
+                )
+            ),
+
+            stopped_to_active_sec=float(
+                config.get(
+                    "stopped_to_active_sec",
+                    0.50,
+                )
+            ),
+
+            parked_to_active_sec=float(
+                config.get(
+                    "parked_to_active_sec",
+                    1.00,
+                )
+            ),
+
+            stopped_motion_multiplier=float(
+                config.get(
+                    "stopped_motion_multiplier",
+                    1.6,
+                )
+            ),
+
+            parked_motion_multiplier=float(
+                config.get(
+                    "parked_motion_multiplier",
+                    2.2,
+                )
+            ),
+
             parked_after_sec=float(
                 config.get(
                     "parked_after_sec",
@@ -457,6 +473,75 @@ def create_local_trackers(
     return trackers
 
 
+def create_global_tracker(
+    config: dict,
+) -> GlobalTracker:
+    return GlobalTracker(
+        max_reid_gap_sec=float(
+            config.get(
+                "max_reid_gap_sec",
+                3.0,
+            )
+        ),
+
+        base_match_distance_px=float(
+            config.get(
+                "base_match_distance_px",
+                80.0,
+            )
+        ),
+
+        max_match_distance_px=float(
+            config.get(
+                "max_match_distance_px",
+                300.0,
+            )
+        ),
+
+        max_speed_px_per_sec=float(
+            config.get(
+                "max_speed_px_per_sec",
+                180.0,
+            )
+        ),
+
+        time_weight=float(
+            config.get(
+                "time_weight",
+                0.25,
+            )
+        ),
+
+        class_mismatch_penalty=float(
+            config.get(
+                "class_mismatch_penalty",
+                0.20,
+            )
+        ),
+
+        max_match_score=float(
+            config.get(
+                "max_match_score",
+                1.25,
+            )
+        ),
+
+        retention_sec=float(
+            config.get(
+                "retention_sec",
+                120.0,
+            )
+        ),
+
+        print_events=bool(
+            config.get(
+                "print_events",
+                True,
+            )
+        ),
+    )
+
+
 def update_local_tracking(
     camera_ids: list[str],
     all_detections,
@@ -466,7 +551,6 @@ def update_local_tracking(
     ],
     timestamp: float,
 ):
-
     all_tracked = []
 
     for (
@@ -476,7 +560,6 @@ def update_local_tracking(
         camera_ids,
         all_detections,
     ):
-
         tracked = (
             trackers[
                 camera_id
@@ -504,7 +587,6 @@ def project_tracked_detections(
 ) -> list[
     list[BEVDetection]
 ]:
-
     all_bev_detections = []
 
     for (
@@ -514,7 +596,6 @@ def project_tracked_detections(
         camera_ids,
         all_tracked,
     ):
-
         camera_results = []
 
         projector = (
@@ -524,29 +605,24 @@ def project_tracked_detections(
         )
 
         if projector is None:
-
             all_bev_detections.append(
                 camera_results
             )
-
             continue
 
         for tracked in (
             tracked_detections
         ):
-
             track = (
                 tracked.track
             )
 
-            # 핵심:
-            # 한 번도 움직인 적 없는 기존 주차 차량은
-            # BEV/global tracking으로 넘기지 않는다.
+            # 한 번도 움직인 적 없는 차량은
+            # Global Tracking 대상으로 넘기지 않는다.
             if not track.has_moved:
                 continue
 
             try:
-
                 bev_x, bev_y = (
                     projector.project(
                         track.ground_x,
@@ -570,9 +646,7 @@ def project_tracked_detections(
 
             camera_results.append(
                 BEVDetection(
-                    camera_id=(
-                        camera_id
-                    ),
+                    camera_id=camera_id,
                     local_id=(
                         track.local_id
                     ),
@@ -591,12 +665,8 @@ def project_tracked_detections(
                     image_y=(
                         track.ground_y
                     ),
-                    bev_x=(
-                        bev_x
-                    ),
-                    bev_y=(
-                        bev_y
-                    ),
+                    bev_x=bev_x,
+                    bev_y=bev_y,
                     stopped_seconds=(
                         track.stopped_duration(
                             timestamp
@@ -612,19 +682,84 @@ def project_tracked_detections(
     return all_bev_detections
 
 
+def update_global_tracking(
+    all_bev_detections: list[
+        list[BEVDetection]
+    ],
+    global_tracker: GlobalTracker,
+    timestamp: float,
+) -> None:
+    observations = []
+
+    for camera_detections in (
+        all_bev_detections
+    ):
+        for detection in (
+            camera_detections
+        ):
+            observations.append(
+                GlobalObservation(
+                    camera_id=(
+                        detection.camera_id
+                    ),
+                    local_id=(
+                        detection.local_id
+                    ),
+                    state=(
+                        detection.state
+                    ),
+                    class_name=(
+                        detection.class_name
+                    ),
+                    confidence=(
+                        detection.confidence
+                    ),
+                    bev_x=(
+                        detection.bev_x
+                    ),
+                    bev_y=(
+                        detection.bev_y
+                    ),
+                    timestamp=timestamp,
+                )
+            )
+
+    assignments = (
+        global_tracker.update(
+            observations=observations,
+            timestamp=timestamp,
+        )
+    )
+
+    for camera_detections in (
+        all_bev_detections
+    ):
+        for detection in (
+            camera_detections
+        ):
+            detection.global_id = (
+                assignments.get(
+                    (
+                        detection.camera_id,
+                        detection.local_id,
+                    )
+                )
+            )
+
+
 def draw_tracked_detections(
     frame: np.ndarray,
+    camera_id: str,
     tracked_detections,
     timestamp: float,
     show_unknown: bool,
     show_confidence: bool,
     line_width: int,
+    global_tracker: GlobalTracker,
 ) -> None:
-
     for tracked in (
         tracked_detections
     ):
-
         detection = (
             tracked.detection
         )
@@ -642,9 +777,11 @@ def draw_tracked_detections(
         ):
             continue
 
-        color = STATE_COLORS[
-            track.state
-        ]
+        color = (
+            STATE_COLORS[
+                track.state
+            ]
+        )
 
         x1 = int(
             detection.x1
@@ -700,8 +837,25 @@ def draw_tracked_detections(
             cv2.LINE_AA,
         )
 
+        global_id = (
+            global_tracker.get_global_id(
+                camera_id,
+                track.local_id,
+            )
+        )
+
+        if global_id is None:
+            id_label = (
+                f"L{track.local_id:03d}"
+            )
+        else:
+            id_label = (
+                f"G{global_id:03d} "
+                f"/ L{track.local_id:03d}"
+            )
+
         label = (
-            f"L{track.local_id:03d} "
+            f"{id_label} "
             f"{track.state.value}"
         )
 
@@ -712,14 +866,12 @@ def draw_tracked_detections(
                 TrackState.PARKED,
             )
         ):
-
             label += (
                 f" "
                 f"{track.stopped_duration(timestamp):.1f}s"
             )
 
         if show_confidence:
-
             label += (
                 f" "
                 f"{track.class_name} "
@@ -750,7 +902,6 @@ def draw_bev_detections(
         list[BEVDetection]
     ],
 ) -> np.ndarray:
-
     output = (
         bev_map.copy()
     )
@@ -760,19 +911,18 @@ def draw_bev_detections(
     )
 
     total = 0
-
     active = 0
     stopped = 0
     parked = 0
 
+    global_ids = set()
+
     for camera_detections in (
         all_bev_detections
     ):
-
         for detection in (
             camera_detections
         ):
-
             x = int(
                 round(
                     detection.bev_x
@@ -797,6 +947,14 @@ def draw_bev_detections(
                 continue
 
             total += 1
+
+            if (
+                detection.global_id
+                is not None
+            ):
+                global_ids.add(
+                    detection.global_id
+                )
 
             if (
                 detection.state
@@ -860,7 +1018,18 @@ def draw_bev_detections(
                 cv2.LINE_AA,
             )
 
+            if (
+                detection.global_id
+                is None
+            ):
+                global_label = "G---"
+            else:
+                global_label = (
+                    f"G{detection.global_id:03d}"
+                )
+
             label = (
+                f"{global_label} "
                 f"{detection.camera_id.upper()}"
                 f"-L{detection.local_id:03d} "
                 f"{detection.state.value}"
@@ -873,7 +1042,6 @@ def draw_bev_detections(
                     TrackState.PARKED,
                 )
             ):
-
                 label += (
                     f" "
                     f"{detection.stopped_seconds:.1f}s"
@@ -894,7 +1062,8 @@ def draw_bev_detections(
             )
 
     info = (
-        f"Tracked {total} | "
+        f"Global {len(global_ids)} | "
+        f"Observations {total} | "
         f"ACTIVE {active} | "
         f"STOPPED {stopped} | "
         f"PARKED {parked}"
@@ -926,7 +1095,6 @@ def fit_frame(
     target_width: int,
     target_height: int,
 ) -> np.ndarray:
-
     height, width = (
         frame.shape[:2]
     )
@@ -996,7 +1164,6 @@ def make_placeholder(
     width: int,
     height: int,
 ) -> np.ndarray:
-
     return np.zeros(
         (
             height,
@@ -1020,7 +1187,6 @@ def compose_grid(
     display_height: int,
     columns: int,
 ) -> np.ndarray:
-
     all_frames = list(
         frames
     )
@@ -1056,7 +1222,6 @@ def compose_grid(
     for index, frame in enumerate(
         all_frames
     ):
-
         content_height = (
             cell_height
             -
@@ -1078,10 +1243,13 @@ def compose_grid(
             dtype=np.uint8,
         )
 
-        if index < len(
-            camera_ids
+        if (
+            index
+            <
+            len(
+                camera_ids
+            )
         ):
-
             title = (
                 f"{camera_ids[index]} | "
                 f"det {raw_counts[index]} | "
@@ -1089,9 +1257,8 @@ def compose_grid(
             )
 
         else:
-
             title = (
-                "BEV MAP | moving vehicles only"
+                "BEV MAP | GLOBAL TRACKING"
             )
 
         cv2.putText(
@@ -1132,7 +1299,6 @@ def compose_grid(
         *
         columns
     ):
-
         tiles.append(
             make_placeholder(
                 cell_width,
@@ -1145,7 +1311,6 @@ def compose_grid(
     for row_index in range(
         rows
     ):
-
         start = (
             row_index
             *
@@ -1199,7 +1364,6 @@ def compose_grid(
 
 
 def print_gpu_memory() -> None:
-
     allocated = (
         torch.cuda.memory_allocated()
         /
@@ -1226,14 +1390,10 @@ def print_gpu_memory() -> None:
 
     print(
         "GPU memory | "
-        f"allocated="
-        f"{allocated:.2f} GB | "
-        f"reserved="
-        f"{reserved:.2f} GB | "
-        f"peak allocated="
-        f"{peak_allocated:.2f} GB | "
-        f"peak reserved="
-        f"{peak_reserved:.2f} GB"
+        f"allocated={allocated:.2f} GB | "
+        f"reserved={reserved:.2f} GB | "
+        f"peak allocated={peak_allocated:.2f} GB | "
+        f"peak reserved={peak_reserved:.2f} GB"
     )
 
 
@@ -1241,7 +1401,6 @@ def print_stats(
     stats: TimingStats,
     camera_count: int,
 ) -> None:
-
     if stats.count == 0:
         return
 
@@ -1257,12 +1416,20 @@ def print_stats(
         stats.inference_total_ms
     )
 
-    avg_tracking = stats.average(
-        stats.tracking_total_ms
+    avg_local_tracking = (
+        stats.average(
+            stats.local_tracking_total_ms
+        )
     )
 
     avg_projection = stats.average(
         stats.projection_total_ms
+    )
+
+    avg_global_tracking = (
+        stats.average(
+            stats.global_tracking_total_ms
+        )
     )
 
     avg_draw = stats.average(
@@ -1277,8 +1444,10 @@ def print_stats(
         stats.display_total_ms
     )
 
-    avg_consumer_loop = stats.average(
-        stats.consumer_loop_total_ms
+    avg_consumer_loop = (
+        stats.average(
+            stats.consumer_loop_total_ms
+        )
     )
 
     sets_per_second = (
@@ -1292,15 +1461,12 @@ def print_stats(
     )
 
     print()
-
     print(
         "======================================"
     )
-
     print(
         "PIPELINE PERFORMANCE"
     )
-
     print(
         "======================================"
     )
@@ -1329,12 +1495,17 @@ def print_stats(
 
     print(
         f"Local tracking      : "
-        f"{avg_tracking:8.2f} ms"
+        f"{avg_local_tracking:8.2f} ms"
     )
 
     print(
         f"BEV projection      : "
         f"{avg_projection:8.2f} ms"
+    )
+
+    print(
+        f"Global tracking     : "
+        f"{avg_global_tracking:8.2f} ms"
     )
 
     print(
@@ -1377,13 +1548,16 @@ def print_stats(
 
 
 def main() -> None:
-
     config = (
         load_config()
     )
 
     tracking_config = (
         load_tracking_config()
+    )
+
+    global_tracking_config = (
+        load_global_tracking_config()
     )
 
     pipeline_config = (
@@ -1477,14 +1651,19 @@ def main() -> None:
         )
     )
 
-    print(
-        f"Render enabled: "
-        f"{render}"
+    global_enabled = bool(
+        global_tracking_config.get(
+            "enabled",
+            True,
+        )
     )
 
     print(
-        f"Display enabled: "
-        f"{show}"
+        f"Render enabled: {render}"
+    )
+
+    print(
+        f"Display enabled: {show}"
     )
 
     print(
@@ -1509,9 +1688,7 @@ def main() -> None:
                 ]
             ),
             root=ROOT,
-            queue_size=(
-                queue_size
-            ),
+            queue_size=queue_size,
         )
     )
 
@@ -1527,7 +1704,7 @@ def main() -> None:
         )
     )
 
-    trackers = (
+    local_trackers = (
         create_local_trackers(
             camera_ids=(
                 reader.camera_ids
@@ -1535,6 +1712,12 @@ def main() -> None:
             config=(
                 tracking_config
             ),
+        )
+    )
+
+    global_tracker = (
+        create_global_tracker(
+            global_tracking_config
         )
     )
 
@@ -1567,7 +1750,8 @@ def main() -> None:
     )
 
     print(
-        "Global tracking: disabled"
+        f"Global tracking: "
+        f"{'enabled' if global_enabled else 'disabled'}"
     )
 
     print()
@@ -1579,7 +1763,6 @@ def main() -> None:
     )
 
     if show and render:
-
         cv2.namedWindow(
             WINDOW_NAME,
             cv2.WINDOW_NORMAL,
@@ -1592,13 +1775,10 @@ def main() -> None:
         )
 
     reader.start()
-
     stats.start()
 
     try:
-
         while True:
-
             consumer_start = (
                 time.perf_counter()
             )
@@ -1658,7 +1838,7 @@ def main() -> None:
             # 3. LOCAL TRACKING
             # =============================================
 
-            tracking_start = (
+            local_tracking_start = (
                 time.perf_counter()
             )
 
@@ -1671,7 +1851,7 @@ def main() -> None:
                         all_detections
                     ),
                     trackers=(
-                        trackers
+                        local_trackers
                     ),
                     timestamp=(
                         frame_set.timestamp
@@ -1679,11 +1859,11 @@ def main() -> None:
                 )
             )
 
-            tracking_ms = (
+            local_tracking_ms = (
                 (
                     time.perf_counter()
                     -
-                    tracking_start
+                    local_tracking_start
                 )
                 *
                 1000.0
@@ -1725,7 +1905,38 @@ def main() -> None:
             )
 
             # =============================================
-            # 5. OPTIONAL RENDER
+            # 5. GLOBAL TRACKING
+            # =============================================
+
+            global_tracking_start = (
+                time.perf_counter()
+            )
+
+            if global_enabled:
+                update_global_tracking(
+                    all_bev_detections=(
+                        all_bev_detections
+                    ),
+                    global_tracker=(
+                        global_tracker
+                    ),
+                    timestamp=(
+                        frame_set.timestamp
+                    ),
+                )
+
+            global_tracking_ms = (
+                (
+                    time.perf_counter()
+                    -
+                    global_tracking_start
+                )
+                *
+                1000.0
+            )
+
+            # =============================================
+            # 6. OPTIONAL RENDER
             # =============================================
 
             draw_ms = 0.0
@@ -1735,33 +1946,34 @@ def main() -> None:
             key = 255
 
             if render:
-
                 draw_start = (
                     time.perf_counter()
                 )
 
                 display_frames = []
-
                 raw_counts = []
-
                 tracked_counts = []
 
                 for (
+                    camera_id,
                     frame,
                     detections,
                     tracked_detections,
                 ) in zip(
+                    reader.camera_ids,
                     frame_set.frames,
                     all_detections,
                     all_tracked,
                 ):
-
                     output = (
                         frame.copy()
                     )
 
                     draw_tracked_detections(
                         frame=output,
+                        camera_id=(
+                            camera_id
+                        ),
                         tracked_detections=(
                             tracked_detections
                         ),
@@ -1776,6 +1988,9 @@ def main() -> None:
                         ),
                         line_width=(
                             line_width
+                        ),
+                        global_tracker=(
+                            global_tracker
                         ),
                     )
 
@@ -1820,7 +2035,7 @@ def main() -> None:
                 )
 
                 # =========================================
-                # 6. GRID
+                # 7. GRID
                 # =========================================
 
                 grid_start = (
@@ -1876,11 +2091,10 @@ def main() -> None:
                 )
 
                 # =========================================
-                # 7. DISPLAY
+                # 8. DISPLAY
                 # =========================================
 
                 if show:
-
                     display_start = (
                         time.perf_counter()
                     )
@@ -1907,7 +2121,7 @@ def main() -> None:
                     )
 
             # =============================================
-            # 8. STATS
+            # 9. STATS
             # =============================================
 
             consumer_loop_ms = (
@@ -1930,11 +2144,14 @@ def main() -> None:
                 inference_ms=(
                     inference_ms
                 ),
-                tracking_ms=(
-                    tracking_ms
+                local_tracking_ms=(
+                    local_tracking_ms
                 ),
                 projection_ms=(
                     projection_ms
+                ),
+                global_tracking_ms=(
+                    global_tracking_ms
                 ),
                 draw_ms=(
                     draw_ms
@@ -1957,7 +2174,6 @@ def main() -> None:
                 ==
                 0
             ):
-
                 print_stats(
                     stats,
                     len(
@@ -1974,23 +2190,19 @@ def main() -> None:
                 break
 
     except KeyboardInterrupt:
-
         print()
-
         print(
             "Interrupted by user."
         )
 
     finally:
-
         reader.stop()
-
         cv2.destroyAllWindows()
 
     print()
 
     print(
-        "7-camera local tracking pipeline finished."
+        "7-camera global tracking pipeline finished."
     )
 
     print_stats(

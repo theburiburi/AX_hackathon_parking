@@ -1,5 +1,5 @@
 model:
-  weights: yolo26l.pt
+  weights: yolo26x.pt
   device: 0
 
 inference:

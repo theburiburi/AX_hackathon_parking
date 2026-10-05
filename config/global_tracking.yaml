@@ -1,0 +1,36 @@
+global_tracking:
+  enabled: true
+
+  # 다른 local track을 기존 Global ID와 연결할 수 있는
+  # 최대 시간 차이.
+  max_reid_gap_sec: 3.0
+
+  # 시간 차이가 거의 없을 때도 허용하는 기본 BEV 거리.
+  base_match_distance_px: 80.0
+
+  # 아무리 시간이 지나도 이 거리 이상이면
+  # 같은 차량으로 연결하지 않는다.
+  max_match_distance_px: 300.0
+
+  # 시간 차이에 따라 허용 BEV 거리를 증가시키는 값.
+  # allowed_distance =
+  # base_match_distance_px
+  # + max_speed_px_per_sec * time_gap
+  max_speed_px_per_sec: 180.0
+
+  # 매칭 score에서 시간 차이가 차지하는 비중.
+  time_weight: 0.25
+
+  # YOLO class가 서로 다를 경우 score에 추가되는 penalty.
+  # car <-> truck 오분류 때문에 hard reject는 하지 않는다.
+  class_mismatch_penalty: 0.20
+
+  # 최종 score가 이 값보다 크면 기존 ID와 연결하지 않는다.
+  max_match_score: 1.25
+
+  # 관측이 끊긴 GlobalTrack을 메모리에 보관하는 시간.
+  # 동일 local ID와의 binding 자체는 유지한다.
+  retention_sec: 120.0
+
+  # Global ID 생성/연결 이벤트 출력
+  print_events: true
