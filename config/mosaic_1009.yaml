@@ -1,0 +1,53 @@
+# data/videos/1009.mp4 (3x3 모자이크)를
+# scripts/split_mosaic.py 로 분리한 7개 영상용 detection 설정.
+#
+# camera_id는 모자이크 칸 이름(cell_r{행}c{열})을 그대로 사용한다.
+# scripts/play_mosaic.py 가 이 이름으로 bbox를 그릴 칸 위치를 찾는다.
+#
+# 실행:
+#   python scripts/split_mosaic.py data/videos/1009.mp4 --skip-black
+#   python scripts/preprocess_yolo.py --config config/mosaic_1009.yaml --scene-name 1009
+#   python scripts/play_mosaic.py data/videos/1009.mp4 --detections data/detections/1009/detections.jsonl
+
+model:
+  weights: yolo26x.pt
+  device: 0
+
+inference:
+  imgsz: 960
+  conf: 0.20
+  iou: 0.70
+  quantize: 16
+  batch_size: 7
+
+classes:
+  names:
+    - car
+    - motorcycle
+    - bus
+    - truck
+
+videos:
+  - camera_id: cell_r1c1
+    path: data/videos/1009_split/cell_r1c1.mp4
+
+  - camera_id: cell_r1c2
+    path: data/videos/1009_split/cell_r1c2.mp4
+
+  - camera_id: cell_r1c3
+    path: data/videos/1009_split/cell_r1c3.mp4
+
+  - camera_id: cell_r2c1
+    path: data/videos/1009_split/cell_r2c1.mp4
+
+  - camera_id: cell_r2c2
+    path: data/videos/1009_split/cell_r2c2.mp4
+
+  - camera_id: cell_r2c3
+    path: data/videos/1009_split/cell_r2c3.mp4
+
+  - camera_id: cell_r3c1
+    path: data/videos/1009_split/cell_r3c1.mp4
+
+pipeline:
+  queue_size: 2

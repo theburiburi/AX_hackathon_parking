@@ -289,6 +289,17 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help=(
+            "Detection config yaml "
+            "(model / inference / classes / videos). "
+            "Default: config/detection.yaml"
+        ),
+    )
+
+    parser.add_argument(
         "--output-dir",
         type=str,
         default=None,
@@ -340,8 +351,23 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
+    config_path = CONFIG_PATH
+
+    if args.config:
+
+        config_path = Path(
+            args.config
+        )
+
+        if not config_path.is_absolute():
+            config_path = (
+                ROOT
+                /
+                config_path
+            )
+
     config = load_yaml(
-        CONFIG_PATH
+        config_path
     )
 
     videos = config.get(
@@ -352,7 +378,7 @@ def main() -> None:
     if not videos:
         raise RuntimeError(
             "No videos configured in "
-            f"{CONFIG_PATH}"
+            f"{config_path}"
         )
 
     pipeline_config = config.get(
@@ -445,7 +471,7 @@ def main() -> None:
 
     print(
         f"Config       : "
-        f"{CONFIG_PATH}"
+        f"{config_path}"
     )
 
     print(
@@ -480,7 +506,7 @@ def main() -> None:
     print()
 
     detector = VehicleDetector(
-        CONFIG_PATH
+        config_path
     )
 
     reader = (
