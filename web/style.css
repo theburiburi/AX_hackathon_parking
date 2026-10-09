@@ -451,21 +451,6 @@ button:disabled {
 }
 
 
-.check-control {
-    display: flex;
-
-    align-items: center;
-
-    gap: 5px;
-
-    color:
-        #c5cad1;
-
-    font-size:
-        12px;
-
-    user-select: none;
-}
 
 
 /* =========================================================

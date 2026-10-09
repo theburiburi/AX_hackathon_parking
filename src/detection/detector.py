@@ -23,15 +23,6 @@ class Detection:
     x2: float
     y2: float
 
-    @property
-    def bbox(self) -> dict[str, float]:
-        return {
-            "x1": self.x1,
-            "y1": self.y1,
-            "x2": self.x2,
-            "y2": self.y2,
-        }
-
 
 class VehicleDetector:
     def __init__(
@@ -389,29 +380,6 @@ class VehicleDetector:
 
         return detections
 
-    def detect(
-        self,
-        frame,
-    ) -> list[Detection]:
-
-        results = self.model.predict(
-            source=frame,
-            imgsz=self.imgsz,
-            conf=self.conf,
-            iou=self.iou,
-            classes=self.class_ids,
-            device=self.device,
-            quantize=self.quantize,
-            verbose=False,
-        )
-
-        if not results:
-
-            return []
-
-        return self._convert_result(
-            results[0]
-        )
 
     def detect_batch(
         self,

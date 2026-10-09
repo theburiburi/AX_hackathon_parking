@@ -13,7 +13,7 @@ data/
 └── maps/
     ├── map.png                     # BEV 지도 (1624 x 968)
     ├── zones.json                  # 주차 구역 정의 (웹 BEV 표시용)
-    └── *.png                       # 참고용 이미지
+    └── zones.png                   # 주차 구역 참고 이미지 (코드에서 사용하지 않음)
 ```
 
 - 영상 제목(`<title>`) = `videos/raw/` 안의 파일 이름에서 확장자를 뺀 것 (예: `test00`)

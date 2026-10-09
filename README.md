@@ -59,12 +59,11 @@ AX_Parking2/
 │   └── maps/
 │       ├── map.png            # BEV 지도 (1624 x 968)
 │       ├── zones.json         # 주차 구역 정의
-│       └── *.png              # 참고용 이미지
+│       └── zones.png          # 주차 구역 참고 이미지 (코드에서 사용하지 않음)
 ├── scripts/
 │   ├── preprocess.py          # 원본 분리 + YOLO 검출
 │   ├── calibrate_camera.py    # 카메라 calibration 도구
-│   ├── play_mosaic.py         # (확인용) 서버 없이 bbox 재생 / 영상 저장
-│   └── render_parking_zones.py# (확인용) 주차 구역 이미지 생성
+│   └── play_mosaic.py         # (확인용) 서버 없이 bbox 재생 / 영상 저장
 ├── src/
 │   ├── mosaic.py              # 칸 배치, 영상 제목 → 경로 규칙
 │   ├── detection/detector.py  # YOLO 래퍼 (VehicleDetector)
@@ -79,7 +78,7 @@ AX_Parking2/
 └── requirements.txt
 ```
 
-`outputs/`는 확인용 도구의 출력 위치이며 Git에서 제외된다.
+`outputs/`는 `play_mosaic.py --save` 결과를 저장할 때 쓰는 위치이며 Git에서 제외된다.
 
 ---
 
@@ -174,9 +173,6 @@ python scripts/play_mosaic.py test00
 
 # bbox가 그려진 영상으로 저장
 python scripts/play_mosaic.py test00 --save outputs/test00_bbox.mp4 --no-show
-
-# 주차 구역을 지도 위에 그린 이미지 → outputs/parking_zone_preview.png
-python scripts/render_parking_zones.py
 ```
 
 ### 4.5 새 원본 영상 추가

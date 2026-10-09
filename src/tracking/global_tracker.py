@@ -101,22 +101,6 @@ class GlobalTrack:
     def label(self) -> str:
         return f"G{self.global_id:03d}"
 
-    @property
-    def current_local_key(self) -> LocalTrackKey:
-        return (
-            self.current_camera_id,
-            self.current_local_id,
-        )
-
-    def distance_to(
-        self,
-        bev_x: float,
-        bev_y: float,
-    ) -> float:
-        return math.hypot(
-            bev_x - self.last_bev_x,
-            bev_y - self.last_bev_y,
-        )
 
     def predicted_position(
         self,
@@ -1838,25 +1822,4 @@ class GlobalTracker:
                     local_id,
                 )
             )
-        )
-
-    def get_global_track(
-        self,
-        global_id: int,
-    ) -> GlobalTrack | None:
-
-        return (
-            self.global_tracks.get(
-                global_id
-            )
-        )
-
-    def current_tracks(
-        self,
-    ) -> list[
-        GlobalTrack
-    ]:
-
-        return list(
-            self.global_tracks.values()
         )

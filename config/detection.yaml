@@ -20,6 +20,3 @@ classes:
     - motorcycle
     - bus
     - truck
-
-pipeline:
-  queue_size: 2

@@ -20,7 +20,7 @@ Thumbs.db
 *.tmp
 *.temp
 
-# Generated outputs (play_mosaic --save, render_parking_zones 등)
+# Generated outputs (play_mosaic --save)
 outputs/
 
 # 영상: 원본 모자이크(data/videos/raw/)와 전처리로 분리한 카메라 영상

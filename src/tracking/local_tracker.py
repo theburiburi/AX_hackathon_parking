@@ -1795,35 +1795,3 @@ class LocalTracker:
             )
 
         return tracked_detections
-
-    def active_track_count(
-        self,
-    ) -> int:
-        return sum(
-            1
-            for track
-            in self.tracks.values()
-            if track.has_moved
-        )
-
-    def state_counts(
-        self,
-    ) -> dict[
-        TrackState,
-        int,
-    ]:
-        counts = {
-            TrackState.UNKNOWN: 0,
-            TrackState.ACTIVE: 0,
-            TrackState.STOPPED: 0,
-            TrackState.PARKED: 0,
-        }
-
-        for track in (
-            self.tracks.values()
-        ):
-            counts[
-                track.state
-            ] += 1
-
-        return counts
