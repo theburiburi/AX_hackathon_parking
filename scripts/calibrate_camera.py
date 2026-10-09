@@ -8,7 +8,6 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,6 +18,7 @@ if str(ROOT) not in sys.path:
         str(ROOT),
     )
 
+from src.mosaic import default_title, load_video  # noqa: E402
 from src.calibration.mapping import (  # noqa: E402
     CalibrationMapping,
     apply_homography,
@@ -37,12 +37,6 @@ BEV_MAP_PATH = (
     / "data"
     / "maps"
     / "map.png"
-)
-
-CALIBRATION_DIR = (
-    ROOT
-    / "config"
-    / "calibration"
 )
 
 
@@ -565,6 +559,7 @@ class CalibrationTool:
         self,
         camera_id: str,
         frame_index: int,
+        video_title: str | None = None,
     ):
         self.camera_id = (
             camera_id
@@ -574,16 +569,53 @@ class CalibrationTool:
             frame_index
         )
 
-        self.config = (
-            self._load_detection_config()
+        # 원본 모자이크 영상에서 해당 카메라 칸을 잘라 사용하고,
+        # 결과는 config/calibration/<camera>.json 에 칸 좌표 기준으로 저장한다.
+        # (카메라 위치는 영상과 무관하므로 모든 원본 영상이 공유)
+        video_title = (
+            video_title
+            or
+            default_title()
         )
+
+        if not video_title:
+
+            raise ValueError(
+                "No video given. Use --video or set "
+                f"'video' in {DETECTION_CONFIG_PATH}"
+            )
+
+        self.scene = load_video(
+            video_title
+        )
+
+        if camera_id not in self.scene.camera_ids:
+
+            raise ValueError(
+                f"Camera not found in config/mosaic.yaml: "
+                f"{camera_id}"
+            )
 
         self.video_path = (
-            self._find_video_path()
+            self.scene.video_path
         )
 
-        self.frame = (
+        mosaic = (
             self._load_video_frame()
+        )
+
+        # 모자이크에서 잘라낸 영역 (x1, y1, x2, y2)
+        self.crop_rect = (
+            self.scene.crop_rects(
+                mosaic.shape[1],
+                mosaic.shape[0],
+            )[camera_id]
+        )
+
+        x1, y1, x2, y2 = self.crop_rect
+
+        self.frame = (
+            mosaic[y1:y2, x1:x2].copy()
         )
 
         self.bev_map = (
@@ -657,7 +689,7 @@ class CalibrationTool:
         ) = None
 
         self.output_path = (
-            CALIBRATION_DIR
+            self.scene.calibration_dir
             /
             f"{self.camera_id}.json"
         )
@@ -688,63 +720,6 @@ class CalibrationTool:
         self._load_existing_points()
 
         self._update_mapping()
-
-    def _load_detection_config(
-        self,
-    ) -> dict:
-
-        if not DETECTION_CONFIG_PATH.exists():
-
-            raise FileNotFoundError(
-                "Detection config not found: "
-                f"{DETECTION_CONFIG_PATH}"
-            )
-
-        with DETECTION_CONFIG_PATH.open(
-            "r",
-            encoding="utf-8",
-        ) as file:
-
-            return yaml.safe_load(
-                file
-            )
-
-    def _find_video_path(
-        self,
-    ) -> Path:
-
-        videos = self.config.get(
-            "videos",
-            [],
-        )
-
-        for video in videos:
-
-            if (
-                video["camera_id"]
-                ==
-                self.camera_id
-            ):
-
-                path = (
-                    ROOT
-                    /
-                    video["path"]
-                )
-
-                if not path.exists():
-
-                    raise FileNotFoundError(
-                        f"Video not found: "
-                        f"{path}"
-                    )
-
-                return path
-
-        raise ValueError(
-            f"Camera not found: "
-            f"{self.camera_id}"
-        )
 
     def _load_video_frame(
         self,
@@ -1462,7 +1437,7 @@ class CalibrationTool:
         self,
     ) -> None:
 
-        CALIBRATION_DIR.mkdir(
+        self.output_path.parent.mkdir(
             parents=True,
             exist_ok=True,
         )
@@ -1560,6 +1535,13 @@ class CalibrationTool:
 
             "frame_index": (
                 self.frame_index
+            ),
+
+            # image 좌표는 잘라낸 칸 기준이다.
+            "video": self.scene.name,
+
+            "crop_rect": list(
+                self.crop_rect
             ),
 
             "image_size": {
@@ -2337,6 +2319,18 @@ def parse_args():
         ),
     )
 
+    parser.add_argument(
+        "--video",
+        type=str,
+        default=None,
+        help=(
+            "Raw video title used for the background frame "
+            "(data/videos/raw/<title>.mp4). "
+            "Default: 'video' in config/detection.yaml. "
+            "Saved to config/calibration/<camera>.json."
+        ),
+    )
+
     return parser.parse_args()
 
 
@@ -2347,6 +2341,7 @@ def main():
     tool = CalibrationTool(
         camera_id=args.camera,
         frame_index=args.frame,
+        video_title=args.video,
     )
 
     tool.run()

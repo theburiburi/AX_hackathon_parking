@@ -1,50 +1,31 @@
-const CAMERA_IDS = [
-    "cam01",
-    "cam02",
-    "cam03",
-    "cam05",
-    "cam06",
-    "cam07",
-    "cam08",
-];
+/* =========================================================
+ * Mosaic video
+ * =========================================================
+ *
+ * 원본은 모자이크 영상 1개 (카메라 칸들이 격자로 배치됨).
+ *
+ * - 영상이 실제로 화면에 표시한 프레임 번호
+ *   (requestVideoFrameCallback의 mediaTime)로 tracking 결과를 요청한다.
+ *   그래서 bbox / BEV가 영상과 같은 프레임을 가리킨다.
+ * - bbox 좌표는 카메라 칸 기준이므로,
+ *   /api/tracking/info 의 scene.cameras[].rect 위치만큼 옮겨 그린다.
+ */
 
 
-const videos = CAMERA_IDS.map(
-    id => document.getElementById(id)
-);
+const video =
+    document.getElementById(
+        "mosaic-video"
+    );
 
+const overlayCanvas =
+    document.getElementById(
+        "mosaic-overlay"
+    );
 
-const videoMap = {};
-
-for (const video of videos) {
-
-    videoMap[
-        video.id
-    ] = video;
-}
-
-
-const overlayCanvases = {};
-
-const overlayContexts = {};
-
-for (const cameraId of CAMERA_IDS) {
-
-    const canvas =
-        document.getElementById(
-            `${cameraId}-overlay`
-        );
-
-    overlayCanvases[
-        cameraId
-    ] = canvas;
-
-    overlayContexts[
-        cameraId
-    ] = canvas.getContext(
+const overlayContext =
+    overlayCanvas.getContext(
         "2d"
     );
-}
 
 
 /* =========================================================
@@ -108,9 +89,9 @@ const durationLabel =
         "duration-time"
     );
 
-const cameraStatus =
+const videoStatus =
     document.getElementById(
-        "camera-status"
+        "video-status"
     );
 
 const trackingStatus =
@@ -118,37 +99,35 @@ const trackingStatus =
         "tracking-status"
     );
 
-const cameraTimeLabels =
-    document.querySelectorAll(
-        ".camera-time"
+const sceneTitle =
+    document.getElementById(
+        "scene-title"
+    );
+
+const videoTimeLabel =
+    document.getElementById(
+        "video-time"
     );
 
 
-const HARD_SYNC_THRESHOLD =
-    0.15;
+/* =========================================================
+ * State
+ * =========================================================
+ */
 
-const IGNORE_SYNC_THRESHOLD =
-    0.04;
-
-const TRACKING_REQUEST_INTERVAL_MS =
-    50;
-
-
-let readyCount = 0;
 
 let duration = 0;
 
-let playing = false;
-
-let masterTime = 0;
-
 let playbackRate = 1.0;
 
-let playStartedAt = 0;
+// 타임라인을 드래그하는 동안에는 tracking 요청을 보내지 않는다.
+// (뒤로 이동할 때마다 서버가 checkpoint부터 다시 계산하므로)
+let timelineDragging = false;
 
-let playStartedMasterTime = 0;
+let timelineTrackingTimer = null;
 
-let animationFrame = null;
+// 영상이 마지막으로 표시한 프레임 번호
+let displayedFrame = 0;
 
 
 /* =========================================================
@@ -166,10 +145,6 @@ let trackingRequestInFlight = false;
 let pendingTrackingFrame = null;
 
 let lastRenderedTrackingFrame = -1;
-
-let lastTrackingRequestAt = 0;
-
-let timelineTrackingTimer = null;
 
 
 /* =========================================================
@@ -261,15 +236,22 @@ function clampTime(
 }
 
 
+function fps() {
+
+    return (
+        trackingInfo
+            ? trackingInfo.fps
+            : 30
+    );
+}
+
+
 function timeToFrame(
     seconds
 ) {
 
-    if (!trackingInfo) {
-
-        return 0;
-    }
-
+    // 프레임 i의 표시 시각은 i / fps.
+    // 부동소수 오차로 한 프레임 앞을 가리키지 않도록 작은 여유를 둔다.
     const frame =
         Math.floor(
             Math.max(
@@ -277,8 +259,15 @@ function timeToFrame(
                 seconds
             )
             *
-            trackingInfo.fps
+            fps()
+            +
+            1e-3
         );
+
+    if (!trackingInfo) {
+
+        return frame;
+    }
 
     return Math.max(
         0,
@@ -290,112 +279,126 @@ function timeToFrame(
 }
 
 
-/* =========================================================
- * Video sync
- * =========================================================
- */
-
-
-function setAllVideosTime(
-    targetTime,
-    force = false
+function frameToTime(
+    frame
 ) {
 
-    const time =
-        clampTime(
-            targetTime
-        );
-
-    for (const video of videos) {
-
-        if (
-            video.readyState
-            <
-            HTMLMediaElement.HAVE_METADATA
-        ) {
-
-            continue;
-        }
-
-        const drift =
-            video.currentTime
-            -
-            time;
-
-        if (
-            force
-            ||
-            Math.abs(
-                drift
-            )
-            >
-            HARD_SYNC_THRESHOLD
-        ) {
-
-            video.currentTime =
-                Math.min(
-                    time,
-                    video.duration || time
-                );
-
-            video.playbackRate =
-                playbackRate;
-
-            continue;
-        }
-
-        if (
-            Math.abs(
-                drift
-            )
-            <
-            IGNORE_SYNC_THRESHOLD
-        ) {
-
-            video.playbackRate =
-                playbackRate;
-
-            continue;
-        }
-
-        if (drift < 0) {
-
-            video.playbackRate =
-                playbackRate
-                *
-                1.02;
-        }
-        else {
-
-            video.playbackRate =
-                playbackRate
-                *
-                0.98;
-        }
-    }
+    // 프레임 구간의 가운데로 이동해야 경계 오차 없이 해당 프레임이 표시된다.
+    return (
+        (
+            frame
+            +
+            0.5
+        )
+        /
+        fps()
+    );
 }
 
 
 function updateLabels() {
 
+    const time =
+        video.currentTime || 0;
+
     currentTimeLabel.textContent =
         formatTime(
-            masterTime
+            time
         );
 
-    timeline.value =
-        masterTime;
+    if (!timelineDragging) {
 
-    for (
-        const label
-        of cameraTimeLabels
+        timeline.value =
+            time;
+    }
+
+    videoTimeLabel.textContent =
+        `${formatTime(time)} · frame ${displayedFrame}`;
+}
+
+
+/* =========================================================
+ * Frame sync
+ * =========================================================
+ */
+
+
+function onDisplayedFrame(
+    mediaTime
+) {
+
+    displayedFrame =
+        timeToFrame(
+            mediaTime
+        );
+
+    updateLabels();
+
+    if (!timelineDragging) {
+
+        requestTrackingFrame(
+            displayedFrame
+        );
+    }
+}
+
+
+function startFrameSync() {
+
+    if (
+        "requestVideoFrameCallback"
+        in
+        HTMLVideoElement.prototype
     ) {
 
-        label.textContent =
-            formatTime(
-                masterTime
+        const onFrame = (
+            now,
+            metadata
+        ) => {
+
+            onDisplayedFrame(
+                metadata.mediaTime
             );
+
+            video.requestVideoFrameCallback(
+                onFrame
+            );
+        };
+
+        video.requestVideoFrameCallback(
+            onFrame
+        );
+
+        return;
     }
+
+    // requestVideoFrameCallback 미지원 브라우저: currentTime으로 근사
+    let lastTime = -1;
+
+    const poll = () => {
+
+        if (
+            video.currentTime
+            !==
+            lastTime
+        ) {
+
+            lastTime =
+                video.currentTime;
+
+            onDisplayedFrame(
+                video.currentTime
+            );
+        }
+
+        requestAnimationFrame(
+            poll
+        );
+    };
+
+    requestAnimationFrame(
+        poll
+    );
 }
 
 
@@ -405,242 +408,80 @@ function updateLabels() {
  */
 
 
-function updateMasterClock() {
-
-    if (!playing) {
-
-        return;
-    }
-
-    const now =
-        performance.now();
-
-    const elapsed =
-        (
-            now
-            -
-            playStartedAt
-        )
-        /
-        1000;
-
-    masterTime =
-        playStartedMasterTime
-        +
-        elapsed
-        *
-        playbackRate;
-
-    if (
-        duration > 0
-        &&
-        masterTime >= duration
-    ) {
-
-        masterTime =
-            duration;
-
-        pausePlayback();
-
-        updateLabels();
-
-        requestTrackingForTime(
-            masterTime,
-            true
-        );
-
-        return;
-    }
-
-    setAllVideosTime(
-        masterTime,
-        false
-    );
-
-    updateLabels();
-
-    requestTrackingForTime(
-        masterTime,
-        false
-    );
-
-    animationFrame =
-        requestAnimationFrame(
-            updateMasterClock
-        );
-}
-
-
 async function startPlayback() {
 
     if (
-        readyCount
-        <
-        videos.length
+        !Number.isFinite(
+            video.duration
+        )
     ) {
 
         return;
     }
 
-    setAllVideosTime(
-        masterTime,
-        true
-    );
+    video.playbackRate =
+        playbackRate;
 
-    const playPromises = [];
+    try {
 
-    for (const video of videos) {
+        await video.play();
+    }
+    catch (error) {
 
-        video.playbackRate =
-            playbackRate;
-
-        playPromises.push(
-            video
-                .play()
-                .catch(
-                    error => {
-
-                        console.error(
-                            "Video play failed:",
-                            video.id,
-                            error
-                        );
-                    }
-                )
+        console.error(
+            "Video play failed:",
+            error
         );
     }
-
-    await Promise.all(
-        playPromises
-    );
-
-    playing = true;
-
-    playStartedAt =
-        performance.now();
-
-    playStartedMasterTime =
-        masterTime;
-
-    playButton.textContent =
-        "일시정지";
-
-    cancelAnimationFrame(
-        animationFrame
-    );
-
-    animationFrame =
-        requestAnimationFrame(
-            updateMasterClock
-        );
 }
 
 
 function pausePlayback() {
 
-    if (playing) {
+    video.pause();
 
-        const now =
-            performance.now();
-
-        const elapsed =
-            (
-                now
-                -
-                playStartedAt
-            )
-            /
-            1000;
-
-        masterTime =
-            clampTime(
-                playStartedMasterTime
-                +
-                elapsed
-                *
-                playbackRate
-            );
-    }
-
-    playing = false;
-
-    cancelAnimationFrame(
-        animationFrame
-    );
-
-    for (const video of videos) {
-
-        video.pause();
-
-        video.playbackRate =
-            playbackRate;
-    }
-
-    setAllVideosTime(
-        masterTime,
-        true
-    );
-
-    playButton.textContent =
-        "재생";
-
-    updateLabels();
-
-    requestTrackingForTime(
-        masterTime,
-        true
+    requestTrackingFrame(
+        timeToFrame(
+            video.currentTime
+        )
     );
 }
 
 
 function togglePlayback() {
 
-    if (playing) {
+    if (video.paused) {
 
-        pausePlayback();
+        startPlayback();
     }
     else {
 
-        startPlayback();
+        pausePlayback();
     }
 }
 
 
+function updatePlayButton() {
+
+    playButton.textContent =
+        video.paused
+            ? "재생"
+            : "일시정지";
+}
+
+
 function seekTo(
-    value,
-    requestTracking = true
+    value
 ) {
 
-    masterTime =
+    video.currentTime =
         clampTime(
             Number(
                 value
             )
         );
 
-    setAllVideosTime(
-        masterTime,
-        true
-    );
-
     updateLabels();
-
-    if (playing) {
-
-        playStartedAt =
-            performance.now();
-
-        playStartedMasterTime =
-            masterTime;
-    }
-
-    if (requestTracking) {
-
-        requestTrackingForTime(
-            masterTime,
-            true
-        );
-    }
 }
 
 
@@ -649,17 +490,40 @@ function seekRelative(
 ) {
 
     seekTo(
-        masterTime
+        video.currentTime
         +
-        seconds,
-        true
+        seconds
+    );
+}
+
+
+function seekFrames(
+    count
+) {
+
+    video.pause();
+
+    const frame =
+        timeToFrame(
+            video.currentTime
+        )
+        +
+        count;
+
+    seekTo(
+        frameToTime(
+            Math.max(
+                0,
+                frame
+            )
+        )
     );
 }
 
 
 async function resetPlayback() {
 
-    pausePlayback();
+    video.pause();
 
     try {
 
@@ -683,8 +547,11 @@ async function resetPlayback() {
     lastRenderedTrackingFrame = -1;
 
     seekTo(
-        0,
-        true
+        0
+    );
+
+    requestTrackingFrame(
+        0
     );
 }
 
@@ -695,77 +562,70 @@ async function resetPlayback() {
  */
 
 
-function updateReadyState() {
-
-    readyCount =
-        videos.filter(
-            video =>
-                Number.isFinite(
-                    video.duration
-                )
-        ).length;
-
-    cameraStatus.textContent =
-        `${readyCount} / ${videos.length} cameras ready`;
+function updateDuration() {
 
     if (
-        readyCount
-        ===
-        videos.length
+        !Number.isFinite(
+            video.duration
+        )
     ) {
 
-        cameraStatus.classList.remove(
-            "loading"
-        );
+        return;
+    }
 
-        cameraStatus.classList.add(
-            "ready"
-        );
+    duration =
+        video.duration;
+
+    if (
+        trackingInfo
+        &&
+        Number.isFinite(
+            trackingInfo.duration
+        )
+    ) {
 
         duration =
             Math.min(
-                ...videos.map(
-                    video =>
-                        video.duration
-                )
-            );
-
-        if (
-            trackingInfo
-            &&
-            Number.isFinite(
+                duration,
                 trackingInfo.duration
-            )
-        ) {
-
-            duration =
-                Math.min(
-                    duration,
-                    trackingInfo.duration
-                );
-        }
-
-        timeline.max =
-            duration;
-
-        durationLabel.textContent =
-            formatTime(
-                duration
             );
-
-        playButton.disabled =
-            false;
-
-        setAllVideosTime(
-            0,
-            true
-        );
-
-        requestTrackingForTime(
-            0,
-            true
-        );
     }
+
+    timeline.max =
+        duration;
+
+    durationLabel.textContent =
+        formatTime(
+            duration
+        );
+}
+
+
+function onVideoReady() {
+
+    updateDuration();
+
+    videoStatus.textContent =
+        `mosaic ready · ${video.videoWidth}x${video.videoHeight}`;
+
+    videoStatus.classList.remove(
+        "loading"
+    );
+
+    videoStatus.classList.add(
+        "ready"
+    );
+
+    playButton.disabled =
+        false;
+
+    resizeOverlay();
+
+    requestTrackingFrame(
+        timeToFrame(
+            video.currentTime
+        )
+    );
 }
 
 
@@ -816,35 +676,24 @@ async function loadTrackingInfo() {
         trackingInfo =
             await response.json();
 
+        const scene =
+            trackingInfo.scene;
+
+        sceneTitle.textContent =
+            `SCENE ${scene.name} · ${scene.cameras.length} cameras`;
+
         setTrackingStatus(
             `Tracking ready · ${trackingInfo.fps.toFixed(1)} FPS`
         );
 
-        if (
-            readyCount
-            ===
-            videos.length
-        ) {
+        // 영상 경로는 서버의 scene 설정에서 받는다.
+        if (!video.src) {
 
-            duration =
-                Math.min(
-                    duration,
-                    trackingInfo.duration
-                );
-
-            timeline.max =
-                duration;
-
-            durationLabel.textContent =
-                formatTime(
-                    duration
-                );
-
-            requestTrackingForTime(
-                masterTime,
-                true
-            );
+            video.src =
+                scene.video_url;
         }
+
+        updateDuration();
     }
     catch (error) {
 
@@ -857,53 +706,21 @@ async function loadTrackingInfo() {
             "Tracking API error",
             "error"
         );
+
+        videoStatus.textContent =
+            "video not loaded";
     }
-}
-
-
-function requestTrackingForTime(
-    seconds,
-    force = false
-) {
-
-    if (!trackingInfo) {
-
-        return;
-    }
-
-    const now =
-        performance.now();
-
-    if (
-        !force
-        &&
-        now
-        -
-        lastTrackingRequestAt
-        <
-        TRACKING_REQUEST_INTERVAL_MS
-    ) {
-
-        return;
-    }
-
-    lastTrackingRequestAt =
-        now;
-
-    const frameIndex =
-        timeToFrame(
-            seconds
-        );
-
-    requestTrackingFrame(
-        frameIndex
-    );
 }
 
 
 function requestTrackingFrame(
     frameIndex
 ) {
+
+    if (!trackingInfo) {
+
+        return;
+    }
 
     if (
         frameIndex
@@ -916,6 +733,7 @@ function requestTrackingFrame(
         return;
     }
 
+    // 가장 최근 요청만 유지한다 (한 번에 하나씩 요청).
     pendingTrackingFrame =
         frameIndex;
 
@@ -989,7 +807,7 @@ async function pumpTrackingRequest() {
         lastRenderedTrackingFrame =
             result.frame_index;
 
-        drawAllCameraOverlays();
+        drawOverlay();
 
         drawBev();
 
@@ -1038,13 +856,7 @@ async function pumpTrackingRequest() {
 
 async function reloadTrackingConfig() {
 
-    const wasPlaying =
-        playing;
-
-    if (wasPlaying) {
-
-        pausePlayback();
-    }
+    video.pause();
 
     reloadTrackingButton.disabled =
         true;
@@ -1084,9 +896,10 @@ async function reloadTrackingConfig() {
             "Tracking config reloaded"
         );
 
-        requestTrackingForTime(
-            masterTime,
-            true
+        requestTrackingFrame(
+            timeToFrame(
+                video.currentTime
+            )
         );
     }
     catch (error) {
@@ -1110,24 +923,12 @@ async function reloadTrackingConfig() {
 
 
 /* =========================================================
- * Camera Canvas
+ * Overlay
  * =========================================================
  */
 
 
-function resizeCameraCanvas(
-    cameraId
-) {
-
-    const canvas =
-        overlayCanvases[
-            cameraId
-        ];
-
-    const video =
-        videoMap[
-            cameraId
-        ];
+function resizeOverlay() {
 
     const stage =
         video.parentElement;
@@ -1143,7 +944,7 @@ function resizeCameraCanvas(
         ||
         1;
 
-    canvas.width =
+    overlayCanvas.width =
         Math.max(
             1,
             Math.floor(
@@ -1153,7 +954,7 @@ function resizeCameraCanvas(
             )
         );
 
-    canvas.height =
+    overlayCanvas.height =
         Math.max(
             1,
             Math.floor(
@@ -1163,18 +964,13 @@ function resizeCameraCanvas(
             )
         );
 
-    canvas.style.width =
+    overlayCanvas.style.width =
         `${width}px`;
 
-    canvas.style.height =
+    overlayCanvas.style.height =
         `${height}px`;
 
-    const context =
-        overlayContexts[
-            cameraId
-        ];
-
-    context.setTransform(
+    overlayContext.setTransform(
         dpr,
         0,
         0,
@@ -1183,21 +979,14 @@ function resizeCameraCanvas(
         0
     );
 
-    drawCameraOverlay(
-        cameraId
-    );
+    drawOverlay();
 }
 
 
-function calculateVideoLayout(
-    cameraId
-) {
+function calculateVideoLayout() {
 
-    const video =
-        videoMap[
-            cameraId
-        ];
-
+    // 영상은 object-fit: contain 으로 표시되므로
+    // 실제 그려진 영역의 배율과 여백을 계산한다.
     const stage =
         video.parentElement;
 
@@ -1233,91 +1022,227 @@ function calculateVideoLayout(
             videoHeight
         );
 
-    const drawWidth =
-        videoWidth
-        *
-        scale;
-
-    const drawHeight =
-        videoHeight
-        *
-        scale;
-
-    const offsetX =
-        (
-            containerWidth
-            -
-            drawWidth
-        )
-        /
-        2;
-
-    const offsetY =
-        (
-            containerHeight
-            -
-            drawHeight
-        )
-        /
-        2;
-
     return {
         scale,
-        offsetX,
-        offsetY,
-        containerWidth,
-        containerHeight,
+
+        offsetX:
+            (
+                containerWidth
+                -
+                videoWidth
+                *
+                scale
+            )
+            /
+            2,
+
+        offsetY:
+            (
+                containerHeight
+                -
+                videoHeight
+                *
+                scale
+            )
+            /
+            2,
     };
 }
 
 
-function drawCameraOverlay(
-    cameraId
+function drawCameraLabel(
+    layout,
+    camera
 ) {
 
-    const context =
-        overlayContexts[
-            cameraId
-        ];
+    const x =
+        layout.offsetX
+        +
+        camera.rect[0]
+        *
+        layout.scale;
 
-    const stage =
-        videoMap[
-            cameraId
-        ].parentElement;
+    const y =
+        layout.offsetY
+        +
+        camera.rect[1]
+        *
+        layout.scale;
 
-    const width =
-        stage.clientWidth;
+    const label =
+        camera.id.toUpperCase();
 
-    const height =
-        stage.clientHeight;
+    overlayContext.font =
+        "bold 11px Arial";
 
-    context.clearRect(
-        0,
-        0,
-        width,
-        height
+    const textWidth =
+        overlayContext.measureText(
+            label
+        ).width;
+
+    overlayContext.fillStyle =
+        "rgba(0, 0, 0, 0.6)";
+
+    overlayContext.fillRect(
+        x + 4,
+        y + 4,
+        textWidth + 8,
+        16
     );
 
-    if (
-        !latestTracking
+    overlayContext.fillStyle =
+        CAMERA_COLORS[
+            camera.id
+        ]
         ||
-        !latestTracking.cameras
+        "#ffffff";
+
+    overlayContext.fillText(
+        label,
+        x + 8,
+        y + 16
+    );
+}
+
+
+function drawDetection(
+    layout,
+    camera,
+    detection
+) {
+
+    const color =
+        STATE_COLORS[
+            detection.state
+        ]
+        ||
+        "#ffffff";
+
+    // 칸 기준 좌표 -> 모자이크 좌표 -> 화면 좌표
+    const x =
+        layout.offsetX
+        +
+        (
+            camera.rect[0]
+            +
+            detection.x1
+        )
+        *
+        layout.scale;
+
+    const y =
+        layout.offsetY
+        +
+        (
+            camera.rect[1]
+            +
+            detection.y1
+        )
+        *
+        layout.scale;
+
+    const boxWidth =
+        (
+            detection.x2
+            -
+            detection.x1
+        )
+        *
+        layout.scale;
+
+    const boxHeight =
+        (
+            detection.y2
+            -
+            detection.y1
+        )
+        *
+        layout.scale;
+
+    overlayContext.strokeStyle =
+        color;
+
+    overlayContext.lineWidth =
+        1;
+
+    overlayContext.strokeRect(
+        x,
+        y,
+        boxWidth,
+        boxHeight
+    );
+
+    /*
+     * ACTIVE 차량만 번호 표시.
+     */
+    if (
+        detection.state
+        !==
+        "ACTIVE"
     ) {
 
         return;
     }
 
-    const detections =
-        latestTracking.cameras[
-            cameraId
-        ]
-        ||
-        [];
+    const label =
+        detection.global_id !== null
+            ? `G${String(detection.global_id).padStart(3, "0")}`
+            : `L${String(detection.local_id).padStart(3, "0")}`;
+
+    overlayContext.font =
+        "bold 11px Arial";
+
+    const textWidth =
+        overlayContext.measureText(
+            label
+        ).width;
+
+    const labelY =
+        Math.max(
+            0,
+            y - 16
+        );
+
+    overlayContext.fillStyle =
+        "rgba(0, 0, 0, 0.72)";
+
+    overlayContext.fillRect(
+        x,
+        labelY,
+        textWidth + 7,
+        15
+    );
+
+    overlayContext.fillStyle =
+        color;
+
+    overlayContext.fillText(
+        label,
+        x + 3,
+        labelY + 11
+    );
+}
+
+
+function drawOverlay() {
+
+    const stage =
+        video.parentElement;
+
+    overlayContext.clearRect(
+        0,
+        0,
+        stage.clientWidth,
+        stage.clientHeight
+    );
+
+    if (!trackingInfo) {
+
+        return;
+    }
 
     const layout =
-        calculateVideoLayout(
-            cameraId
-        );
+        calculateVideoLayout();
 
     if (!layout) {
 
@@ -1325,155 +1250,42 @@ function drawCameraOverlay(
     }
 
     for (
-        const detection
-        of detections
+        const camera
+        of trackingInfo.scene.cameras
     ) {
 
-        const color =
-            STATE_COLORS[
-                detection.state
-            ]
-            ||
-            "#ffffff";
-
-        const x =
-            layout.offsetX
-            +
-            detection.x1
-            *
-            layout.scale;
-
-        const y =
-            layout.offsetY
-            +
-            detection.y1
-            *
-            layout.scale;
-
-        const boxWidth =
-            (
-                detection.x2
-                -
-                detection.x1
-            )
-            *
-            layout.scale;
-
-        const boxHeight =
-            (
-                detection.y2
-                -
-                detection.y1
-            )
-            *
-            layout.scale;
-
-        /*
-         * bbox는 상태별 색상만 사용.
-         *
-         * 기존 2px -> 1px.
-         */
-        context.strokeStyle =
-            color;
-
-        context.lineWidth =
-            1;
-
-        context.strokeRect(
-            x,
-            y,
-            boxWidth,
-            boxHeight
+        drawCameraLabel(
+            layout,
+            camera
         );
 
-        /*
-         * ACTIVE 차량만 번호 표시.
-         */
         if (
-            detection.state
-            !==
-            "ACTIVE"
+            !latestTracking
+            ||
+            !latestTracking.cameras
         ) {
 
             continue;
         }
 
-        let label;
+        const detections =
+            latestTracking.cameras[
+                camera.id
+            ]
+            ||
+            [];
 
-        if (
-            detection.global_id
-            !==
-            null
+        for (
+            const detection
+            of detections
         ) {
 
-            label =
-                `G${String(
-                    detection.global_id
-                ).padStart(
-                    3,
-                    "0"
-                )}`;
-        }
-        else {
-
-            label =
-                `L${String(
-                    detection.local_id
-                ).padStart(
-                    3,
-                    "0"
-                )}`;
-        }
-
-        context.font =
-            "bold 11px Arial";
-
-        const textWidth =
-            context.measureText(
-                label
-            ).width;
-
-        const labelX =
-            x;
-
-        const labelY =
-            Math.max(
-                0,
-                y - 16
+            drawDetection(
+                layout,
+                camera,
+                detection
             );
-
-        context.fillStyle =
-            "rgba(0, 0, 0, 0.72)";
-
-        context.fillRect(
-            labelX,
-            labelY,
-            textWidth + 7,
-            15
-        );
-
-        context.fillStyle =
-            color;
-
-        context.fillText(
-            label,
-            labelX + 3,
-            labelY + 11
-        );
-    }
-}
-
-
-function drawAllCameraOverlays() {
-
-    for (
-        const cameraId
-        of CAMERA_IDS
-    ) {
-
-        drawCameraOverlay(
-            cameraId
-        );
+        }
     }
 }
 
@@ -1488,7 +1300,7 @@ const BEV_MAP_PATH =
     "/map/map.png";
 
 const ZONES_PATH =
-    "/parking/zones.json";
+    "/map/zones.json";
 
 
 const bevCanvas =
@@ -2045,29 +1857,66 @@ async function loadZones() {
 }
 
 
+
 /* =========================================================
  * Events
  * =========================================================
  */
 
 
-for (const video of videos) {
+video.controls =
+    false;
 
-    video.controls =
-        false;
 
-    video.addEventListener(
-        "loadedmetadata",
-        () => {
+video.addEventListener(
+    "loadedmetadata",
+    onVideoReady
+);
 
-            updateReadyState();
 
-            resizeCameraCanvas(
-                video.id
-            );
-        }
-    );
-}
+video.addEventListener(
+    "error",
+    () => {
+
+        console.error(
+            "Video load failed:",
+            video.error
+        );
+
+        videoStatus.textContent =
+            "video error (codec?)";
+
+        videoStatus.classList.remove(
+            "loading",
+            "ready"
+        );
+    }
+);
+
+
+video.addEventListener(
+    "play",
+    updatePlayButton
+);
+
+
+video.addEventListener(
+    "pause",
+    updatePlayButton
+);
+
+
+video.addEventListener(
+    "seeked",
+    () => {
+
+        // requestVideoFrameCallback이 seek 후 프레임을
+        // 알려 주지 않는 경우를 대비한 보조 요청.
+        onDisplayedFrame(
+            video.currentTime
+        );
+    }
+);
 
 
 playButton.addEventListener(
@@ -2136,9 +1985,6 @@ speedSelect.addEventListener(
     "change",
     event => {
 
-        const oldRate =
-            playbackRate;
-
         playbackRate =
             Number(
                 event.target.value
@@ -2156,41 +2002,8 @@ speedSelect.addEventListener(
                 1;
         }
 
-        if (playing) {
-
-            const now =
-                performance.now();
-
-            const elapsed =
-                (
-                    now
-                    -
-                    playStartedAt
-                )
-                /
-                1000;
-
-            masterTime =
-                clampTime(
-                    playStartedMasterTime
-                    +
-                    elapsed
-                    *
-                    oldRate
-                );
-
-            playStartedAt =
-                performance.now();
-
-            playStartedMasterTime =
-                masterTime;
-        }
-
-        for (const video of videos) {
-
-            video.playbackRate =
-                playbackRate;
-        }
+        video.playbackRate =
+            playbackRate;
     }
 );
 
@@ -2199,9 +2012,11 @@ timeline.addEventListener(
     "input",
     event => {
 
+        timelineDragging =
+            true;
+
         seekTo(
-            event.target.value,
-            false
+            event.target.value
         );
 
         clearTimeout(
@@ -2212,9 +2027,10 @@ timeline.addEventListener(
             setTimeout(
                 () => {
 
-                    requestTrackingForTime(
-                        masterTime,
-                        true
+                    requestTrackingFrame(
+                        timeToFrame(
+                            video.currentTime
+                        )
                     );
                 },
                 150
@@ -2231,9 +2047,17 @@ timeline.addEventListener(
             timelineTrackingTimer
         );
 
+        timelineDragging =
+            false;
+
         seekTo(
-            event.target.value,
-            true
+            event.target.value
+        );
+
+        requestTrackingFrame(
+            timeToFrame(
+                video.currentTime
+            )
         );
     }
 );
@@ -2262,18 +2086,11 @@ window.addEventListener(
             event.key === "A"
         ) {
 
-            if (event.shiftKey) {
-
-                seekRelative(
-                    -30
-                );
-            }
-            else {
-
-                seekRelative(
-                    -5
-                );
-            }
+            seekRelative(
+                event.shiftKey
+                    ? -30
+                    : -5
+            );
 
             return;
         }
@@ -2284,18 +2101,33 @@ window.addEventListener(
             event.key === "D"
         ) {
 
-            if (event.shiftKey) {
+            seekRelative(
+                event.shiftKey
+                    ? 30
+                    : 5
+            );
 
-                seekRelative(
-                    30
-                );
-            }
-            else {
+            return;
+        }
 
-                seekRelative(
-                    5
-                );
-            }
+        if (
+            event.key === ","
+        ) {
+
+            seekFrames(
+                -1
+            );
+
+            return;
+        }
+
+        if (
+            event.key === "."
+        ) {
+
+            seekFrames(
+                1
+            );
 
             return;
         }
@@ -2318,33 +2150,17 @@ window.addEventListener(
  */
 
 
-for (
-    const cameraId
-    of CAMERA_IDS
-) {
+const overlayResizeObserver =
+    new ResizeObserver(
+        () => {
 
-    const video =
-        videoMap[
-            cameraId
-        ];
-
-    const stage =
-        video.parentElement;
-
-    const observer =
-        new ResizeObserver(
-            () => {
-
-                resizeCameraCanvas(
-                    cameraId
-                );
-            }
-        );
-
-    observer.observe(
-        stage
+            resizeOverlay();
+        }
     );
-}
+
+overlayResizeObserver.observe(
+    video.parentElement
+);
 
 
 const bevResizeObserver =
@@ -2399,5 +2215,7 @@ loadZones();
 
 
 updateLabels();
+
+startFrameSync();
 
 loadTrackingInfo();

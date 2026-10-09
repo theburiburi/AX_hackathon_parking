@@ -16,12 +16,27 @@ Thumbs.db
 # Logs
 *.log
 
-# Generated outputs
-outputs/
-
-# Large video files
-data/videos/
-
 # Temporary files
 *.tmp
 *.temp
+
+# Generated outputs (play_mosaic --save, render_parking_zones 등)
+outputs/
+
+# 영상: 원본 모자이크(data/videos/raw/)와 전처리로 분리한 카메라 영상
+data/videos/
+
+# YOLO 모델 가중치 (용량이 커서 제외, ultralytics로 다시 받을 수 있음)
+*.pt
+
+# 백업 압축 파일
+*.zip
+
+# 커밋 대상:
+#   data/detections/<title>/   YOLO 결과 (detections.jsonl, metadata.json)
+#   config/calibration/        카메라 calibration
+#   data/maps/                 BEV 지도, 주차 구역
+#
+# 주의: GitHub는 100MB 넘는 파일을 거부한다.
+#       detections.jsonl은 영상 1분에 약 20MB이므로
+#       5분 이상 영상의 결과는 커밋하기 전에 크기를 확인할 것.

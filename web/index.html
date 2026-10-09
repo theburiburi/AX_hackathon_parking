@@ -40,10 +40,10 @@
                 </div>
 
                 <div
-                    id="camera-status"
+                    id="video-status"
                     class="camera-status loading"
                 >
-                    0 / 7 cameras ready
+                    mosaic loading...
                 </div>
 
             </div>
@@ -55,208 +55,33 @@
 
             <section class="video-grid">
 
-                <article class="camera-card">
+                <article class="camera-card mosaic-card">
 
                     <div class="camera-header">
-                        <span>CAM 01</span>
 
-                        <span class="camera-time">
+                        <span id="scene-title">MOSAIC</span>
+
+                        <span
+                            id="video-time"
+                            class="camera-time"
+                        >
                             00:00.000
                         </span>
+
                     </div>
 
                     <div class="video-stage">
 
+                        <!-- src는 /api/tracking/info 의 scene.video_url로 설정됨 -->
                         <video
-                            id="cam01"
-                            src="/media/scene1/260914_1.mp4"
-                            preload="metadata"
+                            id="mosaic-video"
+                            preload="auto"
                             muted
                             playsinline
                         ></video>
 
                         <canvas
-                            id="cam01-overlay"
-                            class="video-overlay"
-                        ></canvas>
-
-                    </div>
-
-                </article>
-
-
-                <article class="camera-card">
-
-                    <div class="camera-header">
-                        <span>CAM 02</span>
-
-                        <span class="camera-time">
-                            00:00.000
-                        </span>
-                    </div>
-
-                    <div class="video-stage">
-
-                        <video
-                            id="cam02"
-                            src="/media/scene1/260914_2.mp4"
-                            preload="metadata"
-                            muted
-                            playsinline
-                        ></video>
-
-                        <canvas
-                            id="cam02-overlay"
-                            class="video-overlay"
-                        ></canvas>
-
-                    </div>
-
-                </article>
-
-
-                <article class="camera-card">
-
-                    <div class="camera-header">
-                        <span>CAM 03</span>
-
-                        <span class="camera-time">
-                            00:00.000
-                        </span>
-                    </div>
-
-                    <div class="video-stage">
-
-                        <video
-                            id="cam03"
-                            src="/media/scene1/260914_3.mp4"
-                            preload="metadata"
-                            muted
-                            playsinline
-                        ></video>
-
-                        <canvas
-                            id="cam03-overlay"
-                            class="video-overlay"
-                        ></canvas>
-
-                    </div>
-
-                </article>
-
-
-                <article class="camera-card">
-
-                    <div class="camera-header">
-                        <span>CAM 05</span>
-
-                        <span class="camera-time">
-                            00:00.000
-                        </span>
-                    </div>
-
-                    <div class="video-stage">
-
-                        <video
-                            id="cam05"
-                            src="/media/scene1/260914_5.mp4"
-                            preload="metadata"
-                            muted
-                            playsinline
-                        ></video>
-
-                        <canvas
-                            id="cam05-overlay"
-                            class="video-overlay"
-                        ></canvas>
-
-                    </div>
-
-                </article>
-
-
-                <article class="camera-card">
-
-                    <div class="camera-header">
-                        <span>CAM 06</span>
-
-                        <span class="camera-time">
-                            00:00.000
-                        </span>
-                    </div>
-
-                    <div class="video-stage">
-
-                        <video
-                            id="cam06"
-                            src="/media/scene1/260914_6.mp4"
-                            preload="metadata"
-                            muted
-                            playsinline
-                        ></video>
-
-                        <canvas
-                            id="cam06-overlay"
-                            class="video-overlay"
-                        ></canvas>
-
-                    </div>
-
-                </article>
-
-
-                <article class="camera-card">
-
-                    <div class="camera-header">
-                        <span>CAM 07</span>
-
-                        <span class="camera-time">
-                            00:00.000
-                        </span>
-                    </div>
-
-                    <div class="video-stage">
-
-                        <video
-                            id="cam07"
-                            src="/media/scene1/260914_7.mp4"
-                            preload="metadata"
-                            muted
-                            playsinline
-                        ></video>
-
-                        <canvas
-                            id="cam07-overlay"
-                            class="video-overlay"
-                        ></canvas>
-
-                    </div>
-
-                </article>
-
-
-                <article class="camera-card">
-
-                    <div class="camera-header">
-                        <span>CAM 08</span>
-
-                        <span class="camera-time">
-                            00:00.000
-                        </span>
-                    </div>
-
-                    <div class="video-stage">
-
-                        <video
-                            id="cam08"
-                            src="/media/scene1/260914_8.mp4"
-                            preload="metadata"
-                            muted
-                            playsinline
-                        ></video>
-
-                        <canvas
-                            id="cam08-overlay"
+                            id="mosaic-overlay"
                             class="video-overlay"
                         ></canvas>
 
@@ -384,6 +209,8 @@
                 A/D : -5초/+5초
                 ·
                 Shift+A/D : -30초/+30초
+                ·
+                , / . : 1프레임 뒤/앞
                 ·
                 R : 처음
             </div>

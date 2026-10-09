@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
+import cv2
 import yaml
 
 from fastapi import FastAPI
@@ -25,6 +26,7 @@ from starlette.types import (
 )
 
 from src.calibration import CameraProjector
+from src.mosaic import MosaicVideo, default_title, load_video
 
 from src.tracking import (
     GlobalObservation,
@@ -58,15 +60,6 @@ MAP_DIR = (
     "maps"
 )
 
-PARKING_DIR = (
-    ROOT
-    /
-    "data"
-    /
-    "parking"
-)
-
-
 DETECTION_CONFIG_PATH = (
     ROOT
     /
@@ -91,17 +84,6 @@ GLOBAL_TRACKING_CONFIG_PATH = (
     "global_tracking.yaml"
 )
 
-DETECTION_CACHE_PATH = (
-    ROOT
-    /
-    "data"
-    /
-    "detections"
-    /
-    "scene1"
-    /
-    "detections.jsonl"
-)
 
 
 CHECKPOINT_INTERVAL_SEC = 10.0
@@ -264,15 +246,6 @@ app.mount(
         directory=MAP_DIR
     ),
     name="map",
-)
-
-
-app.mount(
-    "/parking",
-    StaticFiles(
-        directory=PARKING_DIR
-    ),
-    name="parking",
 )
 
 
@@ -458,46 +431,45 @@ class TrackingEngine:
 
     def __init__(
         self,
-        cache_path: Path,
+        scene: MosaicVideo,
     ):
 
         self.lock = (
             threading.RLock()
         )
 
+        # 원본은 모자이크 영상 1개 (data/videos/raw/<title>.mp4).
+        # 카메라 = config/mosaic.yaml 의 칸, 좌표 = 잘라낸 칸 기준 픽셀.
+        self.scene = scene
+
+        self.cache_path = (
+            scene.detections_dir
+            /
+            "detections.jsonl"
+        )
+
         self.cache = (
             DetectionCacheStore(
-                cache_path
+                self.cache_path
             )
         )
 
-        self.detection_config = (
-            load_yaml(
-                DETECTION_CONFIG_PATH
-            )
+        self.camera_ids = (
+            scene.camera_ids
         )
 
-        self.camera_ids = [
+        (
+            self.mosaic_width,
+            self.mosaic_height,
+        ) = self._read_mosaic_size()
 
-            str(
-                video[
-                    "camera_id"
-                ]
+        # 웹 오버레이가 bbox를 칸 위치로 옮겨 그릴 때 사용.
+        self.crop_rects = (
+            scene.crop_rects(
+                self.mosaic_width,
+                self.mosaic_height,
             )
-
-            for video
-            in self.detection_config.get(
-                "videos",
-                [],
-            )
-        ]
-
-        if not self.camera_ids:
-
-            raise RuntimeError(
-                "No cameras configured "
-                "in detection.yaml"
-            )
+        )
 
         # reload_config()에서 calibration 파일을 읽어 채운다.
         self.projectors: dict[
@@ -552,6 +524,42 @@ class TrackingEngine:
         ] = {}
 
         self.reload_config()
+
+    def _read_mosaic_size(
+        self,
+    ) -> tuple[int, int]:
+
+        capture = cv2.VideoCapture(
+            str(
+                self.scene.video_path
+            )
+        )
+
+        if not capture.isOpened():
+
+            raise RuntimeError(
+                "Failed to open mosaic video: "
+                f"{self.scene.video_path}"
+            )
+
+        width = int(
+            capture.get(
+                cv2.CAP_PROP_FRAME_WIDTH
+            )
+        )
+
+        height = int(
+            capture.get(
+                cv2.CAP_PROP_FRAME_HEIGHT
+            )
+        )
+
+        capture.release()
+
+        return (
+            width,
+            height,
+        )
 
     # =====================================================
     # Config
@@ -678,7 +686,10 @@ class TrackingEngine:
                 projectors[
                     camera_id
                 ] = CameraProjector(
-                    camera_id
+                    camera_id,
+                    calibration_dir=(
+                        self.scene.calibration_dir
+                    ),
                 )
 
             except Exception as error:
@@ -1813,6 +1824,62 @@ class TrackingEngine:
                 float(
                     self.global_probe_motion_sec
                 ),
+
+            "scene":
+                self.scene_info(),
+        }
+
+    def scene_info(
+        self,
+    ) -> dict:
+        """
+        웹 재생용 모자이크 정보.
+        rect는 모자이크 픽셀 좌표 [x1, y1, x2, y2].
+        """
+
+        video_url = (
+            "/media/"
+            +
+            self.scene.video_path
+            .relative_to(VIDEO_DIR)
+            .as_posix()
+        )
+
+        return {
+
+            "name":
+                self.scene.name,
+
+            "video_url":
+                video_url,
+
+            "width":
+                self.mosaic_width,
+
+            "height":
+                self.mosaic_height,
+
+            "rows":
+                self.scene.rows,
+
+            "cols":
+                self.scene.cols,
+
+            "cameras": [
+                {
+                    "id":
+                        camera_id,
+
+                    "rect":
+                        list(
+                            self.crop_rects[
+                                camera_id
+                            ]
+                        ),
+                }
+                for camera_id
+                in self.camera_ids
+            ],
         }
 
 
@@ -1821,10 +1888,26 @@ class TrackingEngine:
 # =========================================================
 
 
+# 처리할 원본 영상은 config/detection.yaml 의 video 값(영상 제목)으로 정한다.
+VIDEO_TITLE = default_title()
+
+if not VIDEO_TITLE:
+
+    raise RuntimeError(
+        "Set 'video' (raw video title) in "
+        f"{DETECTION_CONFIG_PATH}"
+    )
+
 tracking_engine = (
     TrackingEngine(
-        DETECTION_CACHE_PATH
+        load_video(
+            VIDEO_TITLE
+        )
     )
+)
+
+DETECTION_CACHE_PATH = (
+    tracking_engine.cache_path
 )
 
 
@@ -1958,6 +2041,12 @@ def print_startup_info() -> None:
 
     print(
         "========================================"
+    )
+
+    print(
+        f"Video           : "
+        f"{info['scene']['name']} "
+        f"({info['scene']['video_url']})"
     )
 
     print(

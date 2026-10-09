@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -12,23 +11,30 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 
+if str(ROOT) not in sys.path:
+    sys.path.insert(
+        0,
+        str(ROOT),
+    )
+
+from src.mosaic import default_title, load_video  # noqa: E402
+
 
 """
 모자이크 영상 + YOLO detection 캐시를 프레임 번호로 맞춰 재생한다.
 
 - 영상 프레임 i 에는 detections.jsonl 의 frame_index i 결과를 그린다.
   (영상과 bbox가 같은 프레임 번호이므로 항상 동기화된다)
-- camera_id가 cell_r{행}c{열} 형식이면 그 칸 위치로 bbox를 옮겨 그린다.
-  (split_mosaic.py로 분리한 영상은 칸과 같은 해상도이므로 크기 변환이 필요 없다)
+- bbox 좌표는 카메라(잘라낸 칸) 기준이므로,
+  config/mosaic.yaml 의 칸 위치만큼 옮겨 그린다.
 
 예:
-    python scripts/play_mosaic.py data/videos/1009.mp4 \\
-        --detections data/detections/1009/detections.jsonl
+    python scripts/play_mosaic.py                 # detection.yaml 의 video
+    python scripts/play_mosaic.py test00
 
     # 화면 없이 bbox가 그려진 영상만 저장
-    python scripts/play_mosaic.py data/videos/1009.mp4 \\
-        --detections data/detections/1009/detections.jsonl \\
-        --save outputs/1009_bbox.mp4 --no-show
+    python scripts/play_mosaic.py test00 \\
+        --save outputs/test00_bbox.mp4 --no-show
 
 키:
     Space : 재생 / 일시정지
@@ -41,10 +47,6 @@ ROOT = Path(__file__).resolve().parents[1]
 WINDOW = "Mosaic Playback"
 
 DISPLAY_MAX_WIDTH = 1600
-
-CELL_PATTERN = re.compile(
-    r"^cell_r(\d+)c(\d+)$"
-)
 
 CLASS_COLORS = {
     "car": (0, 200, 255),
@@ -129,31 +131,10 @@ class DetectionCache:
         )
 
 
-def cell_origin(
-    camera_id: str,
-    cell_width: int,
-    cell_height: int,
-) -> tuple[int, int] | None:
-
-    match = CELL_PATTERN.match(camera_id)
-
-    if match is None:
-        return None
-
-    row = int(match.group(1)) - 1
-    col = int(match.group(2)) - 1
-
-    return (
-        int(round(col * cell_width)),
-        int(round(row * cell_height)),
-    )
-
-
 def draw_detections(
     frame: np.ndarray,
     cameras: dict,
-    cell_width: float,
-    cell_height: float,
+    origins: dict[str, tuple[int, int]],
     show_label: bool,
 ) -> int:
 
@@ -161,10 +142,8 @@ def draw_detections(
 
     for camera_id, detections in cameras.items():
 
-        origin = cell_origin(
-            camera_id,
-            cell_width,
-            cell_height,
+        origin = origins.get(
+            camera_id
         )
 
         if origin is None:
@@ -225,28 +204,24 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
-        "video",
+        "title",
         type=str,
-        help="Mosaic video path",
+        nargs="?",
+        default=None,
+        help=(
+            "Raw video title (data/videos/raw/<title>.mp4). "
+            "Default: 'video' in config/detection.yaml"
+        ),
     )
 
     parser.add_argument(
         "--detections",
         type=str,
-        required=True,
-        help="detections.jsonl path",
-    )
-
-    parser.add_argument(
-        "--rows",
-        type=int,
-        default=3,
-    )
-
-    parser.add_argument(
-        "--cols",
-        type=int,
-        default=3,
+        default=None,
+        help=(
+            "Override detections.jsonl path "
+            "(default: data/detections/<title>/detections.jsonl)"
+        ),
     )
 
     parser.add_argument(
@@ -275,8 +250,35 @@ def main() -> None:
 
     args = parse_args()
 
-    video_path = resolve(args.video)
-    detections_path = resolve(args.detections)
+    title = (
+        args.title
+        or
+        default_title()
+    )
+
+    if not title:
+        sys.exit(
+            "No video given. Pass a title or set "
+            "'video' in config/detection.yaml"
+        )
+
+    try:
+
+        scene = load_video(
+            title
+        )
+
+    except FileNotFoundError as error:
+
+        sys.exit(str(error))
+
+    video_path = scene.video_path
+
+    detections_path = (
+        resolve(args.detections)
+        if args.detections
+        else scene.detections_dir / "detections.jsonl"
+    )
 
     if not video_path.exists():
         sys.exit(f"Video not found: {video_path}")
@@ -303,8 +305,11 @@ def main() -> None:
         detections_path
     )
 
-    cell_width = width / args.cols
-    cell_height = height / args.rows
+    origins = {
+        camera_id: (x1, y1)
+        for camera_id, (x1, y1, x2, y2)
+        in scene.crop_rects(width, height).items()
+    }
 
     print(
         f"Video      : {video_path.name} "
@@ -394,10 +399,22 @@ def main() -> None:
         box_count = draw_detections(
             frame,
             cache.read(frame_index),
-            cell_width,
-            cell_height,
+            origins,
             show_label=not args.no_label,
         )
+
+        for camera_id, (x, y) in origins.items():
+
+            cv2.putText(
+                frame,
+                camera_id,
+                (x + 8, y + 22),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (255, 255, 255),
+                2,
+                cv2.LINE_AA,
+            )
 
         if (
             writer is not None

@@ -1,3 +1,8 @@
+# 기본으로 사용할 원본 영상 제목 (data/videos/raw/<video>.mp4).
+# server.py, calibrate_camera.py, play_mosaic.py의 기본값으로 사용된다.
+# 칸 ↔ 카메라 배치는 config/mosaic.yaml 에서 관리한다.
+video: "test00"
+
 model:
   weights: yolo26x.pt
   device: 0
@@ -16,39 +21,5 @@ classes:
     - bus
     - truck
 
-videos:
-  - camera_id: cam01
-    path: data/videos/scene1/260914_1.mp4
-
-  - camera_id: cam02
-    path: data/videos/scene1/260914_2.mp4
-
-  - camera_id: cam03
-    path: data/videos/scene1/260914_3.mp4
-
-  - camera_id: cam05
-    path: data/videos/scene1/260914_5.mp4
-
-  - camera_id: cam06
-    path: data/videos/scene1/260914_6.mp4
-
-  - camera_id: cam07
-    path: data/videos/scene1/260914_7.mp4
-
-  - camera_id: cam08
-    path: data/videos/scene1/260914_8.mp4
-
 pipeline:
   queue_size: 2
-
-profile:
-  print_interval: 100
-
-display:
-  show: true
-  render: true
-  show_confidence: true
-  line_width: 2
-  grid_columns: 4
-  width: 1600
-  height: 850

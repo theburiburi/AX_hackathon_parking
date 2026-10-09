@@ -9,7 +9,7 @@ from PIL import Image, ImageDraw, ImageFont
 ROOT = Path(__file__).resolve().parents[1]
 
 MAP_PATH = ROOT / "data" / "maps" / "map.png"
-ZONES_PATH = ROOT / "data" / "parking" / "zones.json"
+ZONES_PATH = ROOT / "data" / "maps" / "zones.json"
 OUTPUT_PATH = ROOT / "outputs" / "parking_zone_preview.png"
 
 ZONE_COLORS: Dict[str, Tuple[int, int, int]] = {
