@@ -49,6 +49,7 @@ AX_Parking2/
 │   ├── detection.yaml         # 기본 영상 제목, YOLO 모델/추론 설정
 │   ├── tracking.yaml          # Local Tracking 파라미터
 │   ├── global_tracking.yaml   # Global Tracking 파라미터
+│   ├── gate.yaml              # 차단기 입출차 자동 감지 구역 (cam01)
 │   └── calibration/
 │       └── camXX.json         # 카메라별 calibration (모든 원본 영상 공통)
 ├── data/
@@ -64,6 +65,7 @@ AX_Parking2/
 ├── scripts/
 │   ├── preprocess.py          # 원본 분리 + YOLO 검출
 │   ├── calibrate_camera.py    # 카메라 calibration 도구
+│   ├── detect_gate_events.py  # cam01 입차/출차 자동 감지 → GATE LOG 생성
 │   └── play_mosaic.py         # (확인용) 서버 없이 bbox 재생 / 영상 저장
 ├── src/
 │   ├── mosaic.py              # 칸 배치, 영상 제목 → 경로 규칙
@@ -167,7 +169,33 @@ python server.py
 | GATE LOG 항목 클릭 | 그 기록이 발생한 프레임으로 이동 |
 | "트래킹 설정 재로드" 버튼 | tracking 설정과 calibration을 다시 읽음 (서버 재시작 불필요) |
 
-### 4.4 확인용 도구
+### 4.4 차단기 입출차 자동 감지
+
+```bash
+python scripts/detect_gate_events.py test01
+python scripts/detect_gate_events.py test01 --start-time "2026-10-01 07:31:44"   # 실제 시각으로 기록
+python scripts/detect_gate_events.py test01 --preview                            # 구역 확인 이미지
+```
+
+- 전처리 결과(`data/detections/<title>/`)의 cam01 bbox를 서버와 같은 Local Tracker로 추적한다.
+- 차량 위치(bbox 바닥 중앙점)가 `config/gate.yaml`의 **입차 구역 / 출차 구역**에 들어오고,
+  그때 **진행 방향**이 구역에 정한 방향과 맞으면 입차(IN) / 출차(OUT)로 기록한다.
+  (입차 구역 = 왼쪽 차로 안쪽, 출차 구역 = 오른쪽 차로 바깥쪽. 차량이 반대쪽 구역을 지나가도 방향이 반대라 잡히지 않는다. 같은 차량은 구역마다 한 번만 기록)
+- 결과는 `data/gate_logs/<title>.json`에 저장되어 웹 GATE LOG에 그대로 표시된다.
+  기존 기록이 있으면 멈추며, 덮어쓰려면 `--overwrite`, 다른 곳에 저장하려면 `--output <경로>`.
+- `--start-time`이 없으면 시각은 영상 경과 시간(`00:00:06.167`)으로 기록된다.
+- `--preview`: 구역, 방향 화살표, 감지된 차량의 이동 경로를 그린 이미지를 `outputs/gate_zones_<title>.jpg`로 저장한다.
+  구역 위치를 조정할 때 이 이미지를 보며 `config/gate.yaml`의 `polygon`(칸 기준 픽셀)을 고친다.
+
+| `config/gate.yaml` 항목 | 설명 |
+|---|---|
+| `zones[].polygon` | 구역 꼭짓점 (cam01 칸 기준 640x360 픽셀) |
+| `zones[].direction` | 인정할 진행 방향 벡터 (x 오른쪽 +, y 아래 +) |
+| `min_frames_in_zone` | 구역 안에 연속으로 있어야 하는 프레임 수 (흔들림 방지) |
+| `direction_window_sec` | 진행 방향을 계산하는 시간 구간 |
+| `min_speed_px_per_sec` | 방향으로 이 속도 이상 움직여야 인정 (정지 차량 제외) |
+
+### 4.5 확인용 도구
 
 ```bash
 # 서버 없이 모자이크 + YOLO bbox 재생 (Space, A/D: 1프레임, J/L: 30프레임, Q)
@@ -177,7 +205,7 @@ python scripts/play_mosaic.py test00
 python scripts/play_mosaic.py test00 --save outputs/test00_bbox.mp4 --no-show
 ```
 
-### 4.5 새 원본 영상 추가
+### 4.6 새 원본 영상 추가
 
 1. `data/videos/raw/<새 제목>.mp4`에 넣는다. (칸 배치가 `config/mosaic.yaml`과 같아야 함)
 2. `python scripts/preprocess.py <새 제목>`

@@ -1,7 +1,7 @@
 {
   "video": "test00",
-  "description": "가상 차단기 입출차 기록. test00 영상(cam01 차단기)의 실제 장면 시점에 맞춰 작성했다. 번호판, 입차 시각, 요금은 가상 값이다.",
-  "start_time": "2026-10-01 07:31:44.000",
+  "description": "scripts/detect_gate_events.py 가 자동 감지한 입출차 기록. 구역 설정: config/gate.yaml",
+  "start_time": null,
   "fps": 30.0,
   "gate": {
     "id": "GATE-01",
@@ -10,36 +10,17 @@
   },
   "events": [
     {
-      "frame": 140,
-      "time": "2026-10-01 07:31:48.667",
-      "type": "OUT",
-      "label": "출차 인식",
-      "plate": "38나 4172",
-      "detail": "입차 06:58:12 · 주차 33분 · 정기권 (요금 0원)"
-    },
-    {
-      "frame": 150,
-      "time": "2026-10-01 07:31:49.000",
-      "type": "GATE_OPEN",
-      "label": "차단기 열림",
-      "plate": "38나 4172",
-      "detail": "출차 승인"
-    },
-    {
-      "frame": 205,
-      "time": "2026-10-01 07:31:50.833",
-      "type": "OUT_DONE",
-      "label": "출차 완료",
-      "plate": "38나 4172",
-      "detail": "차단기 통과"
-    },
-    {
-      "frame": 275,
-      "time": "2026-10-01 07:31:53.167",
-      "type": "GATE_CLOSE",
-      "label": "차단기 닫힘",
+      "frame": 185,
+      "time": "00:00:06.167",
+      "type": "IN",
+      "label": "입차",
       "plate": null,
-      "detail": "통과 감지 후 자동 닫힘"
+      "detail": "cam01 L006 · car · 49px/s",
+      "track_id": 6,
+      "position": [
+        186.7,
+        180.5
+      ]
     }
   ]
 }
