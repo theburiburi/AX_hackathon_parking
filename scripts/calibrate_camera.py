@@ -19,6 +19,12 @@ if str(ROOT) not in sys.path:
         str(ROOT),
     )
 
+from src.calibration.mapping import (  # noqa: E402
+    CalibrationMapping,
+    apply_homography,
+    coverage_grid,
+)
+
 
 DETECTION_CONFIG_PATH = (
     ROOT
@@ -54,6 +60,15 @@ BEV_DISPLAY_MAX_HEIGHT = 650
 ZOOM_STEP = 1.25
 MIN_ZOOM = 1.0
 MAX_ZOOM = 20.0
+
+
+# coverage heatmap: 이 confidence 미만인 영역만 붉게 표시한다.
+COVERAGE_GRID_STEP = 40
+COVERAGE_LOW_THRESHOLD = 0.5
+COVERAGE_MAX_ALPHA = 0.30
+
+# BEV 예측 마커 색 (BGR). 확정 점(빨강)과 구분한다.
+PREDICT_COLOR = (0, 255, 0)
 
 
 @dataclass
@@ -645,13 +660,45 @@ class CalibrationTool:
             | None
         ) = None
 
+        # 영상 점을 찍었을 때 현재 mapping으로 예측한 BEV 위치.
+        # 예측이 불가능하면 None.
+        self.pending_predicted_bev: (
+            tuple[float, float]
+            | None
+        ) = None
+
         self.output_path = (
             CALIBRATION_DIR
             /
             f"{self.camera_id}.json"
         )
 
+        self.mapping: (
+            CalibrationMapping
+            | None
+        ) = None
+
+        self.homography_errors: list[float] = []
+        self.mapping_errors: list[float] = []
+
+        self.show_coverage = True
+
+        # 확정된 calibration 점(빨강) 표시 여부
+        self.show_points = True
+
+        self.coverage_image: np.ndarray = (
+            self.frame
+        )
+
+        self.coverage_ratio = 0.0
+
+        # 점이 추가/삭제되었지만 아직 저장되지 않았는지 여부.
+        # 변경이 없으면 종료 시 파일을 덮어쓰지 않는다.
+        self.dirty = False
+
         self._load_existing_points()
+
+        self._update_mapping()
 
     def _load_detection_config(
         self,
@@ -968,6 +1015,12 @@ class CalibrationTool:
             point
         )
 
+        self.pending_predicted_bev = (
+            self._predict_bev(
+                point
+            )
+        )
+
         print()
 
         print(
@@ -978,6 +1031,22 @@ class CalibrationTool:
             f"  x={point[0]:.2f}, "
             f"y={point[1]:.2f}"
         )
+
+        if self.pending_predicted_bev is None:
+
+            print(
+                "  Predicted BEV: not available"
+            )
+
+        else:
+
+            print(
+                "  Predicted BEV: "
+                f"("
+                f"{self.pending_predicted_bev[0]:.2f}, "
+                f"{self.pending_predicted_bev[1]:.2f}"
+                f")"
+            )
 
         print(
             "Now click the SAME point "
@@ -1071,9 +1140,37 @@ class CalibrationTool:
             f")"
         )
 
+        if self.pending_predicted_bev is not None:
+
+            prediction_error = float(
+                np.hypot(
+                    bev_point[0]
+                    -
+                    self.pending_predicted_bev[0],
+
+                    bev_point[1]
+                    -
+                    self.pending_predicted_bev[1],
+                )
+            )
+
+            print(
+                "  Prediction error "
+                "(before adding this point): "
+                f"{prediction_error:.2f} px"
+            )
+
         self.pending_image_point = (
             None
         )
+
+        self.pending_predicted_bev = (
+            None
+        )
+
+        self._update_mapping()
+
+        self.dirty = True
 
         self._save()
 
@@ -1126,11 +1223,12 @@ class CalibrationTool:
                     f"{self.frame_index}"
                 )
 
+                # 고정 카메라이므로 프레임이 달라도 바닥 위치는 같다.
+                # 기존 점을 그대로 불러오고, 저장 시 frame_index만 갱신한다.
                 print(
-                    "Existing points will not be loaded."
+                    "Existing points will be loaded anyway. "
+                    "frame_index will be updated on next save."
                 )
-
-                return
 
             points = data.get(
                 "points",
@@ -1184,77 +1282,191 @@ class CalibrationTool:
                 error
             )
 
-    def _calculate_homography(
+    def _update_mapping(
         self,
-    ) -> tuple[
-        np.ndarray | None,
-        list[float],
-    ]:
+    ) -> None:
+        """
+        사용자 점 전체로 Homography + TPS mapping을 다시 계산하고
+        coverage heatmap / 추천 위치도 함께 갱신한다.
+
+        사용자 점은 모두 정답으로 간주한다.
+        (RANSAC / outlier 제거 없음)
+        """
+
+        self.mapping = (
+            CalibrationMapping.from_points(
+                self.image_points,
+                self.bev_points,
+            )
+        )
+
+        self.homography_errors = []
+        self.mapping_errors = []
+
+        if self.mapping is not None:
+
+            src = np.array(
+                self.image_points,
+                dtype=np.float64,
+            )
+
+            dst = np.array(
+                self.bev_points,
+                dtype=np.float64,
+            )
+
+            self.homography_errors = np.linalg.norm(
+                apply_homography(
+                    self.mapping.homography,
+                    src,
+                )
+                -
+                dst,
+                axis=1,
+            ).tolist()
+
+            self.mapping_errors = np.linalg.norm(
+                self.mapping.project_many(
+                    src
+                )
+                -
+                dst,
+                axis=1,
+            ).tolist()
+
+        self._update_coverage()
+
+    def _update_coverage(
+        self,
+    ) -> None:
+
+        height, width = (
+            self.frame.shape[:2]
+        )
+
+        _, _, confidence = coverage_grid(
+            self.image_points,
+            width=width,
+            height=height,
+            step=COVERAGE_GRID_STEP,
+        )
+
+        self.coverage_ratio = float(
+            np.mean(
+                confidence
+                >=
+                COVERAGE_LOW_THRESHOLD
+            )
+        )
+
+        confidence_map = cv2.resize(
+            confidence.astype(
+                np.float32
+            ),
+            (
+                width,
+                height,
+            ),
+            interpolation=cv2.INTER_LINEAR,
+        )
+
+        # confidence가 낮을수록 진하게, threshold 이상은 원본 그대로
+        alpha = np.clip(
+            (
+                COVERAGE_LOW_THRESHOLD
+                -
+                confidence_map
+            )
+            /
+            COVERAGE_LOW_THRESHOLD,
+            0.0,
+            1.0,
+        ) * COVERAGE_MAX_ALPHA
+
+        tint = np.zeros_like(
+            self.frame,
+            dtype=np.float32,
+        )
+
+        tint[..., 2] = 255.0
+
+        self.coverage_image = (
+            self.frame.astype(
+                np.float32
+            )
+            *
+            (1.0 - alpha[..., None])
+            +
+            tint
+            *
+            alpha[..., None]
+        ).astype(
+            np.uint8
+        )
+
+    def _predict_bev(
+        self,
+        point: tuple[
+            float,
+            float,
+        ],
+    ) -> (
+        tuple[float, float]
+        | None
+    ):
+        """
+        현재 mapping으로 BEV 위치를 예측한다 (검증용 표시).
+
+        mapping이 없거나, 점이 바닥 평면의 지평선 너머에 있어
+        Homography가 의미 없는 경우에는 None.
+        정확도와 무관하게 계산 가능하면 반환한다.
+        """
+
+        if self.mapping is None:
+            return None
+
+        homography = self.mapping.homography
+
+        def denominator(x, y):
+            return (
+                homography[2, 0] * x
+                +
+                homography[2, 1] * y
+                +
+                homography[2, 2]
+            )
+
+        reference = np.median(
+            [
+                denominator(x, y)
+                for x, y in self.image_points
+            ]
+        )
 
         if (
-            len(
-                self.image_points
-            )
-            <
-            4
+            denominator(*point)
+            *
+            np.sign(reference)
+            <=
+            0.0
         ):
+            return None
 
-            return (
-                None,
-                [],
-            )
-
-        src = np.array(
-            self.image_points,
-            dtype=np.float32,
+        bev_x, bev_y = self.mapping.project(
+            point[0],
+            point[1],
         )
 
-        dst = np.array(
-            self.bev_points,
-            dtype=np.float32,
-        )
-
-        homography, mask = (
-            cv2.findHomography(
-                src,
-                dst,
-                method=cv2.RANSAC,
-                ransacReprojThreshold=5.0,
-            )
-        )
-
-        if homography is None:
-
-            return (
-                None,
-                [],
-            )
-
-        projected = (
-            cv2.perspectiveTransform(
-                src.reshape(
-                    -1,
-                    1,
-                    2,
-                ),
-                homography,
-            )
-            .reshape(
-                -1,
-                2,
-            )
-        )
-
-        errors = np.linalg.norm(
-            projected
-            -
-            dst,
-            axis=1,
-        )
+        if not (
+            np.isfinite(bev_x)
+            and
+            np.isfinite(bev_y)
+        ):
+            return None
 
         return (
-            homography,
-            errors.tolist(),
+            bev_x,
+            bev_y,
         )
 
     def _save(
@@ -1266,9 +1478,17 @@ class CalibrationTool:
             exist_ok=True,
         )
 
-        homography, errors = (
-            self._calculate_homography()
+        homography = (
+            self.mapping.homography
+            if self.mapping is not None
+            else None
         )
+
+        # reprojection_error_px : Homography 단독 오차 (기존 의미 유지)
+        # mapping_error_px      : 최종 mapping(H + TPS) 오차
+        errors = self.homography_errors
+
+        mapping_errors = self.mapping_errors
 
         points = []
 
@@ -1315,6 +1535,17 @@ class CalibrationTool:
                     "reprojection_error_px"
                 ] = round(
                     errors[
+                        index - 1
+                    ],
+                    3,
+                )
+
+            if mapping_errors:
+
+                point_data[
+                    "mapping_error_px"
+                ] = round(
+                    mapping_errors[
                         index - 1
                     ],
                     3,
@@ -1379,6 +1610,12 @@ class CalibrationTool:
                 else None
             ),
 
+            "mapping": (
+                self.mapping.to_dict()
+                if self.mapping is not None
+                else None
+            ),
+
             "reprojection": None,
         }
 
@@ -1404,6 +1641,28 @@ class CalibrationTool:
                     ),
                     3,
                 ),
+
+                "mapping_type": (
+                    self.mapping.type
+                ),
+
+                "mapping_mean_error_px": round(
+                    float(
+                        np.mean(
+                            mapping_errors
+                        )
+                    ),
+                    3,
+                ),
+
+                "mapping_max_error_px": round(
+                    float(
+                        np.max(
+                            mapping_errors
+                        )
+                    ),
+                    3,
+                ),
             }
 
         with self.output_path.open(
@@ -1418,6 +1677,8 @@ class CalibrationTool:
                 indent=2,
             )
 
+        self.dirty = False
+
     def _undo(
         self,
     ) -> None:
@@ -1428,6 +1689,10 @@ class CalibrationTool:
         ):
 
             self.pending_image_point = (
+                None
+            )
+
+            self.pending_predicted_bev = (
                 None
             )
 
@@ -1471,22 +1736,13 @@ class CalibrationTool:
             f"{removed_bev}"
         )
 
+        self._update_mapping()
+
+        self.dirty = True
+
         self._save()
 
         self._print_calibration_status()
-
-        self._refresh_windows()
-
-    def _reset_views(
-        self,
-    ) -> None:
-
-        self.image_view.reset()
-        self.bev_view.reset()
-
-        print(
-            "Zoom/pan reset."
-        )
 
         self._refresh_windows()
 
@@ -1516,39 +1772,38 @@ class CalibrationTool:
                 "for Homography."
             )
 
-        else:
+        elif self.mapping is None:
 
-            homography, errors = (
-                self._calculate_homography()
+            print(
+                "Homography failed "
+                "(points may be degenerate)."
             )
 
-            if (
-                homography is not None
-                and
-                errors
-            ):
+        else:
 
-                mean_error = float(
-                    np.mean(
-                        errors
-                    )
-                )
+            print(
+                f"Mapping type: "
+                f"{self.mapping.type}"
+            )
 
-                max_error = float(
-                    np.max(
-                        errors
-                    )
-                )
+            print(
+                f"Homography only error : "
+                f"mean {np.mean(self.homography_errors):.2f} px, "
+                f"max {np.max(self.homography_errors):.2f} px"
+            )
 
-                print(
-                    f"Mean reprojection error: "
-                    f"{mean_error:.2f} px"
-                )
+            print(
+                f"Final mapping error   : "
+                f"mean {np.mean(self.mapping_errors):.2f} px, "
+                f"max {np.max(self.mapping_errors):.2f} px"
+            )
 
-                print(
-                    f"Max reprojection error : "
-                    f"{max_error:.2f} px"
-                )
+        print(
+            f"Coverage (conf >= "
+            f"{COVERAGE_LOW_THRESHOLD:.1f}): "
+            f"{self.coverage_ratio * 100.0:.1f}% "
+            f"of image"
+        )
 
         print(
             "--------------------------------------"
@@ -1609,9 +1864,52 @@ class CalibrationTool:
             cv2.LINE_AA,
         )
 
+    def _draw_key_guide(
+        self,
+        image: np.ndarray,
+    ) -> None:
+
+        guide = (
+            f"[C] coverage "
+            f"{'ON' if self.show_coverage else 'OFF'}  "
+            f"[P] points "
+            f"{'ON' if self.show_points else 'OFF'}  "
+            f"[U] undo  [S] save  [Q] quit"
+        )
+
+        height = image.shape[0]
+
+        # 반투명 배경: 아래쪽 점이 가려지지 않도록
+        strip = image[
+            height - 24:height
+        ]
+
+        strip[:] = (
+            strip.astype(np.float32)
+            *
+            0.45
+        ).astype(np.uint8)
+
+        cv2.putText(
+            image,
+            guide,
+            (10, height - 7),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (255, 255, 255),
+            1,
+            cv2.LINE_AA,
+        )
+
     def _refresh_windows(
         self,
     ) -> None:
+
+        self.image_view.image = (
+            self.coverage_image
+            if self.show_coverage
+            else self.frame
+        )
 
         image_display = (
             self.image_view.render()
@@ -1621,29 +1919,31 @@ class CalibrationTool:
             self.bev_view.render()
         )
 
-        for index, point in enumerate(
-            self.image_points,
-            start=1,
-        ):
+        if self.show_points:
 
-            self._draw_point(
-                image=image_display,
-                view=self.image_view,
-                point=point,
-                number=index,
-            )
+            for index, point in enumerate(
+                self.image_points,
+                start=1,
+            ):
 
-        for index, point in enumerate(
-            self.bev_points,
-            start=1,
-        ):
+                self._draw_point(
+                    image=image_display,
+                    view=self.image_view,
+                    point=point,
+                    number=index,
+                )
 
-            self._draw_point(
-                image=bev_display,
-                view=self.bev_view,
-                point=point,
-                number=index,
-            )
+            for index, point in enumerate(
+                self.bev_points,
+                start=1,
+            ):
+
+                self._draw_point(
+                    image=bev_display,
+                    view=self.bev_view,
+                    point=point,
+                    number=index,
+                )
 
         if (
             self.pending_image_point
@@ -1689,11 +1989,75 @@ class CalibrationTool:
                     cv2.LINE_AA,
                 )
 
+        if (
+            self.pending_predicted_bev
+            is not None
+        ):
+
+            predicted_display_point = (
+                self.bev_view
+                .original_to_display(
+                    self.pending_predicted_bev
+                )
+            )
+
+            if (
+                predicted_display_point
+                is not None
+            ):
+
+                cv2.drawMarker(
+                    bev_display,
+                    predicted_display_point,
+                    PREDICT_COLOR,
+                    cv2.MARKER_CROSS,
+                    18,
+                    2,
+                    cv2.LINE_AA,
+                )
+
+                cv2.circle(
+                    bev_display,
+                    predicted_display_point,
+                    10,
+                    PREDICT_COLOR,
+                    1,
+                    cv2.LINE_AA,
+                )
+
+                cv2.putText(
+                    bev_display,
+                    "PRED",
+                    (
+                        predicted_display_point[0]
+                        +
+                        12,
+
+                        predicted_display_point[1]
+                        -
+                        12,
+                    ),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    PREDICT_COLOR,
+                    2,
+                    cv2.LINE_AA,
+                )
+
+        mapping_type = (
+            self.mapping.type
+            if self.mapping is not None
+            else "none"
+        )
+
         image_title = (
             f"{self.camera_id} | "
             f"frame {self.frame_index} | "
             f"zoom "
-            f"{self.image_view.zoom:.2f}x"
+            f"{self.image_view.zoom:.2f}x | "
+            f"{mapping_type} | "
+            f"coverage "
+            f"{self.coverage_ratio * 100.0:.0f}%"
         )
 
         bev_title = (
@@ -1723,6 +2087,10 @@ class CalibrationTool:
             (255, 255, 255),
             2,
             cv2.LINE_AA,
+        )
+
+        self._draw_key_guide(
+            image_display
         )
 
         cv2.imshow(
@@ -1814,15 +2182,28 @@ class CalibrationTool:
         )
 
         print(
-            "R : reset zoom / pan"
-        )
-
-        print(
             "S : save"
         )
 
         print(
+            "C : toggle coverage heatmap "
+            "(red = few calibration points)"
+        )
+
+        print(
+            "P : toggle calibration point markers"
+        )
+
+        print(
             "Q / ESC : quit"
+        )
+
+        print()
+
+        print(
+            "After clicking an image point, "
+            "the BEV window shows the predicted "
+            "position (green PRED) if available."
         )
 
         print()
@@ -1890,9 +2271,21 @@ class CalibrationTool:
 
                 self._undo()
 
-            elif key == ord("r"):
+            elif key == ord("c"):
 
-                self._reset_views()
+                self.show_coverage = (
+                    not self.show_coverage
+                )
+
+                self._refresh_windows()
+
+            elif key == ord("p"):
+
+                self.show_points = (
+                    not self.show_points
+                )
+
+                self._refresh_windows()
 
             elif key == ord("s"):
 
@@ -1903,11 +2296,20 @@ class CalibrationTool:
                     f"{self.output_path}"
                 )
 
-        self._save()
-
         cv2.destroyAllWindows()
 
         print()
+
+        if not self.dirty:
+
+            print(
+                "No unsaved changes. "
+                "Calibration file was not modified."
+            )
+
+            return
+
+        self._save()
 
         print(
             "Calibration saved:"

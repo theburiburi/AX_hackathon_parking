@@ -6,6 +6,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from .mapping import CalibrationMapping
+
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -14,7 +16,8 @@ class CameraProjector:
     """
     Camera image coordinate -> BEV coordinate projector.
 
-    config/calibration/camXX.json 안의 Homography를 사용한다.
+    config/calibration/camXX.json 안의 "mapping"(Homography + TPS)이
+    있으면 사용하고, 없거나 읽을 수 없으면 기존 "homography"만 사용한다.
     """
 
     def __init__(
@@ -40,6 +43,11 @@ class CameraProjector:
             /
             f"{camera_id}.json"
         )
+
+        self.mapping: (
+            CalibrationMapping
+            | None
+        ) = None
 
         self.homography = (
             self._load_homography()
@@ -104,7 +112,41 @@ class CameraProjector:
                 "invalid values."
             )
 
+        mapping_data = data.get(
+            "mapping"
+        )
+
+        if mapping_data is not None:
+
+            try:
+
+                self.mapping = (
+                    CalibrationMapping.from_dict(
+                        mapping_data
+                    )
+                )
+
+            except Exception as error:
+
+                print(
+                    f"[CameraProjector] {self.camera_id}: "
+                    f"invalid mapping, "
+                    f"fallback to homography ({error})"
+                )
+
+                self.mapping = None
+
         return matrix
+
+    @property
+    def mapping_type(
+        self,
+    ) -> str:
+
+        if self.mapping is not None:
+            return self.mapping.type
+
+        return "homography"
 
     def project(
         self,
@@ -114,6 +156,13 @@ class CameraProjector:
         float,
         float,
     ]:
+
+        if self.mapping is not None:
+
+            return self.mapping.project(
+                x,
+                y,
+            )
 
         src = np.array(
             [
