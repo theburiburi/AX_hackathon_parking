@@ -56,7 +56,7 @@ AX_Parking2/
 │   ├── videos/
 │   │   ├── raw/<title>.mp4    # 모자이크 원본 (Git 제외)
 │   │   └── <title>/camXX.mp4  # 분리 영상 (Git 제외)
-│   ├── detections/<title>/    # YOLO 결과 (detections.jsonl, metadata.json)
+│   ├── detections/<title>/    # YOLO 결과 (detections.jsonl은 Git 제외, metadata.json)
 │   ├── gate_logs/<title>.json # 차단기 입출차 기록 (선택, 현재 test00은 가상 기록)
 │   └── maps/
 │       ├── map.png            # BEV 지도 (1624 x 968)
@@ -417,9 +417,8 @@ BEV(p) = Homography(p) + w(p) · TPS_residual(p)
 
 ## 9. Git 관리
 
-- 제외: `data/videos/`(원본·분리 영상), `*.pt`(YOLO 가중치), `outputs/`, `*.zip`, 캐시 파일
-- 커밋: `data/detections/`(YOLO 결과), `config/calibration/`, `data/maps/`, 코드와 설정
-- GitHub는 100MB가 넘는 파일을 거부한다. `detections.jsonl`은 영상 1분에 약 20MB이므로
-  긴 영상의 결과는 커밋 전에 크기를 확인한다.
-- `yolo26x.pt`, `yolo26l.pt`는 `.gitignore` 추가 전에 커밋돼 있어 아직 추적 중이다.
-  추적을 끊으려면 `git rm --cached yolo26x.pt yolo26l.pt`.
+- 제외: `data/videos/`(원본·분리 영상), `*.pt`(YOLO 가중치),
+  `data/detections/*/detections.jsonl`(YOLO bbox), `outputs/`, `*.zip`, 캐시 파일
+- 커밋: `data/detections/*/metadata.json`, `config/calibration/`, `data/maps/`, 코드와 설정
+- `detections.jsonl`은 영상 1분에 약 20MB라 GitHub 100MB 제한을 넘기 쉬워 커밋하지 않는다.
+  저장소를 받은 뒤 `python scripts/preprocess.py <title>`로 다시 만든다 (원본 영상 필요).

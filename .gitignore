@@ -33,11 +33,11 @@ data/videos/
 # 백업 압축 파일
 *.zip
 
+# YOLO 결과 bbox (영상 1분에 약 20MB라 GitHub 100MB 제한을 넘기 쉬움)
+# 받은 뒤 python scripts/preprocess.py <title> 로 다시 만든다.
+data/detections/*/detections.jsonl
+
 # 커밋 대상:
-#   data/detections/<title>/   YOLO 결과 (detections.jsonl, metadata.json)
+#   data/detections/<title>/metadata.json
 #   config/calibration/        카메라 calibration
 #   data/maps/                 BEV 지도, 주차 구역
-#
-# 주의: GitHub는 100MB 넘는 파일을 거부한다.
-#       detections.jsonl은 영상 1분에 약 20MB이므로
-#       5분 이상 영상의 결과는 커밋하기 전에 크기를 확인할 것.
