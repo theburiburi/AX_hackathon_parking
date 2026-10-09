@@ -32,9 +32,9 @@ from src.tracking import LocalTracker  # noqa: E402
 
 1. data/detections/<title>/detections.jsonl 에서 카메라의 bbox를 읽는다.
 2. server.py와 같은 Local Tracker(config/tracking.yaml)로 차량을 추적한다.
-3. 차량 위치(bbox 바닥 중앙점)가 config/gate.yaml 의 구역에 들어오고
-   진행 방향이 구역의 direction과 맞으면 입차(IN) / 출차(OUT)로 기록한다.
-   (같은 차량은 구역마다 한 번만 기록)
+3. 차량 bbox가 config/gate.yaml 의 네모 감지 박스(입차용 / 출차용)와
+   일정 비율 이상 겹치고, 진행 방향이 박스의 direction과 맞으면 입차(IN) / 출차(OUT)로 기록한다.
+   (같은 차량은 박스마다 한 번만 기록)
 4. 웹 GATE LOG가 읽는 형식으로 data/gate_logs/<title>.json 에 저장한다.
 
 예:
@@ -61,9 +61,13 @@ class Detection:
 
 @dataclass
 class Zone:
+    """
+    네모 감지 박스 (x1, y1, x2, y2). 차량 bbox와 같은 형식.
+    """
+
     type: str
     label: str
-    polygon: np.ndarray
+    box: tuple[float, float, float, float]
     direction: np.ndarray
 
 
@@ -99,14 +103,18 @@ def load_zones(
                 f"zone {item['type']}: direction must not be zero"
             )
 
+        bx1, by1, bx2, by2 = (float(v) for v in item["box"])
+
+        if bx2 <= bx1 or by2 <= by1:
+            raise ValueError(
+                f"zone {item['type']}: box must be [x1, y1, x2, y2] with x1 < x2, y1 < y2"
+            )
+
         zones.append(
             Zone(
                 type=str(item["type"]),
                 label=str(item.get("label", item["type"])),
-                polygon=np.asarray(
-                    item["polygon"],
-                    dtype=np.float32,
-                ).reshape(-1, 1, 2),
+                box=(bx1, by1, bx2, by2),
                 direction=direction / norm,
             )
         )
@@ -117,6 +125,26 @@ def load_zones(
         )
 
     return zones
+
+
+def overlap_ratio(
+    bbox: tuple[float, float, float, float],
+    zone: Zone,
+) -> float:
+    """
+    감지 박스 중 차량 bbox와 겹친 넓이의 비율 (0 ~ 1).
+    박스 넓이 기준이라 차량 bbox 크기와 관계없이 같은 기준으로 판정한다.
+    """
+
+    x1, y1, x2, y2 = bbox
+    bx1, by1, bx2, by2 = zone.box
+
+    box_area = (bx2 - bx1) * (by2 - by1)
+
+    w = max(0.0, min(x2, bx2) - max(x1, bx1))
+    h = max(0.0, min(y2, by2) - max(y1, by1))
+
+    return w * h / box_area
 
 
 def create_tracker(
@@ -287,14 +315,14 @@ def save_preview(
 
         color = colors.get(zone.type, (255, 255, 0))
 
-        points = (zone.polygon.reshape(-1, 2) * scale).astype(np.int32)
+        bx1, by1, bx2, by2 = (int(v * scale) for v in zone.box)
 
         overlay = image.copy()
-        cv2.fillPoly(overlay, [points], color)
-        image = cv2.addWeighted(overlay, 0.25, image, 0.75, 0)
-        cv2.polylines(image, [points], True, color, 2)
+        cv2.rectangle(overlay, (bx1, by1), (bx2, by2), color, -1)
+        image = cv2.addWeighted(overlay, 0.2, image, 0.8, 0)
+        cv2.rectangle(image, (bx1, by1), (bx2, by2), color, 2)
 
-        center = points.mean(axis=0)
+        center = np.array([(bx1 + bx2) / 2, (by1 + by2) / 2])
         arrow_end = center + zone.direction * 60
 
         cv2.arrowedLine(
@@ -309,8 +337,8 @@ def save_preview(
         cv2.putText(
             image,
             # OpenCV putText는 한글을 그리지 못하므로 type만 표시
-            f"{zone.type} zone",
-            tuple(int(v) for v in points[0] + [0, -8]),
+            f"{zone.type} box",
+            (bx1, by1 - 8),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.6,
             color,
@@ -331,6 +359,16 @@ def save_preview(
             )
 
         ex, ey = event["position"]
+
+        bx1, by1, bx2, by2 = (int(v * scale) for v in event["bbox"])
+
+        cv2.rectangle(
+            image,
+            (bx1, by1),
+            (bx2, by2),
+            colors.get(event["type"], (255, 255, 255)),
+            1,
+        )
 
         cv2.circle(
             image,
@@ -386,6 +424,10 @@ def main() -> None:
 
     min_speed = float(
         gate_config.get("min_speed_px_per_sec", 10.0)
+    )
+
+    min_overlap = float(
+        gate_config.get("min_overlap_ratio", 0.1)
     )
 
     try:
@@ -453,7 +495,7 @@ def main() -> None:
     # track_id -> 최근 위치 (frame, x, y)
     history: dict[int, deque] = {}
 
-    # (track_id, zone index) -> 구역 안에 연속으로 있었던 프레임 수 / 첫 진입 프레임
+    # (track_id, zone index) -> 박스와 연속으로 겹친 프레임 수 / 첫 겹침 프레임
     inside_count: dict[tuple[int, int], int] = {}
     inside_since: dict[tuple[int, int], int] = {}
 
@@ -508,6 +550,13 @@ def main() -> None:
                 x = float(track.ground_x)
                 y = float(track.ground_y)
 
+                bbox = (
+                    float(track.x1),
+                    float(track.y1),
+                    float(track.x2),
+                    float(track.y2),
+                )
+
                 samples = history.setdefault(
                     track_id,
                     deque(maxlen=window + 1),
@@ -537,11 +586,7 @@ def main() -> None:
                     if key in fired:
                         continue
 
-                    inside = cv2.pointPolygonTest(
-                        zone.polygon,
-                        (x, y),
-                        False,
-                    ) >= 0
+                    inside = overlap_ratio(bbox, zone) > min_overlap
 
                     if not inside:
                         inside_count.pop(key, None)
@@ -582,6 +627,7 @@ def main() -> None:
                             ),
                             "track_id": track_id,
                             "position": [round(x, 1), round(y, 1)],
+                            "bbox": [round(v, 1) for v in bbox],
                         }
                     )
 

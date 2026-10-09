@@ -10,16 +10,22 @@
   },
   "events": [
     {
-      "frame": 185,
-      "time": "00:00:06.167",
+      "frame": 149,
+      "time": "00:00:04.967",
       "type": "IN",
       "label": "입차",
       "plate": null,
-      "detail": "cam01 L006 · car · 49px/s",
+      "detail": "cam01 L006 · car · 42px/s",
       "track_id": 6,
       "position": [
-        186.7,
-        180.5
+        240.2,
+        152.8
+      ],
+      "bbox": [
+        163.2,
+        76.2,
+        306.0,
+        154.6
       ]
     }
   ]
