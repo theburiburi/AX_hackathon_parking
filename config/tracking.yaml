@@ -112,8 +112,11 @@ local_tracking:
   # DISPLAY / DEBUG
   # =======================================================
 
-  # UNKNOWN 차량도 웹 CCTV 화면에 bbox를 표시할지 결정함.
+  # UNKNOWN 차량도 bbox를 표시할지 결정함.
+  # 현재 src/detection/run_detection_all.py 화면에서만 사용하며,
+  # server.py / 웹 뷰어는 이 값을 사용하지 않음.
   show_unknown: true
 
   # UNKNOWN -> ACTIVE 같은 상태 전이 로그를 콘솔에 출력할지 결정함.
+  # server.py에서는 현재 False로 강제하므로 run_detection_all.py에서만 적용됨.
   print_transitions: false

@@ -499,26 +499,11 @@ class TrackingEngine:
                 "in detection.yaml"
             )
 
+        # reload_config()에서 calibration 파일을 읽어 채운다.
         self.projectors: dict[
             str,
             CameraProjector,
         ] = {}
-
-        for camera_id in (
-            self.camera_ids
-        ):
-
-            try:
-
-                self.projectors[
-                    camera_id
-                ] = CameraProjector(
-                    camera_id
-                )
-
-            except Exception:
-
-                pass
 
         self.tracking_config: dict = {}
 
@@ -577,6 +562,10 @@ class TrackingEngine:
     ) -> None:
 
         with self.lock:
+
+            # calibration을 수정한 뒤 웹의 Reload로도 반영되도록
+            # tracking 설정과 함께 다시 읽는다.
+            self._load_projectors()
 
             tracking_root = (
                 load_yaml(
@@ -670,6 +659,40 @@ class TrackingEngine:
         if clear_checkpoints:
 
             self.checkpoints.clear()
+
+    def _load_projectors(
+        self,
+    ) -> None:
+
+        projectors: dict[
+            str,
+            CameraProjector,
+        ] = {}
+
+        for camera_id in (
+            self.camera_ids
+        ):
+
+            try:
+
+                projectors[
+                    camera_id
+                ] = CameraProjector(
+                    camera_id
+                )
+
+            except Exception as error:
+
+                # calibration이 없거나 깨진 카메라는
+                # BEV 투영에서 제외되므로 이유를 알린다.
+                print(
+                    f"[WARN] {camera_id}: "
+                    f"calibration not loaded, "
+                    f"BEV projection disabled "
+                    f"({error})"
+                )
+
+        self.projectors = projectors
 
     def reset(
         self,

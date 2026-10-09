@@ -124,17 +124,6 @@ class ViewState:
             self.zoom
         )
 
-    def reset(
-        self,
-    ) -> None:
-
-        self.zoom = 1.0
-
-        self.pan_x = 0.0
-        self.pan_y = 0.0
-
-        self.dragging = False
-
     def clamp_pan(
         self,
     ) -> None:

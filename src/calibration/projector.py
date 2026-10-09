@@ -201,29 +201,3 @@ class CameraProjector:
             bev_x,
             bev_y,
         )
-
-    def project_bbox_bottom_center(
-        self,
-        x1: float,
-        y1: float,
-        x2: float,
-        y2: float,
-    ) -> tuple[
-        float,
-        float,
-    ]:
-
-        ground_x = (
-            float(x1)
-            +
-            float(x2)
-        ) / 2.0
-
-        ground_y = float(
-            y2
-        )
-
-        return self.project(
-            ground_x,
-            ground_y,
-        )
