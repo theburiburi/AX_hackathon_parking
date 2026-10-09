@@ -1,0 +1,32 @@
+[
+  {
+    "id": "V001",
+    "plate_number": "12가3456",
+    "name": "디지털통신기술 1호차",
+    "team_id": "SECTION_DIGITAL_COMMUNICATION",
+    "status": "PARKED",
+    "current_zone_id": null,
+    "last_seen_at": "2026-09-08T10:20:00+09:00",
+    "camera_id": "CAM_A_01"
+  },
+  {
+    "id": "V002",
+    "plate_number": "34나5678",
+    "name": "냉간 DX 1호차",
+    "team_id": "SECTION_COLD_DX",
+    "status": "MOVING",
+    "current_zone_id": null,
+    "last_seen_at": "2026-09-08T10:25:00+09:00",
+    "camera_id": "CAM_B_01"
+  },
+  {
+    "id": "V003",
+    "plate_number": "56다7890",
+    "name": "제강연주 1호차",
+    "team_id": "SECTION_STEELMAKING_CASTING",
+    "status": "UNKNOWN",
+    "current_zone_id": null,
+    "last_seen_at": null,
+    "camera_id": null
+  }
+]
