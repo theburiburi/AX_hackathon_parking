@@ -7,7 +7,7 @@
 - 검출: YOLO (ultralytics), 미리 계산해 캐시로 저장
 - 추적: 카메라별 Local Tracking + 카메라 간 Global Tracking (Re-ID)
 - 지도 투영: 카메라별 calibration (Homography + TPS 비선형 보정)
-- 뷰어: 웹 브라우저에서 모자이크 영상 + bbox + BEV 지도를 프레임 단위로 동기화해 재생
+- 뷰어: 웹 브라우저에서 모자이크 영상 + bbox + BEV 지도 + 차단기 입출차 기록을 프레임 단위로 동기화해 재생
 
 ---
 
@@ -56,6 +56,7 @@ AX_Parking2/
 │   │   ├── raw/<title>.mp4    # 모자이크 원본 (Git 제외)
 │   │   └── <title>/camXX.mp4  # 분리 영상 (Git 제외)
 │   ├── detections/<title>/    # YOLO 결과 (detections.jsonl, metadata.json)
+│   ├── gate_logs/<title>.json # 차단기 입출차 기록 (선택, 현재 test00은 가상 기록)
 │   └── maps/
 │       ├── map.png            # BEV 지도 (1624 x 968)
 │       ├── zones.json         # 주차 구역 정의
@@ -163,6 +164,7 @@ python server.py
 | Shift + A / D | 30초 뒤로 / 앞으로 |
 | `,` / `.` | 1프레임 뒤로 / 앞으로 |
 | R | 처음으로 (tracking 초기화) |
+| GATE LOG 항목 클릭 | 그 기록이 발생한 프레임으로 이동 |
 | "트래킹 설정 재로드" 버튼 | tracking 설정과 calibration을 다시 읽음 (서버 재시작 불필요) |
 
 ### 4.4 확인용 도구
@@ -251,6 +253,29 @@ YOLO 설정, 칸 배치(`layout.crop_rects`), 분리 영상 경로.
 **다시 만들어야 하는 경우:** 원본 영상, `config/mosaic.yaml`(칸 배치 / roi), YOLO 설정이 바뀌었을 때.
 tracking 설정이나 calibration만 바뀌었다면 다시 만들 필요 없이 웹에서 재로드만 하면 된다.
 
+### `data/gate_logs/<title>.json` (차단기 입출차 기록)
+
+```json
+{
+  "video": "test00",
+  "start_time": "2026-10-01 07:31:44.000",
+  "fps": 30.0,
+  "gate": {"id": "GATE-01", "name": "정문 차단기", "camera_id": "cam01"},
+  "events": [
+    {"frame": 140, "time": "2026-10-01 07:31:48.667", "type": "OUT",
+     "label": "출차 인식", "plate": "38나 4172", "detail": "입차 06:58:12 · 주차 33분 · 정기권 (요금 0원)"}
+  ]
+}
+```
+
+- `frame`: 영상 프레임 번호. **웹 동기화는 이 값으로만** 한다 (`time`은 표시용).
+- `type`: `IN`, `IN_DONE`, `OUT`, `OUT_DONE`, `GATE_OPEN`, `GATE_CLOSE` (배지 색 구분용)
+- `start_time`은 영상에 찍힌 녹화 시각 기준 0번 프레임의 시각이다. (test00: 07:31:44, `time = start_time + frame / fps`)
+- 파일이 없으면 웹에 "기록 없음"으로 표시된다. 수정 후 웹의 재로드 버튼을 누르면 다시 읽는다.
+- 현재 `test00.json`은 **가상 기록**이다. cam01 차단기에서 흰색 SUV가 출차하는 실제 장면
+  (차단기 앞 정차 f140 → 열림 f150 → 통과 f205 → 닫힘 f275)에 맞춰 시각을 정했고,
+  번호판·입차 시각·요금은 임의 값이다.
+
 ### `config/calibration/camXX.json`
 | 필드 | 설명 |
 |---|---|
@@ -319,6 +344,8 @@ BEV(p) = Homography(p) + w(p) · TPS_residual(p)
   `/api/tracking/frame/{번호}`를 요청하므로 bbox / BEV가 영상과 같은 프레임을 가리킨다.
 - bbox는 상태별 색으로 칸 위치에 그리며, ACTIVE 차량에만 ID 라벨(G / L)을 표시한다.
 - BEV 지도에는 **ACTIVE 차량만** 카메라별 색으로 표시한다.
+- BEV 지도 아래 **GATE LOG**에는 화면에 표시된 프레임까지 발생한 차단기 기록만 최신순으로 보여 준다.
+  방금 발생한 기록(2초 이내)은 강조되고, 뒤로 이동하면 그 이후 기록은 사라진다.
 - 서버는 프레임을 순서대로 계산하며, 10초마다 tracking 상태를 저장(checkpoint)해 뒤로 이동할 때 사용한다.
 
 ### 7.6 서버 API
@@ -331,6 +358,7 @@ BEV(p) = Homography(p) + w(p) · TPS_residual(p)
 | GET | `/api/tracking/frame/{n}` | n번 프레임의 카메라별 bbox·상태·ID와 BEV 위치 |
 | POST | `/api/tracking/reset` | tracking 초기화 |
 | POST | `/api/tracking/reload` | tracking 설정과 calibration 다시 읽기 |
+| GET | `/api/gate-log` | 차단기 입출차 기록 (`data/gate_logs/<title>.json`, 없으면 빈 목록) |
 
 정적 파일: `/web/*` (웹), `/media/*` (`data/videos/`), `/map/*` (`data/maps/`).
 

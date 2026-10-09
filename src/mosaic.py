@@ -18,6 +18,9 @@ SPLIT_VIDEO_ROOT = ROOT / "data" / "videos"
 
 DETECTIONS_ROOT = ROOT / "data" / "detections"
 
+# 차단기 입출차 기록 (영상 제목별, 프레임 번호 기준)
+GATE_LOG_ROOT = ROOT / "data" / "gate_logs"
+
 # 카메라 위치는 영상과 무관하므로 calibration은 모든 원본 영상이 공유한다.
 CALIBRATION_DIR = ROOT / "config" / "calibration"
 
@@ -36,6 +39,7 @@ VIDEO_EXTENSIONS = (
 - 칸 배치    : config/mosaic.yaml (모든 원본 영상 공통)
 - 분리 영상  : data/videos/<title>/<camera_id>.mp4
 - YOLO 결과  : data/detections/<title>/detections.jsonl
+- 차단기 기록: data/gate_logs/<title>.json (선택)
 - calibration: config/calibration/<camera_id>.json (공통)
 
 카메라 좌표계는 "잘라낸 칸의 왼쪽 위 = (0, 0)"인 픽셀 좌표다.
@@ -212,6 +216,13 @@ class MosaicVideo:
     ) -> Path:
 
         return CALIBRATION_DIR
+
+    @property
+    def gate_log_path(
+        self,
+    ) -> Path:
+
+        return GATE_LOG_ROOT / f"{self.name}.json"
 
 
 def load_layout(

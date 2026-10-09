@@ -1995,6 +1995,68 @@ def tracking_reload():
     }
 
 
+@app.get(
+    "/api/gate-log"
+)
+def gate_log():
+    """
+    차단기 입출차 기록 (data/gate_logs/<title>.json).
+
+    이벤트마다 frame(영상 프레임 번호)이 있으며,
+    웹은 화면에 표시된 프레임까지의 기록만 보여 주는 방식으로 영상과 동기화한다.
+    파일이 없으면 빈 기록을 돌려준다. 요청마다 다시 읽으므로 수정 즉시 반영된다.
+    """
+
+    path = (
+        tracking_engine.scene.gate_log_path
+    )
+
+    if not path.exists():
+
+        return {
+            "video":
+                tracking_engine.scene.name,
+
+            "gate":
+                None,
+
+            "events":
+                [],
+        }
+
+    try:
+
+        with path.open(
+            "r",
+            encoding="utf-8",
+        ) as file:
+
+            data = json.load(
+                file
+            )
+
+    except (OSError, json.JSONDecodeError) as exc:
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Failed to read gate log: {exc}"
+            ),
+        ) from exc
+
+    data["events"] = sorted(
+        data.get(
+            "events",
+            [],
+        ),
+        key=lambda event: int(
+            event["frame"]
+        ),
+    )
+
+    return data
+
+
 # =========================================================
 # Startup
 # =========================================================

@@ -334,6 +334,8 @@ function onDisplayedFrame(
 
     updateLabels();
 
+    renderGateLog();
+
     if (!timelineDragging) {
 
         requestTrackingFrame(
@@ -895,6 +897,8 @@ async function reloadTrackingConfig() {
         setTrackingStatus(
             "Tracking config reloaded"
         );
+
+        loadGateLog();
 
         requestTrackingFrame(
             timeToFrame(
@@ -1859,6 +1863,316 @@ async function loadZones() {
 
 
 /* =========================================================
+ * Gate log
+ * =========================================================
+ *
+ * 차단기 입출차 기록 (/api/gate-log).
+ * 이벤트마다 영상 프레임 번호(frame)가 있으며,
+ * 화면에 표시된 프레임(displayedFrame)까지의 기록만 보여 준다.
+ * 그래서 재생, 일시정지, 이동, 1프레임 이동 모두 영상과 맞게 동기화된다.
+ */
+
+
+const gateLogList =
+    document.getElementById(
+        "gate-log-list"
+    );
+
+const gateLogStatus =
+    document.getElementById(
+        "gate-log-status"
+    );
+
+// 방금 발생한 기록을 강조하는 시간(프레임 수 = 2초)
+const GATE_LOG_RECENT_FRAMES =
+    60;
+
+const GATE_TYPE_STYLES = {
+    IN: "in",
+    IN_DONE: "in",
+    OUT: "out",
+    OUT_DONE: "out",
+    GATE_OPEN: "gate",
+    GATE_CLOSE: "gate",
+};
+
+let gateLog = null;
+
+// 마지막으로 그린 상태 (같으면 다시 그리지 않음)
+let gateLogRenderKey = null;
+
+
+async function loadGateLog() {
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/gate-log"
+            );
+
+        if (!response.ok) {
+
+            throw new Error(
+                `HTTP ${response.status}`
+            );
+        }
+
+        gateLog =
+            await response.json();
+
+        const gateName =
+            gateLog.gate
+                ? gateLog.gate.name
+                : "기록 없음";
+
+        gateLogStatus.textContent =
+            `${gateName} · ${gateLog.events.length}건`;
+    }
+    catch (error) {
+
+        console.error(
+            "Failed to load gate log:",
+            error
+        );
+
+        gateLog = null;
+
+        gateLogStatus.textContent =
+            "gate log error";
+    }
+
+    gateLogRenderKey = null;
+
+    renderGateLog();
+}
+
+
+function formatGateTime(
+    value
+) {
+
+    // "2026-10-01 07:31:48.667" -> "07:31:48.667"
+    if (typeof value !== "string") {
+
+        return "";
+    }
+
+    const parts =
+        value.split(" ");
+
+    return parts[parts.length - 1];
+}
+
+
+function createGateLogItem(
+    event,
+    recent
+) {
+
+    const item =
+        document.createElement(
+            "li"
+        );
+
+    item.className =
+        recent
+            ? "gate-log-item recent"
+            : "gate-log-item";
+
+    item.title =
+        `frame ${event.frame} · 클릭하면 이 시점으로 이동`;
+
+    const time =
+        document.createElement(
+            "span"
+        );
+
+    time.className =
+        "gate-log-time";
+
+    time.textContent =
+        formatGateTime(
+            event.time
+        );
+
+    const type =
+        document.createElement(
+            "span"
+        );
+
+    type.className =
+        `gate-log-type ${GATE_TYPE_STYLES[event.type] || ""}`;
+
+    type.textContent =
+        event.label
+        ||
+        event.type;
+
+    const text =
+        document.createElement(
+            "span"
+        );
+
+    text.className =
+        "gate-log-text";
+
+    if (event.plate) {
+
+        const plate =
+            document.createElement(
+                "span"
+            );
+
+        plate.className =
+            "gate-log-plate";
+
+        plate.textContent =
+            `${event.plate} `;
+
+        text.appendChild(
+            plate
+        );
+    }
+
+    if (event.detail) {
+
+        const detail =
+            document.createElement(
+                "span"
+            );
+
+        detail.className =
+            "gate-log-detail";
+
+        detail.textContent =
+            event.detail;
+
+        text.appendChild(
+            detail
+        );
+    }
+
+    item.append(
+        time,
+        type,
+        text
+    );
+
+    item.addEventListener(
+        "click",
+        () => {
+
+            video.pause();
+
+            seekTo(
+                frameToTime(
+                    event.frame
+                )
+            );
+        }
+    );
+
+    return item;
+}
+
+
+function renderGateLog() {
+
+    if (
+        !gateLog
+        ||
+        !Array.isArray(
+            gateLog.events
+        )
+    ) {
+
+        return;
+    }
+
+    // events는 서버에서 frame 순으로 정렬돼 있다.
+    const visible =
+        gateLog.events.filter(
+            event =>
+                event.frame
+                <=
+                displayedFrame
+        );
+
+    const recentCount =
+        visible.filter(
+            event =>
+                displayedFrame
+                -
+                event.frame
+                <
+                GATE_LOG_RECENT_FRAMES
+        ).length;
+
+    const renderKey =
+        `${visible.length}:${recentCount}`;
+
+    if (
+        renderKey
+        ===
+        gateLogRenderKey
+    ) {
+
+        return;
+    }
+
+    gateLogRenderKey =
+        renderKey;
+
+    gateLogList.replaceChildren();
+
+    if (visible.length === 0) {
+
+        const empty =
+            document.createElement(
+                "li"
+            );
+
+        empty.className =
+            "gate-log-empty";
+
+        empty.textContent =
+            gateLog.events.length > 0
+                ? "아직 발생한 기록이 없습니다."
+                : "이 영상의 차단기 기록이 없습니다.";
+
+        gateLogList.appendChild(
+            empty
+        );
+
+        return;
+    }
+
+    // 최신 기록이 위로 오도록 역순으로 표시
+    for (
+        let index = visible.length - 1;
+        index >= 0;
+        index--
+    ) {
+
+        const event =
+            visible[index];
+
+        gateLogList.appendChild(
+            createGateLogItem(
+                event,
+                displayedFrame
+                -
+                event.frame
+                <
+                GATE_LOG_RECENT_FRAMES
+            )
+        );
+    }
+}
+
+
+/* =========================================================
  * Events
  * =========================================================
  */
@@ -2219,3 +2533,5 @@ updateLabels();
 startFrameSync();
 
 loadTrackingInfo();
+
+loadGateLog();

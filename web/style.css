@@ -504,3 +504,185 @@ button:disabled {
     font-size:
         11px;
 }
+
+/* =========================================================
+ * GATE LOG (BEV 지도 아래)
+ * =========================================================
+ */
+
+
+.bev-card {
+    grid-template-rows:
+        30px
+        minmax(0, 1fr)
+        minmax(0, 0.55fr);
+}
+
+
+.gate-log {
+    min-height: 0;
+
+    display: grid;
+
+    grid-template-rows:
+        28px
+        minmax(0, 1fr);
+
+    border-top:
+        1px solid #30343b;
+}
+
+
+.gate-log-header {
+    font-size:
+        11px;
+}
+
+
+#gate-log-status {
+    color:
+        #9299a3;
+
+    font-weight:
+        normal;
+}
+
+
+.gate-log-list {
+    margin: 0;
+
+    padding:
+        4px
+        6px;
+
+    overflow-y: auto;
+
+    list-style: none;
+
+    font-size:
+        12px;
+}
+
+
+.gate-log-empty {
+    padding:
+        10px
+        4px;
+
+    color:
+        #6b727c;
+}
+
+
+.gate-log-item {
+    padding:
+        5px
+        6px;
+
+    display: grid;
+
+    grid-template-columns:
+        92px
+        78px
+        minmax(0, 1fr);
+
+    gap: 6px;
+
+    align-items: baseline;
+
+    border-bottom:
+        1px solid #1f232a;
+
+    border-radius:
+        4px;
+
+    cursor: pointer;
+}
+
+
+.gate-log-item:hover {
+    background:
+        #1b1f25;
+}
+
+
+/* 방금 발생한 기록 강조 (약 2초) */
+.gate-log-item.recent {
+    background:
+        rgba(119, 189, 251, 0.14);
+}
+
+
+.gate-log-time {
+    color:
+        #9299a3;
+
+    font-family:
+        Consolas,
+        monospace;
+}
+
+
+.gate-log-type {
+    padding:
+        1px
+        6px;
+
+    border-radius:
+        3px;
+
+    text-align: center;
+
+    font-size:
+        11px;
+
+    font-weight:
+        bold;
+
+    color:
+        #111318;
+
+    background:
+        #8b929c;
+}
+
+
+.gate-log-type.in {
+    background:
+        #22e86f;
+}
+
+
+.gate-log-type.out {
+    background:
+        #ff9800;
+}
+
+
+.gate-log-type.gate {
+    background:
+        #77bdfb;
+}
+
+
+.gate-log-text {
+    min-width: 0;
+
+    overflow: hidden;
+
+    white-space: nowrap;
+
+    text-overflow: ellipsis;
+}
+
+
+.gate-log-plate {
+    font-weight:
+        bold;
+}
+
+
+.gate-log-detail {
+    color:
+        #9299a3;
+}
