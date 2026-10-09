@@ -120,11 +120,8 @@ let duration = 0;
 
 let playbackRate = 1.0;
 
-// 타임라인을 드래그하는 동안에는 tracking 요청을 보내지 않는다.
-// (뒤로 이동할 때마다 서버가 checkpoint부터 다시 계산하므로)
+// 타임라인을 드래그하는 동안에는 timeline 값을 영상 시각으로 덮어쓰지 않는다.
 let timelineDragging = false;
-
-let timelineTrackingTimer = null;
 
 // 영상이 마지막으로 표시한 프레임 번호
 let displayedFrame = 0;
@@ -138,13 +135,21 @@ let displayedFrame = 0;
 
 let trackingInfo = null;
 
+// 지금 그려진 tracking 결과. 영상에 표시된 프레임의 결과만 그린다.
 let latestTracking = null;
 
-let trackingRequestInFlight = false;
+// frame index -> tracking 결과. 재생 중에는 앞 프레임을 미리 받아 둔다.
+const trackingCache = new Map();
 
-let pendingTrackingFrame = null;
+const TRACKING_CACHE_SIZE = 600;
 
-let lastRenderedTrackingFrame = -1;
+const TRACKING_PREFETCH_FRAMES = 15;
+
+// 받아 와야 하는 기준 프레임 (재생바를 옮기면 영상 표시보다 먼저 바뀐다)
+let targetFrame = 0;
+
+// 처리 중인 요청 { frame, controller, failed }
+let trackingRequest = null;
 
 
 /* =========================================================
@@ -336,7 +341,13 @@ function onDisplayedFrame(
 
     renderGateLog();
 
-    if (!timelineDragging) {
+    showTracking(
+        displayedFrame
+    );
+
+    // 이동 중에 표시된 중간 프레임으로 요청하면
+    // 재생바를 옮긴 마지막 위치의 요청을 덮어쓰므로 건너뛴다.
+    if (!video.seeking) {
 
         requestTrackingFrame(
             displayedFrame
@@ -484,6 +495,13 @@ function seekTo(
         );
 
     updateLabels();
+
+    // 영상이 새 프레임을 표시하기 전에 tracking 요청을 먼저 보낸다.
+    requestTrackingFrame(
+        timeToFrame(
+            video.currentTime
+        )
+    );
 }
 
 
@@ -544,15 +562,9 @@ async function resetPlayback() {
         );
     }
 
-    latestTracking = null;
-
-    lastRenderedTrackingFrame = -1;
+    clearTrackingCache();
 
     seekTo(
-        0
-    );
-
-    requestTrackingFrame(
         0
     );
 }
@@ -715,6 +727,105 @@ async function loadTrackingInfo() {
 }
 
 
+function clearTrackingCache() {
+
+    trackingCache.clear();
+
+    if (trackingRequest) {
+
+        trackingRequest.controller.abort();
+
+        trackingRequest = null;
+    }
+
+    latestTracking = null;
+
+    drawOverlay();
+
+    drawBev();
+}
+
+
+function showTracking(
+    frameIndex
+) {
+
+    const result =
+        trackingCache.get(
+            frameIndex
+        );
+
+    if (result) {
+
+        if (latestTracking !== result) {
+
+            latestTracking =
+                result;
+
+            drawOverlay();
+
+            drawBev();
+
+            setTrackingStatus(
+                `frame ${result.frame_index}`
+            );
+        }
+
+        return;
+    }
+
+    // 이 프레임의 결과가 아직 없으면 다른 프레임의 bbox를 그리지 않는다.
+    if (latestTracking) {
+
+        latestTracking =
+            null;
+
+        drawOverlay();
+
+        drawBev();
+    }
+
+    setTrackingStatus(
+        `frame ${frameIndex} loading`,
+        "busy"
+    );
+}
+
+
+function nextFrameToFetch() {
+
+    if (!trackingInfo) {
+
+        return null;
+    }
+
+    const ahead =
+        video.paused
+            ? 0
+            : TRACKING_PREFETCH_FRAMES;
+
+    const last =
+        Math.min(
+            targetFrame + ahead,
+            trackingInfo.frame_count - 1
+        );
+
+    for (
+        let frame = targetFrame;
+        frame <= last;
+        frame++
+    ) {
+
+        if (!trackingCache.has(frame)) {
+
+            return frame;
+        }
+    }
+
+    return null;
+}
+
+
 function requestTrackingFrame(
     frameIndex
 ) {
@@ -724,56 +835,67 @@ function requestTrackingFrame(
         return;
     }
 
-    if (
-        frameIndex
-        ===
-        lastRenderedTrackingFrame
-        &&
-        latestTracking
-    ) {
+    // 재생으로 조금 앞으로 간 것이 아니면 재생바 이동으로 본다.
+    // 서버는 이동한 위치에서 tracking을 새로 시작하므로
+    // 이전 위치의 결과(다른 track id)와 섞이지 않게 캐시를 비우고,
+    // 처리 중인 요청은 중단한 뒤 이 프레임을 바로 요청한다.
+    const isSeek =
+        frameIndex < targetFrame
+        ||
+        frameIndex > targetFrame + TRACKING_PREFETCH_FRAMES;
 
-        return;
-    }
-
-    // 가장 최근 요청만 유지한다 (한 번에 하나씩 요청).
-    pendingTrackingFrame =
+    targetFrame =
         frameIndex;
 
-    if (!trackingRequestInFlight) {
+    if (isSeek) {
 
-        pumpTrackingRequest();
+        clearTrackingCache();
     }
+
+    pumpTrackingRequest();
 }
 
 
 async function pumpTrackingRequest() {
 
-    if (
-        trackingRequestInFlight
-        ||
-        pendingTrackingFrame
-        ===
-        null
-    ) {
+    if (trackingRequest) {
 
         return;
     }
 
     const frameIndex =
-        pendingTrackingFrame;
+        nextFrameToFetch();
 
-    pendingTrackingFrame =
-        null;
+    if (frameIndex === null) {
 
-    trackingRequestInFlight =
-        true;
+        return;
+    }
+
+    const request = {
+        frame: frameIndex,
+        controller: new AbortController(),
+        failed: false,
+    };
+
+    trackingRequest =
+        request;
 
     try {
 
         const response =
             await fetch(
-                `/api/tracking/frame/${frameIndex}`
+                `/api/tracking/frame/${frameIndex}`,
+                {
+                    signal:
+                        request.controller.signal
+                }
             );
+
+        // 409: 서버가 더 최근 요청 때문에 계산을 중단함
+        if (response.status === 409) {
+
+            return;
+        }
 
         if (!response.ok) {
 
@@ -803,21 +925,39 @@ async function pumpTrackingRequest() {
         const result =
             await response.json();
 
-        latestTracking =
-            result;
+        if (trackingRequest !== request) {
 
-        lastRenderedTrackingFrame =
-            result.frame_index;
+            return;
+        }
 
-        drawOverlay();
-
-        drawBev();
-
-        setTrackingStatus(
-            `frame ${result.frame_index}`
+        trackingCache.set(
+            result.frame_index,
+            result
         );
+
+        if (trackingCache.size > TRACKING_CACHE_SIZE) {
+
+            trackingCache.delete(
+                trackingCache.keys().next().value
+            );
+        }
+
+        if (result.frame_index === displayedFrame) {
+
+            showTracking(
+                displayedFrame
+            );
+        }
     }
     catch (error) {
+
+        if (error.name === "AbortError") {
+
+            return;
+        }
+
+        request.failed =
+            true;
 
         console.error(
             "Tracking request failed:",
@@ -831,20 +971,16 @@ async function pumpTrackingRequest() {
     }
     finally {
 
-        trackingRequestInFlight =
-            false;
+        if (trackingRequest === request) {
 
-        if (
-            pendingTrackingFrame
-            !==
-            null
-            &&
-            pendingTrackingFrame
-            !==
-            lastRenderedTrackingFrame
-        ) {
+            trackingRequest =
+                null;
 
-            pumpTrackingRequest();
+            // 실패하면 같은 프레임을 계속 다시 요청하지 않는다.
+            if (!request.failed) {
+
+                pumpTrackingRequest();
+            }
         }
     }
 }
@@ -888,11 +1024,7 @@ async function reloadTrackingConfig() {
         trackingInfo =
             await response.json();
 
-        latestTracking =
-            null;
-
-        lastRenderedTrackingFrame =
-            -1;
+        clearTrackingCache();
 
         setTrackingStatus(
             "Tracking config reloaded"
@@ -2210,7 +2342,13 @@ video.addEventListener(
 
 video.addEventListener(
     "play",
-    updatePlayButton
+    () => {
+
+        updatePlayButton();
+
+        // 재생 중에는 앞 프레임을 미리 받아 둔다.
+        pumpTrackingRequest();
+    }
 );
 
 
@@ -2329,26 +2467,11 @@ timeline.addEventListener(
         timelineDragging =
             true;
 
+        // 드래그 중 여러 번 이동해도 처리 중인 요청은 중단되고
+        // 마지막 위치만 계산된다.
         seekTo(
             event.target.value
         );
-
-        clearTimeout(
-            timelineTrackingTimer
-        );
-
-        timelineTrackingTimer =
-            setTimeout(
-                () => {
-
-                    requestTrackingFrame(
-                        timeToFrame(
-                            video.currentTime
-                        )
-                    );
-                },
-                150
-            );
     }
 );
 
@@ -2357,21 +2480,11 @@ timeline.addEventListener(
     "change",
     event => {
 
-        clearTimeout(
-            timelineTrackingTimer
-        );
-
         timelineDragging =
             false;
 
         seekTo(
             event.target.value
-        );
-
-        requestTrackingFrame(
-            timeToFrame(
-                video.currentTime
-            )
         );
     }
 );

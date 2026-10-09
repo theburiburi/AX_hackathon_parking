@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import copy
+import itertools
 import json
 import math
 import threading
@@ -86,7 +86,15 @@ GLOBAL_TRACKING_CONFIG_PATH = (
 
 
 
-CHECKPOINT_INTERVAL_SEC = 10.0
+# 재생바로 이동하면 이동한 위치를 첫 프레임처럼 보고 tracking을 새로 시작한다.
+# 단, 이 시간만큼 앞에서 시작해 이동한 프레임에서는
+# 차량이 이미 추적 중인 상태가 되게 한다 (UNKNOWN -> ACTIVE 판정 시간 고려).
+# 현재 위치에서 이 범위 안의 앞쪽 프레임이면 이어서 계산한다 (일반 재생).
+SEEK_WARMUP_SEC = 1.5
+
+
+class FrameRequestCancelled(Exception):
+    """더 최근의 frame 요청이 들어와 계산을 중단함."""
 
 
 # =========================================================
@@ -500,9 +508,13 @@ class TrackingEngine:
         # 이 시간이 지나면 Global Re-ID probe 시작.
         self.global_probe_motion_sec = 0.35
 
-        self.checkpoint_interval_frames = (
-            300
-        )
+        self.seek_warmup_frames = 45
+
+        # frame 요청마다 번호를 붙이고, 처리 중에 더 최근 요청이 들어오면
+        # 이전 요청은 계산을 중단한다 (재생바를 여러 번 옮긴 경우 마지막만 처리).
+        self.request_counter = itertools.count(1)
+
+        self.latest_request = 0
 
         self.current_frame = -1
 
@@ -511,17 +523,6 @@ class TrackingEngine:
             |
             None
         ) = None
-
-        self.checkpoints: dict[
-            int,
-            tuple[
-                dict[
-                    str,
-                    LocalTracker,
-                ],
-                GlobalTracker | None,
-            ],
-        ] = {}
 
         self.reload_config()
 
@@ -617,12 +618,12 @@ class TrackingEngine:
                 )
             )
 
-            self.checkpoint_interval_frames = (
+            self.seek_warmup_frames = (
                 max(
-                    1,
+                    0,
                     int(
                         round(
-                            CHECKPOINT_INTERVAL_SEC
+                            SEEK_WARMUP_SEC
                             *
                             self.nominal_fps
                         )
@@ -630,13 +631,10 @@ class TrackingEngine:
                 )
             )
 
-            self._reset_runtime(
-                clear_checkpoints=True
-            )
+            self._reset_runtime()
 
     def _reset_runtime(
         self,
-        clear_checkpoints: bool,
     ) -> None:
 
         self.local_trackers = (
@@ -663,10 +661,6 @@ class TrackingEngine:
         self.current_frame = -1
 
         self.last_result = None
-
-        if clear_checkpoints:
-
-            self.checkpoints.clear()
 
     def _load_projectors(
         self,
@@ -711,9 +705,7 @@ class TrackingEngine:
 
         with self.lock:
 
-            self._reset_runtime(
-                clear_checkpoints=True
-            )
+            self._reset_runtime()
 
     # =====================================================
     # Local Tracker
@@ -1033,83 +1025,6 @@ class TrackingEngine:
     # =====================================================
     # Checkpoints
     # =====================================================
-
-    def _save_checkpoint(
-        self,
-        frame_index: int,
-    ) -> None:
-
-        self.checkpoints[
-            frame_index
-        ] = (
-
-            copy.deepcopy(
-                self.local_trackers
-            ),
-
-            copy.deepcopy(
-                self.global_tracker
-            ),
-        )
-
-    def _restore_for_frame(
-        self,
-        target_frame: int,
-    ) -> None:
-
-        # 체크포인트는 해당 frame을 처리한 뒤의 상태다.
-        # target과 같은 checkpoint를 사용하면
-        # 같은 frame이 두 번 반영되므로 작은 checkpoint만 사용.
-        available = [
-
-            frame_index
-
-            for frame_index
-            in self.checkpoints.keys()
-
-            if (
-                frame_index
-                <
-                target_frame
-            )
-        ]
-
-        if not available:
-
-            self._reset_runtime(
-                clear_checkpoints=False
-            )
-
-            return
-
-        checkpoint_frame = max(
-            available
-        )
-
-        (
-            local_trackers,
-            global_tracker,
-        ) = self.checkpoints[
-            checkpoint_frame
-        ]
-
-        self.local_trackers = (
-            copy.deepcopy(
-                local_trackers
-            )
-        )
-
-        self.global_tracker = (
-            copy.deepcopy(
-                global_tracker
-            )
-        )
-
-        self.current_frame = (
-            checkpoint_frame
-        )
-
-        self.last_result = None
 
     # =====================================================
     # Detection conversion
@@ -1696,18 +1611,6 @@ class TrackingEngine:
             result
         )
 
-        if (
-            frame_index
-            %
-            self.checkpoint_interval_frames
-            ==
-            0
-        ):
-
-            self._save_checkpoint(
-                frame_index
-            )
-
         return result
 
     # =====================================================
@@ -1718,6 +1621,14 @@ class TrackingEngine:
         self,
         target_frame: int,
     ) -> dict:
+
+        # lock 밖에서 번호를 갱신해야
+        # 처리 중인 이전 요청이 바로 알아채고 중단한다.
+        request_id = next(
+            self.request_counter
+        )
+
+        self.latest_request = request_id
 
         with self.lock:
 
@@ -1746,14 +1657,33 @@ class TrackingEngine:
                     self.last_result
                 )
 
-            if (
+            # 일반 재생 (조금 앞의 프레임): 이어서 계산.
+            # 재생바 이동 (뒤로 / 멀리 앞으로): 이동한 위치에서 새로 시작.
+            distance = (
                 target_frame
-                <
+                -
                 self.current_frame
+            )
+
+            if not (
+                0
+                <
+                distance
+                <=
+                self.seek_warmup_frames
             ):
 
-                self._restore_for_frame(
-                    target_frame
+                self._reset_runtime()
+
+                self.current_frame = (
+                    max(
+                        0,
+                        target_frame
+                        -
+                        self.seek_warmup_frames,
+                    )
+                    -
+                    1
                 )
 
             result = None
@@ -1763,17 +1693,19 @@ class TrackingEngine:
                 target_frame + 1,
             ):
 
+                if (
+                    self.latest_request
+                    !=
+                    request_id
+                ):
+
+                    raise FrameRequestCancelled(
+                        f"frame {target_frame} request superseded"
+                    )
+
                 result = (
                     self._process_frame(
                         frame_index
-                    )
-                )
-
-            if result is None:
-
-                result = (
-                    self._process_frame(
-                        target_frame
                     )
                 )
 
@@ -1810,9 +1742,9 @@ class TrackingEngine:
                     self.current_frame
                 ),
 
-            "checkpoint_interval_frames":
+            "seek_warmup_frames":
                 int(
-                    self.checkpoint_interval_frames
+                    self.seek_warmup_frames
                 ),
 
             "global_tracking":
@@ -1958,6 +1890,16 @@ def tracking_frame(
                 frame_index
             )
         )
+
+    except FrameRequestCancelled as exc:
+
+        # 웹은 이미 더 최근 frame을 요청했으므로 이 응답은 쓰지 않는다.
+        raise HTTPException(
+            status_code=409,
+            detail=str(
+                exc
+            ),
+        ) from exc
 
     except Exception as exc:
 
