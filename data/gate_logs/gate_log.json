@@ -1,0 +1,127 @@
+{
+  "video": "test02",
+  "description": "scripts/detect_gate_events.py 가 자동 감지한 입출차 기록. 구역 설정: config/gate.yaml",
+  "start_time": null,
+  "fps": 30.0,
+  "gate": {
+    "id": "GATE-01",
+    "name": "정문 차단기",
+    "camera_id": "cam01"
+  },
+  "events": [
+    {
+      "frame": 246,
+      "time": "00:00:08.200",
+      "type": "IN",
+      "label": "입차",
+      "plate": "111가 1111",
+      "detail": "cam01 L013 · car · 79px/s",
+      "track_id": 13,
+      "position": [
+        548.7,
+        302.7
+      ],
+      "bbox": [
+        406.7,
+        179.0,
+        680.0,
+        304.3
+      ]
+    },
+    {
+      "frame": 836,
+      "time": "00:00:27.867",
+      "type": "IN",
+      "label": "입차",
+      "plate": "222가 2222",
+      "detail": "cam01 L033 · car · 132px/s",
+      "track_id": 33,
+      "position": [
+        528.7,
+        304.0
+      ],
+      "bbox": [
+        399.7,
+        174.0,
+        621.7,
+        309.7
+      ]
+    },
+    {
+      "frame": 3675,
+      "time": "00:02:02.500",
+      "type": "IN",
+      "label": "입차",
+      "plate": "333가 3333",
+      "detail": "cam01 L132 · car · 95px/s",
+      "track_id": 132,
+      "position": [
+        524.7,
+        304.0
+      ],
+      "bbox": [
+        404.0,
+        177.0,
+        624.0,
+        307.7
+      ]
+    },
+    {
+      "frame": 4061,
+      "time": "00:02:15.367",
+      "type": "IN",
+      "label": "입차",
+      "plate": "444가 4444",
+      "detail": "cam01 L136 · car · 69px/s",
+      "track_id": 136,
+      "position": [
+        540.0,
+        297.7
+      ],
+      "bbox": [
+        405.3,
+        156.8,
+        661.3,
+        300.0
+      ]
+    },
+    {
+      "frame": 4576,
+      "time": "00:02:32.533",
+      "type": "IN",
+      "label": "입차",
+      "plate": "555가 5555",
+      "detail": "cam01 L163 · car · 122px/s",
+      "track_id": 163,
+      "position": [
+        558.0,
+        302.3
+      ],
+      "bbox": [
+        402.7,
+        181.3,
+        677.3,
+        310.7
+      ]
+    },
+    {
+      "frame": 4973,
+      "time": "00:02:45.767",
+      "type": "IN",
+      "label": "입차",
+      "plate": "666가 6666",
+      "detail": "cam01 L171 · car · 75px/s",
+      "track_id": 171,
+      "position": [
+        547.0,
+        300.7
+      ],
+      "bbox": [
+        404.7,
+        150.2,
+        673.3,
+        302.3
+      ]
+    }
+  ]
+}

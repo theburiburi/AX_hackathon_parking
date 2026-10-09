@@ -1,0 +1,1 @@
+{"name":"vehicle-parking-poc-frontend","private":true,"version":"0.1.0","type":"module","scripts":{"dev":"vite","build":"vite build","test":"node --test tests/*.test.mjs"},"dependencies":{"@vitejs/plugin-react":"latest","vite":"latest","react":"latest","react-dom":"latest"}}

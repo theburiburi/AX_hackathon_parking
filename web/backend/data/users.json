@@ -1,0 +1,56 @@
+[
+  {
+    "id": "admin",
+    "username": "admin",
+    "name": "관리자",
+    "role": "ADMIN",
+    "team_id": null,
+    "password_salt": "262225aca630efc9e5b6c76030eb46c2",
+    "password_hash": "57ce4a93d8621f344e3fa351a674b8dbc1a5f6ec8a3d5e8a011dd07e86f7673e"
+  },
+  {
+    "id": "digital",
+    "username": "digital",
+    "name": "권혁돈",
+    "role": "USER",
+    "team_id": "SECTION_DIGITAL_COMMUNICATION",
+    "password_salt": "36b3cfaf9810a5f1649205369b77d3a2",
+    "password_hash": "5fe313d54ddd015c05b28a25d1b32f60d16c330d21b8c4f9e447206943ded738"
+  },
+  {
+    "id": "cold-dx",
+    "username": "cold-dx",
+    "name": "조의재",
+    "role": "USER",
+    "team_id": "SECTION_COLD_DX",
+    "password_salt": "b2eb375610584c00be6ca41cd54b70bf",
+    "password_hash": "fa357db12d676acaf237fb3d5b5c954606fda485cad0fa17c430e6e7c0c7b246"
+  },
+  {
+    "id": "steelmaking",
+    "username": "steelmaking",
+    "name": "한용만",
+    "role": "USER",
+    "team_id": "SECTION_STEELMAKING_CASTING",
+    "password_salt": "c5d35c46f8d52ec5a74827312f5ab411",
+    "password_hash": "c13915e48a21eb985402446ca10a0600811594a9ffa8149421ea7c1cbb4a28b3"
+  },
+  {
+    "id": "digital2",
+    "username": "digital2",
+    "name": "디지털 사용자 2",
+    "role": "USER",
+    "team_id": "SECTION_DIGITAL_COMMUNICATION",
+    "password_salt": "1d396c514beecd5dbc458c85d7370718",
+    "password_hash": "278ed23ac0634979cddc5e52fa4742493b70b6aad8b61a6b33013ed9dcf982e7"
+  },
+  {
+    "id": "digital3",
+    "username": "digital3",
+    "name": "디지털 사용자 3",
+    "role": "USER",
+    "team_id": "SECTION_DIGITAL_COMMUNICATION",
+    "password_salt": "815d9be041d2d36c5c4616612db54a30",
+    "password_hash": "acccc3446447549da8dd15995eba26f65cfda3ad277772336b01c19cd08a6be1"
+  }
+]
