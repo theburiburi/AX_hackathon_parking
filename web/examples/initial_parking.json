@@ -1,0 +1,12 @@
+[
+  {
+    "zone_id": "A",
+    "parked_count": 20,
+    "capacity": 14
+  },
+  {
+    "zone_id": "B",
+    "parked_count": 5,
+    "capacity": 4
+  }
+]

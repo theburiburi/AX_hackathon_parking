@@ -1,5 +1,5 @@
 {
-  "video": "test02",
+  "video": "video",
   "description": "scripts/detect_gate_events.py 가 자동 감지한 입출차 기록. 구역 설정: config/gate.yaml",
   "start_time": null,
   "fps": 30.0,
@@ -14,7 +14,7 @@
       "time": "00:00:08.200",
       "type": "IN",
       "label": "입차",
-      "plate": "111가 1111",
+      "plate": null,
       "detail": "cam01 L013 · car · 79px/s",
       "track_id": 13,
       "position": [
@@ -33,7 +33,7 @@
       "time": "00:00:27.867",
       "type": "IN",
       "label": "입차",
-      "plate": "222가 2222",
+      "plate": null,
       "detail": "cam01 L033 · car · 132px/s",
       "track_id": 33,
       "position": [
@@ -52,7 +52,7 @@
       "time": "00:02:02.500",
       "type": "IN",
       "label": "입차",
-      "plate": "333가 3333",
+      "plate": null,
       "detail": "cam01 L132 · car · 95px/s",
       "track_id": 132,
       "position": [
@@ -71,7 +71,7 @@
       "time": "00:02:15.367",
       "type": "IN",
       "label": "입차",
-      "plate": "444가 4444",
+      "plate": null,
       "detail": "cam01 L136 · car · 69px/s",
       "track_id": 136,
       "position": [
@@ -90,7 +90,7 @@
       "time": "00:02:32.533",
       "type": "IN",
       "label": "입차",
-      "plate": "555가 5555",
+      "plate": null,
       "detail": "cam01 L163 · car · 122px/s",
       "track_id": 163,
       "position": [
@@ -109,7 +109,7 @@
       "time": "00:02:45.767",
       "type": "IN",
       "label": "입차",
-      "plate": "666가 6666",
+      "plate": null,
       "detail": "cam01 L171 · car · 75px/s",
       "track_id": 171,
       "position": [

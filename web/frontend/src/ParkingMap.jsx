@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import "./parking-map.css";
 import { formatLastSeen } from "./dateTime";
+import { useParkingOccupancy, ParkingOccupancySummary } from "./ParkingOccupancy";
 
 const statusLabel = (status) => ({ PARKED: "주차", MOVING: "이동", UNKNOWN: "미확인", EXITED: "출차" }[status] || status);
 const hasPosition = (vehicle, mapId) => Boolean(mapId && vehicle.map_position) && vehicle.status !== "EXITED" && vehicle.map_position.map_id === mapId &&
@@ -17,6 +18,7 @@ export function displayPosition(vehicle, mapId, zones) {
 }
 
 export default function ParkingMap({ parkingMap, layout, vehicles, token, api, onVehiclesUpdated }) {
+  const occupancy = useParkingOccupancy(api, token);
   const [records, setRecords] = useState(vehicles);
   const [selected, setSelected] = useState(null);
   const [zone, setZone] = useState(null);
@@ -56,7 +58,6 @@ export default function ParkingMap({ parkingMap, layout, vehicles, token, api, o
   const located = mapped.filter(vehicle => vehicle.display_position);
   const unlocated = mapped.filter(vehicle => !vehicle.display_position);
   const visible = zone ? located.filter(vehicle => vehicle.current_zone_id === zone) : located;
-  const current = mapped.find(vehicle => vehicle.plate_number === selected);
   const chooseVehicle = vehicle => { setSelected(vehicle.plate_number); setZone(null); };
 
   return <section className={`ops-panel parking-panel ${expanded ? "parking-expanded" : ""}`} aria-label="주차장 차량 위치">
@@ -74,7 +75,10 @@ export default function ParkingMap({ parkingMap, layout, vehicles, token, api, o
           {showZones && <svg className="parking-boundaries" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
             {zones.map(item => <polygon key={item.id} points={item.polygon.map(point => point.join(",")).join(" ")} fill={item.color} stroke={item.color} fillOpacity={zone === item.id ? .3 : .08} strokeWidth={zone === item.id ? 3 : 1.5} vectorEffect="non-scaling-stroke" />)}
           </svg>}
-          {showZones && zones.map(item => <button key={item.id} className={`parking-zone-label ${zone === item.id ? "active" : ""}`} style={{ left: `${item.label[0]}%`, top: `${item.label[1]}%`, "--zone-color": item.color }} aria-pressed={zone === item.id} onClick={() => { setZone(zone === item.id ? null : item.id); setSelected(null); }}>{item.name}</button>)}
+          {showZones && zones.map(item => {
+            const area = occupancy.zones?.find(area => area.id === item.id);
+            return <button key={item.id} className={`parking-zone-label ${zone === item.id ? "active" : ""}`} style={{ left: `${item.label[0]}%`, top: `${item.label[1]}%`, "--zone-color": item.color }} aria-pressed={zone === item.id} onClick={() => { setZone(zone === item.id ? null : item.id); setSelected(null); }}>{item.name}{area && ` · ${area.parked_count}대 / ${area.capacity ?? "—"}대`}</button>;
+          })}
           {visible.map(vehicle => <button key={vehicle.plate_number} className={`vehicle-pin ${vehicle.display_position.source === "zone" ? "pin-zone" : ""} ${vehicle.status === "MOVING" ? "pin-moving" : ""} ${selected === vehicle.plate_number ? "pin-selected" : ""}`} style={{ left: `${vehicle.display_position.x}%`, top: `${vehicle.display_position.y}%` }} onClick={() => chooseVehicle(vehicle)} aria-label={`${vehicle.plate_number} ${statusLabel(vehicle.status)} 위치`} title={`${vehicle.plate_number} · ${vehicle.display_position.source === "zone" ? "구역 기준 위치" : "인식 좌표"} · ${detectedTime(vehicle.last_seen_at)}`}>
             <span className="pin-dot"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8l2-4h8l2 4 2 3v8h-3v-2H7v2H4v-8l2-3zm1 0h10l-1-3H8L7 8zm0 4v2h3v-2H7zm7 0v2h3v-2h-3z" fill="currentColor" /></svg></span>
             <span className="pin-plate">{vehicle.plate_number}</span>
@@ -82,11 +86,6 @@ export default function ParkingMap({ parkingMap, layout, vehicles, token, api, o
         </>}
       </div>}
     </div>
-    <div className="parking-legend"><span><i className="legend-parked" />주차</span><span><i className="legend-moving" />이동</span><span>점선 마커: 구역 기준 위치</span><span>사진 속 차량은 배경 이미지입니다.</span></div>
-    <div className="parking-zone-filters"><button className={!zone ? "chosen" : ""} onClick={() => setZone(null)}>전체</button>{zones.map(item => <button key={item.id} className={zone === item.id ? "chosen" : ""} onClick={() => setZone(zone === item.id ? null : item.id)}>{item.name} · {located.filter(vehicle => vehicle.current_zone_id === item.id).length}</button>)}</div>
-    {current && <div className="parking-detail"><strong>{current.plate_number} · {statusLabel(current.status)}</strong><span>{zoneName(current.current_zone_id, zones)} · {current.display_position?.source === "zone" ? "구역 기준 위치 · 정확한 주차면은 미확인" : current.display_position ? "인식 좌표" : "위치 미확인"}</span><small>최종 감지: {detectedTime(current.last_seen_at)}</small></div>}
-    <div className="parking-vehicle-list">{(zone ? mapped.filter(vehicle => vehicle.current_zone_id === zone) : mapped).map(vehicle => <button key={vehicle.plate_number} onClick={() => chooseVehicle(vehicle)} className={selected === vehicle.plate_number ? "chosen" : ""}><strong>{vehicle.plate_number}</strong><span>{vehicle.display_position?.source === "zone" ? `${vehicle.current_zone_id} · 구역 기준` : vehicle.display_position ? statusLabel(vehicle.status) : "위치 미확인"}</span></button>)}</div>
-    {!located.length && <p className="parking-note">차량 위치 수신 대기 · 인식된 위치가 들어오면 지도에 표시됩니다.</p>}
-    {zone && !visible.length && <p className="parking-note">이 구역에 확인된 차량 좌표가 없습니다.</p>}
+    <ParkingOccupancySummary {...occupancy} />
   </section>;
 }

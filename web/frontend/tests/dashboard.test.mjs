@@ -18,7 +18,7 @@ const server = await createServer({
   }],
 });
 after(() => server.close());
-const { Dashboard } = await server.ssrLoadModule("/src/main.jsx");
+const { Dashboard, VehicleList } = await server.ssrLoadModule("/src/main.jsx");
 const { ReplayTrackOverlay } = await server.ssrLoadModule("/src/CachedReplay.jsx");
 const render = (role) => renderToStaticMarkup(React.createElement(Dashboard, {
   session: { token: "test", user: { role, team_id: "SECTION_DIGITAL_COMMUNICATION", name: "테스트 사용자" } },
@@ -56,4 +56,38 @@ test("regular user sees vehicle status and schedule without requests or request 
   assert.match(html, /차량 목록/);
   assert.doesNotMatch(html, /차량 관리 요청|내 요청 이력|요청 제출|승인 대기/);
   assert.doesNotMatch(html, /실시간 분석|영상 분석 재생|실시간 감지 모드/);
+});
+
+test("account header displays the name and section supplied by the user JSON", () => {
+  const html = renderToStaticMarkup(React.createElement(Dashboard, {
+    session: { token: "test", user: { role: "USER", team_id: "SECTION_DIGITAL_COMMUNICATION", team_name: "JSON 섹션", name: "JSON 사용자" } },
+    onLogout() {},
+  }));
+  assert.match(html, /<strong>JSON 섹션<\/strong> · JSON 사용자/);
+  assert.match(html, /조회 범위: JSON 섹션/);
+});
+
+test("account header falls back to the login ID when the display name is empty", () => {
+  const html = renderToStaticMarkup(React.createElement(Dashboard, {
+    session: { token: "test", user: { id: "digital2", role: "USER", team_id: "SECTION_DIGITAL_COMMUNICATION", name: "" } },
+    onLogout() {},
+  }));
+  assert.match(html, /<strong>디지털통신기술섹션<\/strong> · digital2/);
+});
+
+test("vehicle list shows the zone or driving label without stale zones for moving and exited vehicles", () => {
+  const renderVehicle = (status, current_zone_id) => renderToStaticMarkup(React.createElement(VehicleList, {
+    vehicles: [{ id: "V1", plate_number: "12가3456", team_id: "SECTION_DIGITAL_COMMUNICATION", status, current_zone_id, last_seen_at: null }],
+    zones: [{ id: "EXTERNAL", name: "외부 구역" }],
+  }));
+  assert.match(renderVehicle("PARKED", "A"), /class="badge parked">A 구역</);
+  assert.match(renderVehicle("PARKED", "EXTERNAL"), /class="badge parked">외부 구역</);
+  assert.match(renderVehicle("PARKED", "P1"), /class="badge parked">구역 미확인</);
+  assert.match(renderVehicle("UNKNOWN", null), /class="badge unknown">구역 미확인</);
+  const moving = renderVehicle("MOVING", "A");
+  assert.match(moving, /class="badge moving">운행중</);
+  assert.doesNotMatch(moving, /A 구역|>MOVING</);
+  const exited = renderVehicle("EXITED", "A");
+  assert.match(exited, /class="badge exited">출차</);
+  assert.doesNotMatch(exited, /A 구역|>EXITED</);
 });

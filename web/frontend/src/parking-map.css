@@ -1,18 +1,18 @@
 .parking-panel { min-width: 0; align-self: start; }
 .user-location-grid { margin-bottom: 20px; align-items: start; }
 .parking-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
-.position-summary { font-size: 12px; color: #64748b; }
-.position-summary strong { color: #0f766e; font-size: 19px; }
+.position-summary { font-size: 12px; color: var(--muted); }
+.position-summary strong { color: var(--success); font-size: 19px; }
 .position-summary > span { margin: 0 7px; }
 .map-controls { display: flex; gap: 4px; align-items: center; }
 .map-controls button, .parking-panel .panel-heading button { padding: 6px 9px; font-size: 12px; }
 .map-controls label { display: flex; align-items: center; gap: 3px; font-size: 12px; margin-right: 5px; }
-.parking-viewport { overflow: auto; max-height: 480px; border-radius: 10px; background: #101d28; border: 1px solid #273849; }
+.parking-viewport { overflow: auto; max-width: 100%; max-height: clamp(180px, 60svh, 640px); border-radius: 10px; background: #101d28; border: 1px solid #273849; overscroll-behavior: contain; }
 .parking-canvas { position: relative; line-height: 0; }
 .parking-canvas > img { width: 100%; height: auto; display: block; }
 .parking-boundaries { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-.parking-zone-label { position: absolute; transform: translate(-50%, -50%); border: 1px solid var(--zone-color); border-left: 4px solid var(--zone-color); color: #fff; background: #122030e8; padding: 4px 6px; border-radius: 5px; font-size: 11px; line-height: 1.2; white-space: nowrap; box-shadow: 0 2px 6px #0006; }
-.parking-zone-label.active { background: #fff; color: #172033; }
+.parking-zone-label { position: absolute; transform: translate(-50%, -50%); border: 1px solid var(--zone-color); border-left: 4px solid var(--zone-color); color: var(--text); background: #122030e8; padding: 4px 6px; border-radius: 5px; font-size: 11px; line-height: 1.2; white-space: nowrap; box-shadow: 0 2px 6px #0006; }
+.parking-zone-label.active { background: var(--surface-raised); color: var(--text); }
 .vehicle-pin { position: absolute; transform: translate(-50%, -50%); padding: 0; border: 0; background: transparent; z-index: 2; }
 .pin-dot { display: grid; place-items: center; width: 25px; height: 25px; border: 2px solid white; border-radius: 50%; background: #059669; color: white; box-shadow: 0 1px 7px #000c; }
 .pin-dot svg { width: 18px; height: 18px; }
@@ -22,22 +22,22 @@
 .pin-selected { z-index: 3; }
 .pin-selected .pin-dot { outline: 4px solid #fff6; }
 .pin-plate { position: absolute; top: 29px; left: 50%; transform: translateX(-50%); background: #0f172a; border: 1px solid #ffffff80; border-radius: 5px; color: white; padding: 5px 7px; font-size: 11px; line-height: 1; white-space: nowrap; }
-.parking-legend { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 11px; color: #64748b; margin: 10px 0; }
-.parking-legend span { display: inline-flex; gap: 4px; align-items: center; }
-.parking-legend i { width: 8px; height: 8px; border-radius: 50%; }
-.legend-parked { background: #059669; }
-.legend-moving { background: #d97706; }
-.parking-zone-filters { display: flex; gap: 5px; flex-wrap: wrap; }
-.parking-zone-filters button { padding: 5px 7px; font-size: 11px; font-weight: 600; }
-.parking-panel .chosen { color: #1d4ed8; border-color: #93b4fa; background: #eef4ff; }
-.parking-detail { display: grid; gap: 4px; margin-top: 10px; padding: 10px; border-radius: 8px; background: #eef4ff; border-left: 3px solid #3974d8; font-size: 12px; }
-.parking-detail span, .parking-detail small { color: #64748b; }
-.parking-vehicle-list { display: flex; gap: 6px; flex-wrap: wrap; max-height: 110px; overflow: auto; margin-top: 10px; }
-.parking-vehicle-list button { display: flex; gap: 8px; align-items: center; font-size: 11px; padding: 7px; }
-.parking-vehicle-list span { color: #64748b; font-weight: 400; }
-.parking-note { font-size: 12px; color: #64748b; margin: 10px 0 0; }
 .map-empty { padding: 50px 20px; text-align: center; color: #d7e2ef; }
 .parking-expanded { position: fixed; inset: 20px; z-index: 100; overflow: auto; box-shadow: 0 0 0 100vmax #0f172ad9; }
-.parking-expanded .parking-viewport { max-height: 65vh; }
+.parking-expanded .parking-viewport { max-height: max(120px, calc(100svh - 220px)); }
 .parking-panel button:focus-visible { outline: 3px solid #2563eb; outline-offset: 3px; }
-@media (max-width: 760px) { .parking-expanded { inset: 8px; } .parking-zone-label { font-size: 9px; padding: 3px 4px; } }
+@media (any-pointer: coarse) {
+  .parking-zone-label { min-height: 0; }
+  .vehicle-pin { min-width: 44px; min-height: 44px; display: grid; place-items: center; }
+  .pin-plate { top: 38px; }
+}
+@media (max-width: 760px) {
+  .parking-toolbar { gap: 12px; }
+  .map-controls { width: 100%; justify-content: space-between; }
+  .map-controls label { min-height: 44px; margin-right: auto; }
+  .map-controls button, .parking-panel .panel-heading button { min-width: 44px; }
+  .parking-zone-label { min-height: 0; font-size: 9px; padding: 3px 4px; }
+  .vehicle-pin { min-height: 44px; min-width: 44px; display: grid; place-items: center; }
+  .pin-plate { top: 38px; }
+  .parking-expanded { inset: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); }
+}

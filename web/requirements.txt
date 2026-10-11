@@ -1,5 +1,0 @@
-# Web runtime and offline tracking-cache generation (no YOLO required).
--r requirements-runtime.txt
-opencv-python>=4.8,<5
-numpy>=1.24,<3
-

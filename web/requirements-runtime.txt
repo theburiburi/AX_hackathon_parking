@@ -1,5 +1,0 @@
-# One server: business API + built React + read-only replay files.
-Django>=5.0,<6.0
-djangorestframework>=3.15,<4.0
-waitress>=3.0,<4
-PyYAML>=6,<7

@@ -60,7 +60,7 @@ class MapPositionTests(SimpleTestCase):
         self.body = {"plate_number": "TEST", "camera_id": "camera_01", "zone_id": "A", "status": "MOVING"}
 
     def submit(self, extra):
-        collections = {"vehicles": deepcopy(self.records), "tracking_logs": [], "map_layout": {"map_id": "parkinglot_map.jpg"}}
+        collections = {"vehicles": deepcopy(self.records), "vehicle_replay_state": {}, "tracking_logs": [], "map_layout": {"map_id": "parkinglot_map.jpg"}}
         with patch.object(views, "current_user", return_value={"role": "ADMIN"}), patch.object(views, "read", side_effect=lambda name: collections[name]), patch.object(views, "write") as write, patch.object(views, "current_map_layout", return_value={"map_id": "parkinglot_map.jpg", "zones": [{"id": z} for z in "ABCDEFGHIJKLMN"]}):
             response = views.tracking_event(self.factory.post("/api/tracking-events/", {**self.body, **extra}, format="json"))
             return response, write.call_args_list
@@ -95,7 +95,7 @@ class MapPositionTests(SimpleTestCase):
         layout = {"map_id": "map.png", "zones": [{"id": "EXTERNAL"}]}
         with patch.object(views, "current_map_layout", return_value=layout):
             # submit patches the demo layout, so call the view with an isolated store here.
-            collections = {"vehicles": deepcopy(self.records), "tracking_logs": []}
+            collections = {"vehicles": deepcopy(self.records), "vehicle_replay_state": {}, "tracking_logs": []}
             with patch.object(views, "current_user", return_value={"role": "ADMIN"}), patch.object(views, "read", side_effect=lambda name: collections[name]), patch.object(views, "write") as write:
                 response = views.tracking_event(self.factory.post("/api/tracking-events/", {
                     **self.body, "zone_id": "EXTERNAL", "map_position": {"map_id": "map.png", "x": 10, "y": 20},
@@ -148,6 +148,7 @@ class UserParkingMapTests(SimpleTestCase):
         self.patch_map.start()
         self.addCleanup(self.patch_map.stop)
         self.store = {
+            "vehicle_replay_state": {},
             "map_layout": {"map_id": "parkinglot_map.jpg", "zones": [{"id": "A", "label": [50, 50]}]},
             "vehicles": [
                 {"id": "V1", "plate_number": "OWN", "team_id": "TEAM_A", "status": "PARKED", "map_position": None},
