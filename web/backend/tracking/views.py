@@ -1,5 +1,3 @@
-import hashlib
-import hmac
 import mimetypes
 from functools import wraps
 from pathlib import Path
@@ -13,15 +11,12 @@ from rest_framework.response import Response
 from .json_store import read, write
 from .media_stream import media_response
 from .project_media import selected_map, map_layout
+from .parking_state import plate_key, zone_occupancy, occupancy_deltas
 
 TOKEN_SALT = "ax-vehicle-tracking.auth"
 
 def public_user(user):
-    return {key: user[key] for key in ("id", "username", "name", "role", "team_id")}
-
-def password_matches(password, user):
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), user["password_salt"].encode("utf-8"), 390000).hex()
-    return hmac.compare_digest(digest, user["password_hash"])
+    return {key: user[key] for key in ("id", "name", "role", "team_id", "team_name")}
 
 def current_user(request):
     header = request.headers.get("Authorization", "")
@@ -50,11 +45,16 @@ def login_required(role=None):
 
 @api_view(["POST"])
 def login(request):
-    username = str(request.data.get("username", "")).strip()
-    password = str(request.data.get("password", ""))
-    user = next((item for item in read("users") if item["username"] == username), None)
-    if not user or not password_matches(password, user):
-        return Response({"detail": "Invalid username or password."}, status=status.HTTP_401_UNAUTHORIZED)
+    if not isinstance(request.data, dict):
+        return Response({"detail": "Invalid ID or password."}, status=status.HTTP_401_UNAUTHORIZED)
+    user_id = request.data.get("id", "")
+    password = request.data.get("password", "")
+    if not isinstance(user_id, str) or not isinstance(password, str) or not user_id.strip() or not password:
+        return Response({"detail": "Invalid ID or password."}, status=status.HTTP_401_UNAUTHORIZED)
+    user = next((item for item in read("users")
+                 if item["id"] == user_id.strip() and item["password"] == password), None)
+    if not user:
+        return Response({"detail": "Invalid ID or password."}, status=status.HTTP_401_UNAUTHORIZED)
     token = signing.dumps({"user_id": user["id"]}, salt=TOKEN_SALT, compress=True)
     return Response({"token": token, "user": public_user(user)})
 
@@ -67,10 +67,19 @@ def filtered(request, records):
     team_id = request.query_params.get("team_id")
     return [v for v in records if not team_id or v["team_id"] == team_id]
 
+def current_vehicles():
+    records = read("vehicles")
+    from replay.vehicle_state import apply_snapshot
+    try:
+        snapshot = read("vehicle_replay_state")
+    except FileNotFoundError:
+        return records
+    return apply_snapshot(records, snapshot)
+
 @api_view(["GET"])
 @login_required()
 def vehicles(request):
-    records = read("vehicles")
+    records = current_vehicles()
     if request.auth_user["role"] == "USER":
         return Response([v for v in records if v["team_id"] == request.auth_user["team_id"]])
     return Response(filtered(request, records))
@@ -78,7 +87,7 @@ def vehicles(request):
 @api_view(["GET"])
 @login_required()
 def vehicle_detail(request, vehicle_id):
-    vehicle = next((v for v in read("vehicles") if v["id"] == vehicle_id), None)
+    vehicle = next((v for v in current_vehicles() if v["id"] == vehicle_id), None)
     if vehicle and request.auth_user["role"] == "USER" and vehicle["team_id"] != request.auth_user["team_id"]:
         vehicle = None
     return Response(vehicle) if vehicle else Response({"detail": "Vehicle not found"}, status=404)
@@ -89,7 +98,7 @@ def create_vehicle(request):
     if any(not request.data.get(key) for key in ("plate_number", "name", "team_id")):
         return Response({"detail": "plate_number, name, team_id are required"}, status=400)
     records = read("vehicles")
-    if any(v["plate_number"] == request.data["plate_number"] for v in records):
+    if any(plate_key(v["plate_number"]) == plate_key(request.data["plate_number"]) for v in records):
         return Response({"detail": "Duplicate plate number"}, status=409)
     vehicle = {"id": f"V-{uuid4().hex[:6].upper()}", "plate_number": request.data["plate_number"], "name": request.data["name"], "team_id": request.data["team_id"], "status": "UNKNOWN", "current_zone_id": None, "last_seen_at": None, "camera_id": None}
     records.append(vehicle); write("vehicles", records)
@@ -102,9 +111,26 @@ def parking_zones(request):
     # from the demo catalog; do not maintain a second set of zone coordinates.
     catalog = {zone["id"]: zone for zone in read("parking_zones")}
     zones = current_map_layout().get("zones", [])
-    return Response([{**catalog.get(zone["id"], {}), "id": zone["id"],
+    try:
+        try:
+            inventory = read("initial_parking")
+        except FileNotFoundError:
+            inventory = []
+        # Validate the baseline before reading any derived state.
+        counts = zone_occupancy(inventory, zones)
+        try:
+            vehicles = read("vehicles")
+        except FileNotFoundError:
+            vehicles = []
+        try:
+            snapshot = read("vehicle_replay_state")
+        except FileNotFoundError:
+            snapshot = {}
+        counts = zone_occupancy(inventory, zones, occupancy_deltas(vehicles, snapshot))
+    except (OSError, ValueError) as exc:
+        return Response({"detail": f"initial_parking.json: {exc}"}, status=503)
+    return Response([{**catalog.get(zone["id"], {}), **counts[zone["id"]], "id": zone["id"],
                       "name": zone.get("name", zone["id"]),
-                      "capacity": zone.get("capacity"),
                       "x": zone["label"][0], "y": zone["label"][1]}
                      for zone in zones])
 
@@ -158,9 +184,28 @@ def tracking_event(request):
             return Response({"detail": "map_position requires the configured map_id and x/y numbers between 0 and 100."}, status=400)
         position = {key: position[key] for key in ("map_id", "x", "y")}
     records = read("vehicles")
-    vehicle = next((v for v in records if v["plate_number"] == request.data["plate_number"]), None)
+    vehicle = next((v for v in records if plate_key(v["plate_number"]) == plate_key(request.data["plate_number"])), None)
     if not vehicle: return Response({"detail": "Vehicle not registered"}, status=404)
     detected_at = request.data.get("detected_at") or timezone.now().isoformat()
+    if "parking_baseline_zone_id" not in vehicle:
+        from replay.vehicle_state import apply_snapshot
+        try:
+            snapshot = read("vehicle_replay_state")
+        except FileNotFoundError:
+            snapshot = {}
+        previous = apply_snapshot([vehicle], snapshot)[0]
+        origin = previous.get("current_zone_id") if previous.get("status") == "PARKED" else None
+        vehicle.update(parking_baseline_zone_id=origin, parking_counted_zone_id=origin)
+    event_status = request.data.get("status", "PARKED")
+    if event_status == "PARKED":
+        vehicle["parking_counted_zone_id"] = zone_id
+    elif event_status in ("MOVING", "EXITED"):
+        vehicle["parking_counted_zone_id"] = None
+    # The native model reports parking state, but does not classify double parking.
+    same_parking = vehicle.get("status") == "PARKED" and vehicle.get("current_zone_id") == zone_id
+    parked = request.data.get("status", "PARKED") == "PARKED"
+    vehicle.update(parking_type=vehicle.get("parking_type", "UNKNOWN") if parked and same_parking else "UNKNOWN" if parked else None,
+                   parking_space_id=vehicle.get("parking_space_id") if parked and same_parking else None)
     vehicle.update({"current_zone_id": zone_id, "camera_id": request.data["camera_id"], "last_seen_at": detected_at, "status": request.data.get("status", "PARKED"), "map_position": position})
     write("vehicles", records)
     logs = read("tracking_logs")

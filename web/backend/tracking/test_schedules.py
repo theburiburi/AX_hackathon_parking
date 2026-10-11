@@ -1,19 +1,17 @@
 import json
 import shutil
 from concurrent.futures import ThreadPoolExecutor
-from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Barrier
 from unittest.mock import patch
 
 from django.core import signing
-from django.core.management import call_command
 from django.test import Client, SimpleTestCase
 
 import seed
 from . import json_store
-from .views import TOKEN_SALT, password_matches
+from .views import TOKEN_SALT
 
 
 class ScheduleTests(SimpleTestCase):
@@ -23,11 +21,13 @@ class ScheduleTests(SimpleTestCase):
         root = Path(temporary.name)
         shutil.copytree(seed.ROOT / "fixtures", root / "fixtures")
         with patch.object(seed, "ROOT", root):
-            seed.initialize("ScheduleTest123!")
+            seed.initialize()
         self.root = root
         store_patch = patch.object(json_store, "DATA_DIR", root / "data")
         store_patch.start()
         self.addCleanup(store_patch.stop)
+        self.demo_records = json_store.read("vehicle_schedules")
+        json_store.write("vehicle_schedules", [])
         self.payload = {"date": "2026-09-26", "vehicle_id": "V001", "driver_id": "digital", "start_time": "09:00", "end_time": "10:00", "destination": "공장", "purpose": "현장 점검"}
 
     def headers(self, user):
@@ -51,7 +51,7 @@ class ScheduleTests(SimpleTestCase):
         data = response.json()
         self.assertEqual([item["driver_id"] for item in data["schedules"]], ["digital"])
         self.assertFalse(data["schedules"][0]["can_edit"])
-        self.assertEqual([v["id"] for v in data["vehicles"]], ["V001"])
+        self.assertEqual([v["id"] for v in data["vehicles"]], ["V001", "V-DIGITAL-002", "V-DIGITAL-003", "V-DIGITAL-004"])
         self.assertEqual({u["id"] for u in data["members"]}, {"digital", "digital2", "digital3"})
         self.assertNotIn("password", json.dumps(data))
         self.assertEqual(len(self.day("admin").json()["schedules"]), 3)
@@ -81,8 +81,41 @@ class ScheduleTests(SimpleTestCase):
         for start, end in (("09:00", "10:00"), ("08:00", "09:30"), ("09:30", "10:30"), ("08:00", "11:00")):
             self.assertEqual(self.create("digital2", driver_id="digital2", start_time=start, end_time=end).status_code, 409)
         self.assertEqual(self.create("digital2", driver_id="digital2", start_time="10:00", end_time="11:00").status_code, 201)
-        self.assertEqual(self.create(start_time="23:30", end_time="24:00").status_code, 201)
+        self.assertEqual(self.create(start_time="19:30", end_time="20:00").status_code, 201)
         self.assertEqual(self.create(date="2026-09-27").status_code, 201)
+
+    def test_operating_time_boundaries_for_users_and_admins(self):
+        day = 11
+        for user in ("digital", "admin"):
+            for start, end in (("06:00", "06:01"), ("19:59", "20:00"), ("06:00", "20:00")):
+                with self.subTest(user=user, start=start, end=end):
+                    self.assertEqual(self.create(user, date=f"2026-10-{day}", start_time=start, end_time=end).status_code, 201)
+                    day += 1
+        before = json_store.read("vehicle_schedules")
+        for user in ("digital", "admin"):
+            for start, end in (("05:59", "06:30"), ("19:30", "20:01"), ("20:00", "21:00"), ("23:30", "24:00"), ("06:00", "24:00")):
+                with self.subTest(user=user, start=start, end=end):
+                    response = self.create(user, start_time=start, end_time=end)
+                    self.assertEqual(response.status_code, 400)
+                    self.assertIn("06:00~20:00", str(response.json()))
+        self.assertEqual(json_store.read("vehicle_schedules"), before)
+
+    def test_updates_cannot_move_existing_bookings_outside_operating_hours(self):
+        item = self.create().json()
+        before = json_store.read("vehicle_schedules")
+        for user in ("digital", "admin"):
+            for changes in ({"start_time": "05:59"}, {"end_time": "20:01"}, {"end_time": "24:00"}):
+                with self.subTest(user=user, changes=changes):
+                    self.assertEqual(self.change(item, user, **changes).status_code, 400)
+                    self.assertEqual(json_store.read("vehicle_schedules"), before)
+        self.assertEqual(self.change(item, start_time="06:00", end_time="20:00").status_code, 200)
+
+    def test_historical_midnight_booking_remains_readable_without_blocking_daytime(self):
+        item = self.create().json()
+        item.update(start_time="23:30", end_time="24:00")
+        json_store.write("vehicle_schedules", [item])
+        self.assertEqual(self.day().json()["schedules"][0]["end_time"], "24:00")
+        self.assertEqual(self.create(start_time="06:00", end_time="07:00").status_code, 201)
 
     def test_driver_cannot_book_two_vehicles_simultaneously(self):
         vehicles = json_store.read("vehicles")
@@ -133,15 +166,113 @@ class ScheduleTests(SimpleTestCase):
         self.assertEqual(self.day().json()["schedules"], [])
         self.assertEqual(self.create().status_code, 201)
 
-    def test_demo_account_upgrade_is_idempotent_and_preserves_existing_data(self):
-        original = [u for u in json_store.read("users") if u["id"] not in ("digital2", "digital3")]
-        json_store.write("users", original)
-        call_command("add_schedule_demo_users", password="local-test", stdout=StringIO())
-        users = json_store.read("users")
-        self.assertEqual(users[:len(original)], original)
-        for username in ("digital2", "digital3"):
-            member = next(u for u in users if u["id"] == username)
-            self.assertTrue(password_matches("local-test", member))
-            self.assertEqual(member["team_id"], "SECTION_DIGITAL_COMMUNICATION")
-        call_command("add_schedule_demo_users", password="different", stdout=StringIO())
-        self.assertEqual(json_store.read("users"), users)
+    def test_weekday_series_is_bounded_read_only_and_section_scoped(self):
+        response = self.create(date="2026-10-12", repeat_weekdays=True, repeat_until="2026-11-11")
+        self.assertEqual(response.status_code, 201)
+        item = response.json()
+        before = json_store.read("vehicle_schedules")
+        for day in ("2026-10-12", "2026-10-13", "2026-11-11"):
+            data = self.day("digital2", f"date={day}&team_id=SECTION_COLD_DX").json()
+            self.assertEqual([row["id"] for row in data["schedules"]], [item["id"]])
+            self.assertEqual(data["schedules"][0]["date"], "2026-10-12")
+            self.assertFalse(data["schedules"][0]["can_edit"])
+            self.assertEqual(self.day("cold-dx", f"date={day}").json()["schedules"], [])
+            self.assertEqual(len(self.day("admin", f"date={day}").json()["schedules"]), 1)
+        for day in ("2026-10-11", "2026-10-17", "2026-10-18", "2026-11-12", "2030-01-01"):
+            self.assertEqual(self.day(query=f"date={day}").json()["schedules"], [])
+        self.assertEqual(json_store.read("vehicle_schedules"), before)
+        self.assertEqual(len(before), 1)
+        self.assertNotIn("repeat_daily", before[0])
+
+    def test_calendar_month_limit_including_leap_day_and_year_boundaries(self):
+        for start, end, too_late in (("2026-10-12", "2026-11-11", "2026-11-12"),
+                                    ("2026-12-15", "2027-01-14", "2027-01-15"),
+                                    ("2027-01-31", "2027-02-27", "2027-02-28"),
+                                    ("2024-01-31", "2024-02-28", "2024-02-29"),
+                                    ("2024-02-29", "2024-03-28", "2024-03-29")):
+            with self.subTest(start=start):
+                json_store.write("vehicle_schedules", [])
+                self.assertEqual(self.create(date=start, repeat_weekdays=True, repeat_until=end).status_code, 201)
+                before = json_store.read("vehicle_schedules")
+                self.assertEqual(self.create(date=start, repeat_weekdays=True, repeat_until=too_late).status_code, 400)
+                self.assertEqual(json_store.read("vehicle_schedules"), before)
+
+    def test_invalid_recurrence_and_removed_all_options_are_rejected(self):
+        for changes in ({"repeat_weekdays": "true"}, {"repeat_weekdays": 1},
+                        {"date": "ALL"}, {"repeat_daily": True}, {"repeat_daily": False},
+                        {"repeat_weekdays": True},
+                        {"repeat_weekdays": True, "repeat_until": "2026-02-30"},
+                        {"repeat_weekdays": True, "repeat_until": "2026-09-25"},
+                        {"repeat_weekdays": True, "repeat_until": "2026-09-27"},
+                        {"date": "2026-10-12", "repeat_weekdays": True, "repeat_until": "2026-10-16", "start_time": "05:59"},
+                        {"date": "2026-10-12", "repeat_weekdays": True, "repeat_until": "2026-10-16", "end_time": "20:01"}):
+            with self.subTest(changes=changes):
+                self.assertEqual(self.create(**changes).status_code, 400)
+                self.assertEqual(json_store.read("vehicle_schedules"), [])
+        self.assertEqual(self.day(query="date=ALL").status_code, 400)
+        # Single weekend reservations still work, as do weekday-only one-day series.
+        self.assertEqual(self.create().status_code, 201)
+        self.assertEqual(self.create(date="2026-09-28", repeat_weekdays=True, repeat_until="2026-09-28").status_code, 201)
+
+    def test_conflicts_use_actual_weekdays_and_allow_touching_times(self):
+        self.assertEqual(self.create(date="2026-10-12", repeat_weekdays=True, repeat_until="2026-10-25").status_code, 201)
+        # Vehicle and driver checks apply on every occurrence, including the last.
+        for day in ("2026-10-12", "2026-10-23"):
+            self.assertEqual(self.create("digital2", driver_id="digital2", date=day).status_code, 409)
+            self.assertEqual(self.create(vehicle_id="V-DIGITAL-002", date=day).status_code, 409)
+        self.assertEqual(self.create(date="2026-10-23", start_time="10:00", end_time="11:00").status_code, 201)
+        for day in ("2026-10-11", "2026-10-17", "2026-10-18", "2026-10-24"):
+            self.assertEqual(self.create(date=day).status_code, 201)
+        # Two repeated periods overlap only across a weekend: no conflict.
+        self.assertEqual(self.create(date="2026-10-24", repeat_weekdays=True, repeat_until="2026-10-30").status_code, 201)
+        self.assertEqual(self.create(date="2026-10-19", repeat_weekdays=True, repeat_until="2026-10-26").status_code, 409)
+
+    def test_conflict_late_in_period_rejects_entire_registration_and_update(self):
+        self.create(date="2026-11-05")
+        before = json_store.read("vehicle_schedules")
+        self.assertEqual(self.create(date="2026-10-12", repeat_weekdays=True, repeat_until="2026-11-11").status_code, 409)
+        self.assertEqual(json_store.read("vehicle_schedules"), before)
+        item = self.create(date="2026-10-12", repeat_weekdays=True, repeat_until="2026-10-30").json()
+        before = json_store.read("vehicle_schedules")
+        self.assertEqual(self.change(item, repeat_until="2026-11-11").status_code, 409)
+        self.assertEqual(json_store.read("vehicle_schedules"), before)
+        self.assertEqual(self.change(item, repeat_until="2026-11-12").status_code, 400)
+        self.assertEqual(json_store.read("vehicle_schedules"), before)
+
+    def test_series_edit_convert_cancel_and_owner_checks(self):
+        item = self.create(date="2026-10-12", repeat_weekdays=True, repeat_until="2026-11-11").json()
+        occurrence = self.day(query="date=2026-10-20").json()["schedules"][0]
+        self.assertEqual(self.change(occurrence, "digital2", end_time="11:00").status_code, 403)
+        self.assertEqual(self.change(occurrence, "cold-dx").status_code, 404)
+        self.assertEqual(self.change(occurrence, end_time="11:00").status_code, 200)
+        self.assertEqual(json_store.read("vehicle_schedules")[0]["date"], "2026-10-12")
+        self.assertEqual(self.day(query="date=2026-11-11").json()["schedules"][0]["end_time"], "11:00")
+        result = self.change(occurrence, "admin", date="2026-10-20", repeat_weekdays=False)
+        self.assertEqual(result.status_code, 200)
+        self.assertIsNone(result.json()["repeat_until"])
+        self.assertEqual(self.day(query="date=2026-10-12").json()["schedules"], [])
+        self.assertEqual(len(self.day(query="date=2026-10-20").json()["schedules"]), 1)
+        result = self.change(result.json(), repeat_weekdays=True, repeat_until="2026-11-19")
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(self.client.delete(f"/api/vehicle-schedules/{item['id']}/", **self.headers("digital")).status_code, 204)
+        self.assertEqual(self.day(query="date=2026-11-19").json()["schedules"], [])
+
+    def test_simultaneous_series_requests_cannot_double_book(self):
+        barrier = Barrier(2)
+        def reserve(user):
+            barrier.wait(timeout=10)
+            payload = {**self.payload, "driver_id": user, "date": "2026-10-12", "repeat_weekdays": True, "repeat_until": "2026-11-11"}
+            return Client().post("/api/vehicle-schedules/", payload, content_type="application/json", **self.headers(user)).status_code
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(reserve, ["digital", "digital2"]))
+        self.assertEqual(sorted(results), [201, 409])
+        self.assertEqual(len(json_store.read("vehicle_schedules")), 1)
+
+    def test_initial_demo_has_four_bounded_weekday_series(self):
+        json_store.write("vehicle_schedules", self.demo_records)
+        data = self.day(query="date=2026-10-12").json()
+        self.assertEqual({v["plate_number"] for v in data["vehicles"]}, {"111가 1111", "222가 2222", "111가 1234", "222나 4567"})
+        self.assertEqual(len(data["schedules"]), 4)
+        self.assertTrue(all(item["repeat_weekdays"] and item["repeat_until"] == "2026-11-09" for item in data["schedules"]))
+        self.assertEqual(self.day(query="date=2026-10-10").json()["schedules"], [])
+        self.assertEqual(self.day(query="date=2026-11-10").json()["schedules"], [])

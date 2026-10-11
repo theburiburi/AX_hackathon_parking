@@ -1,17 +1,17 @@
 {
   "camera_id": "cam07",
-  "video_path": "data/videos/raw/test00.mp4",
-  "video": "test00",
+  "video_path": "data/videos/raw/test02.mp4",
   "frame_index": 100,
+  "video": "test02",
   "crop_rect": [
-    1280,
-    360,
-    1920,
-    720
+    2560,
+    720,
+    3840,
+    1440
   ],
   "image_size": {
-    "width": 640,
-    "height": 360
+    "width": 1280,
+    "height": 720
   },
   "bev_map": "data/maps/map.png",
   "bev_size": {
@@ -19,25 +19,27 @@
     "height": 968
   },
   "converted_from": {
-    "source": "config/calibration/cam07.json (1080p)",
-    "source_frame_index": 10000,
-    "content_rect": [
-      56,
-      0,
-      584,
-      360
-    ],
+    "source": "config/calibration/1080p/cam07.json",
+    "source_video": "test00",
+    "source_image_size": {
+      "width": 640,
+      "height": 360
+    },
     "scale": [
-      0.275,
-      0.333333
+      2.0,
+      2.0
+    ],
+    "offset": [
+      0.0,
+      0.0
     ]
   },
   "points": [
     {
       "id": 1,
       "image": [
-        354.134,
-        226.011
+        708.268,
+        452.022
       ],
       "bev": [
         963.338,
@@ -49,8 +51,8 @@
     {
       "id": 2,
       "image": [
-        359.021,
-        224.48
+        718.042,
+        448.96
       ],
       "bev": [
         960.631,
@@ -62,8 +64,8 @@
     {
       "id": 3,
       "image": [
-        417.241,
-        228.461
+        834.482,
+        456.922
       ],
       "bev": [
         960.451,
@@ -75,8 +77,8 @@
     {
       "id": 4,
       "image": [
-        421.257,
-        228.597
+        842.514,
+        457.194
       ],
       "bev": [
         960.36,
@@ -88,47 +90,47 @@
     {
       "id": 5,
       "image": [
-        473.828,
-        230.852
+        947.656,
+        461.704
       ],
       "bev": [
         961.072,
         339.906
       ],
-      "reprojection_error_px": 5.241,
+      "reprojection_error_px": 5.242,
       "mapping_error_px": 0.0
     },
     {
       "id": 6,
       "image": [
-        477.03,
-        230.886
+        954.06,
+        461.772
       ],
       "bev": [
         960.711,
         336.745
       ],
       "reprojection_error_px": 4.283,
-      "mapping_error_px": 0.0
+      "mapping_error_px": 0.001
     },
     {
       "id": 7,
       "image": [
-        519.972,
-        230.954
+        1039.944,
+        461.908
       ],
       "bev": [
         960.891,
         309.204
       ],
       "reprojection_error_px": 11.419,
-      "mapping_error_px": 0.0
+      "mapping_error_px": 0.001
     },
     {
       "id": 8,
       "image": [
-        558.279,
-        230.999
+        1116.558,
+        461.998
       ],
       "bev": [
         960.711,
@@ -140,47 +142,47 @@
     {
       "id": 9,
       "image": [
-        560.329,
-        230.829
+        1120.658,
+        461.658
       ],
       "bev": [
         960.62,
         276.065
       ],
       "reprojection_error_px": 25.268,
-      "mapping_error_px": 0.0
+      "mapping_error_px": 0.001
     },
     {
       "id": 10,
       "image": [
-        361.725,
-        184.736
+        723.45,
+        369.472
       ],
       "bev": [
         903.059,
         396.433
       ],
       "reprojection_error_px": 9.944,
-      "mapping_error_px": 0.0
+      "mapping_error_px": 0.001
     },
     {
       "id": 11,
       "image": [
-        361.95,
-        183.0
+        723.9,
+        366.0
       ],
       "bev": [
         899.811,
         396.252
       ],
       "reprojection_error_px": 9.946,
-      "mapping_error_px": 0.0
+      "mapping_error_px": 0.001
     },
     {
       "id": 12,
       "image": [
-        362.989,
-        159.454
+        725.978,
+        318.908
       ],
       "bev": [
         843.332,
@@ -192,34 +194,34 @@
     {
       "id": 13,
       "image": [
-        360.124,
-        157.617
+        720.248,
+        315.234
       ],
       "bev": [
         839.813,
         399.232
       ],
-      "reprojection_error_px": 15.089,
-      "mapping_error_px": 0.0
+      "reprojection_error_px": 15.088,
+      "mapping_error_px": 0.001
     },
     {
       "id": 14,
       "image": [
-        402.759,
-        162.774
+        805.518,
+        325.548
       ],
       "bev": [
         843.692,
         365.641
       ],
       "reprojection_error_px": 14.308,
-      "mapping_error_px": 0.0
+      "mapping_error_px": 0.001
     },
     {
       "id": 15,
       "image": [
-        409.824,
-        187.119
+        819.648,
+        374.238
       ],
       "bev": [
         899.901,
@@ -231,8 +233,8 @@
     {
       "id": 16,
       "image": [
-        410.133,
-        188.276
+        820.266,
+        376.552
       ],
       "bev": [
         902.968,
@@ -244,125 +246,125 @@
     {
       "id": 17,
       "image": [
-        534.805,
-        141.35
+        1069.61,
+        282.7
       ],
       "bev": [
         654.426,
         151.602
       ],
       "reprojection_error_px": 80.291,
-      "mapping_error_px": 0.0
+      "mapping_error_px": 0.001
     },
     {
       "id": 18,
       "image": [
-        447.873,
-        145.241
+        895.746,
+        290.482
       ],
       "bev": [
         758.311,
         313.369
       ],
-      "reprojection_error_px": 15.239,
-      "mapping_error_px": 0.0
+      "reprojection_error_px": 15.24,
+      "mapping_error_px": 0.002
     },
     {
       "id": 19,
       "image": [
-        484.512,
-        135.215
+        969.024,
+        270.43
       ],
       "bev": [
         673.152,
         246.99
       ],
       "reprojection_error_px": 18.336,
-      "mapping_error_px": 0.0
+      "mapping_error_px": 0.001
     },
     {
       "id": 20,
       "image": [
-        393.395,
-        133.963
+        786.79,
+        267.926
       ],
       "bev": [
         725.165,
         367.251
       ],
-      "reprojection_error_px": 27.0,
-      "mapping_error_px": 0.0
+      "reprojection_error_px": 26.999,
+      "mapping_error_px": 0.002
     },
     {
       "id": 21,
       "image": [
-        391.906,
-        130.764
+        783.812,
+        261.528
       ],
       "bev": [
         703.151,
         367.251
       ],
-      "reprojection_error_px": 27.303,
-      "mapping_error_px": 0.0
+      "reprojection_error_px": 27.304,
+      "mapping_error_px": 0.002
     },
     {
       "id": 22,
       "image": [
-        335.857,
-        135.197
+        671.714,
+        270.394
       ],
       "bev": [
         758.367,
         425.042
       ],
-      "reprojection_error_px": 25.772,
+      "reprojection_error_px": 25.773,
       "mapping_error_px": 0.0
     },
     {
       "id": 23,
       "image": [
-        299.446,
-        219.931
+        598.892,
+        439.862
       ],
       "bev": [
         960.762,
         422.675
       ],
-      "reprojection_error_px": 10.106,
+      "reprojection_error_px": 10.105,
       "mapping_error_px": 0.0
     },
     {
       "id": 24,
       "image": [
-        303.764,
-        220.272
+        607.528,
+        440.544
       ],
       "bev": [
         960.672,
         419.514
       ],
-      "reprojection_error_px": 9.746,
+      "reprojection_error_px": 9.747,
       "mapping_error_px": 0.0
     },
     {
       "id": 25,
       "image": [
-        317.631,
-        179.738
+        635.262,
+        359.476
       ],
       "bev": [
         903.02,
         421.501
       ],
       "reprojection_error_px": 4.689,
-      "mapping_error_px": 0.0
+      "mapping_error_px": 0.001
     },
     {
       "id": 26,
       "image": [
-        303.975,
-        194.369
+        607.95,
+        388.738
       ],
       "bev": [
         926.568,
@@ -374,8 +376,8 @@
     {
       "id": 27,
       "image": [
-        318.438,
-        195.645
+        636.876,
+        391.29
       ],
       "bev": [
         926.207,
@@ -387,73 +389,73 @@
     {
       "id": 28,
       "image": [
-        309.557,
-        195.05
+        619.114,
+        390.1
       ],
       "bev": [
         926.297,
         423.307
       ],
-      "reprojection_error_px": 8.974,
-      "mapping_error_px": 0.0
+      "reprojection_error_px": 8.975,
+      "mapping_error_px": 0.001
     },
     {
       "id": 29,
       "image": [
-        313.383,
-        195.432
+        626.766,
+        390.864
       ],
       "bev": [
         926.297,
         419.785
       ],
-      "reprojection_error_px": 8.451,
+      "reprojection_error_px": 8.45,
       "mapping_error_px": 0.0
     },
     {
       "id": 30,
       "image": [
-        63.133,
-        179.704
+        126.266,
+        359.408
       ],
       "bev": [
         956.579,
         596.107
       ],
-      "reprojection_error_px": 0.985,
-      "mapping_error_px": 0.0
+      "reprojection_error_px": 0.986,
+      "mapping_error_px": 0.001
     },
     {
       "id": 31,
       "image": [
-        63.471,
-        181.031
+        126.942,
+        362.062
       ],
       "bev": [
         959.466,
         593.85
       ],
-      "reprojection_error_px": 0.9,
-      "mapping_error_px": 0.0
+      "reprojection_error_px": 0.901,
+      "mapping_error_px": 0.001
     },
     {
       "id": 32,
       "image": [
-        70.771,
-        286.414
+        141.542,
+        572.828
       ],
       "bev": [
         1054.285,
         490.381
       ],
-      "reprojection_error_px": 6.191,
+      "reprojection_error_px": 6.19,
       "mapping_error_px": 0.0
     },
     {
       "id": 33,
       "image": [
-        72.597,
-        284.134
+        145.194,
+        568.268
       ],
       "bev": [
         1051.037,
@@ -465,8 +467,8 @@
     {
       "id": 34,
       "image": [
-        230.446,
-        121.157
+        460.892,
+        242.314
       ],
       "bev": [
         717.264,
@@ -478,8 +480,8 @@
     {
       "id": 35,
       "image": [
-        132.072,
-        124.176
+        264.144,
+        248.352
       ],
       "bev": [
         755.134,
@@ -491,73 +493,73 @@
     {
       "id": 36,
       "image": [
-        112.338,
-        119.005
+        224.676,
+        238.01
       ],
       "bev": [
         698.539,
         741.466
       ],
-      "reprojection_error_px": 25.34,
-      "mapping_error_px": 0.0
+      "reprojection_error_px": 25.338,
+      "mapping_error_px": 0.004
     },
     {
       "id": 37,
       "image": [
-        131.049,
-        119.123
+        262.098,
+        238.246
       ],
       "bev": [
         700.343,
         694.46
       ],
-      "reprojection_error_px": 41.725,
+      "reprojection_error_px": 41.726,
       "mapping_error_px": 0.0
     },
     {
       "id": 38,
       "image": [
-        70.897,
-        116.555
+        141.794,
+        233.11
       ],
       "bev": [
         678.549,
         881.585
       ],
-      "reprojection_error_px": 28.247,
-      "mapping_error_px": 0.0
+      "reprojection_error_px": 28.252,
+      "mapping_error_px": 0.006
     },
     {
       "id": 39,
       "image": [
-        523.138,
-        231.15
+        1046.276,
+        462.3
       ],
       "bev": [
         960.655,
         306.844
       ],
-      "reprojection_error_px": 11.912,
-      "mapping_error_px": 0.0
+      "reprojection_error_px": 11.913,
+      "mapping_error_px": 0.001
     },
     {
       "id": 40,
       "image": [
-        116.664,
-        191.229
+        233.328,
+        382.458
       ],
       "bev": [
         966.053,
         521.996
       ],
-      "reprojection_error_px": 21.088,
-      "mapping_error_px": 0.0
+      "reprojection_error_px": 21.087,
+      "mapping_error_px": 0.001
     },
     {
       "id": 41,
       "image": [
-        274.866,
-        175.201
+        549.732,
+        350.402
       ],
       "bev": [
         902.151,
@@ -569,8 +571,8 @@
     {
       "id": 42,
       "image": [
-        207.098,
-        197.353
+        414.196,
+        394.706
       ],
       "bev": [
         954.948,
@@ -582,70 +584,70 @@
     {
       "id": 43,
       "image": [
-        107.508,
-        159.091
+        215.016,
+        318.182
       ],
       "bev": [
         903.907,
         593.148
       ],
-      "reprojection_error_px": 11.596,
-      "mapping_error_px": 0.0
+      "reprojection_error_px": 11.595,
+      "mapping_error_px": 0.001
     },
     {
       "id": 44,
       "image": [
-        65.085,
-        118.642
+        130.17,
+        237.284
       ],
       "bev": [
         698.14,
         874.142
       ],
-      "reprojection_error_px": 31.796,
-      "mapping_error_px": 0.0
+      "reprojection_error_px": 31.791,
+      "mapping_error_px": 0.005
     },
     {
       "id": 45,
       "image": [
-        64.661,
-        122.699
+        129.322,
+        245.398
       ],
       "bev": [
         739.051,
         833.706
       ],
-      "reprojection_error_px": 22.53,
-      "mapping_error_px": 0.0
+      "reprojection_error_px": 22.533,
+      "mapping_error_px": 0.004
     },
     {
       "id": 46,
       "image": [
-        65.363,
-        122.637
+        130.726,
+        245.274
       ],
       "bev": [
         736.976,
         831.81
       ],
-      "reprojection_error_px": 22.092,
-      "mapping_error_px": 0.0
+      "reprojection_error_px": 22.091,
+      "mapping_error_px": 0.002
     }
   ],
   "homography": [
     [
-      0.2061077454268029,
-      -16.24273674201383,
+      0.10305387271340145,
+      -8.121368371006914,
       1420.250826120082
     ],
     [
-      1.0453574791077846,
-      -5.587742880747998,
+      0.5226787395538923,
+      -2.793871440373999,
       10.816682869226726
     ],
     [
-      -0.0001310574514272477,
-      -0.014161037334619478,
+      -6.552872571362385e-05,
+      -0.007080518667309739,
       1.0
     ]
   ],
@@ -653,27 +655,27 @@
     "type": "homography_tps",
     "homography": [
       [
-        0.2061077454268029,
-        -16.24273674201383,
+        0.10305387271340145,
+        -8.121368371006914,
         1420.250826120082
       ],
       [
-        1.0453574791077846,
-        -5.587742880747998,
+        0.5226787395538923,
+        -2.793871440373999,
         10.816682869226726
       ],
       [
-        -0.0001310574514272477,
-        -0.014161037334619478,
+        -6.552872571362385e-05,
+        -0.007080518667309739,
         1.0
       ]
     ],
-    "fade_px": 200.0,
+    "fade_px": 400.0,
     "norm_mean": [
-      302.9629309782609,
-      181.66333333333336
+      605.9258619565218,
+      363.3266666666667
     ],
-    "norm_scale": 129.84536288766049,
+    "norm_scale": 259.69072577532097,
     "control_points": [
       [
         0.3940910394005458,
@@ -1062,40 +1064,40 @@
     ],
     "hull": [
       [
-        560.3291015625,
-        230.8286590576172
+        1120.658203125,
+        461.6573181152344
       ],
       [
-        70.77079772949219,
-        286.4136657714844
+        141.54159545898438,
+        572.8273315429688
       ],
       [
-        63.13349914550781,
-        179.70433044433594
+        126.26699829101562,
+        359.4086608886719
       ],
       [
-        64.66112518310547,
-        122.69866943359375
+        129.32225036621094,
+        245.3973388671875
       ],
       [
-        65.08517456054688,
-        118.642333984375
+        130.17034912109375,
+        237.28466796875
       ],
       [
-        70.8967514038086,
-        116.5546646118164
+        141.7935028076172,
+        233.1093292236328
       ],
       [
-        230.4459686279297,
-        121.15699768066406
+        460.8919372558594,
+        242.31399536132812
       ],
       [
-        484.5124206542969,
-        135.21499633789062
+        969.0248413085938,
+        270.42999267578125
       ],
       [
-        534.8046875,
-        141.35000610351562
+        1069.609375,
+        282.70001220703125
       ]
     ]
   },
@@ -1103,7 +1105,7 @@
     "mean_error_px": 17.136,
     "max_error_px": 80.291,
     "mapping_type": "homography_tps",
-    "mapping_mean_error_px": 0.0,
-    "mapping_max_error_px": 0.0
+    "mapping_mean_error_px": 0.001,
+    "mapping_max_error_px": 0.006
   }
 }

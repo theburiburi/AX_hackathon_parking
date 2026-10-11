@@ -1,244 +1,685 @@
-# AX_Parking 웹 주차 관리
+# AX Parking 통합 웹
 
-## 외부 기능 연동 원칙 · 2026-10-10
+로그인, 섹션별 차량 현황·운행 스케줄, 관리자 영상 분석 재생을 제공하는 React 웹입니다.
+Python 웹 서버 하나가 업무 API, React 빌드 파일, 원본 영상, 사전 계산된 추적 결과를 함께 제공합니다.
 
-웹은 외부 프로젝트의 기능과 결과를 표시하는 역할을 우선합니다.
-[기능 전수 조사·호출 흐름·남은 한계](EXTERNAL_INTEGRATION.md)에 전체 기능별 외부 구현과 웹의 역할을 정리했습니다.
-`src.mosaic`의 영상·카메라 설정, `server.py`의 추적 엔진·차단기 기록 함수를 공통 어댑터에서 호출합니다.
-지도 경계·수용량·위치 저장 검증도 외부 지도 자료를 따릅니다. 로그인·스케줄 등 외부에 없는 업무 기능은 유지합니다.
-이번 변경은 `web/` 안에서만 수행했습니다.
+Python 의존성은 프로젝트 루트의 [requirements.txt](../requirements.txt) 하나로 관리합니다.
+Python 가상환경도 루트의 `.venv`를 사용합니다. `web/` 내부에는 별도 가상환경이나 requirements 파일을 만들지 않습니다.
 
-## 현재 실행 방식 · 2026-10-10
+### 구역별 주차 대수 JSON
 
-기존 React 로그인·관리자/사용자 화면·섹션별 차량 운행 스케줄을 유지하고,
-관리자 영상 기능을 **사전 계산 결과 재생**으로 통합했습니다.
-웹 코드와 생성 결과는 `web/` 안에 두며, Python은 루트 `.venv`를 사용합니다.
-루트 `server.py`, `src/`, `config/`, 원본 데이터는 수정하지 않습니다.
+[`backend/data/initial_parking.json`](backend/data/initial_parking.json)에 번호판 없이 구역별 초기 주차 대수와 최대 주차 가능 대수를 입력합니다.
+A~N 구역의 초기 대수는 0, 최대 대수는 기존 구역 설정값으로 준비되어 있으므로 실제 현황에 맞게 변경하세요.
+`schema_version`, `observed_at`, 차량별 목록은 필요하지 않습니다.
 
-**일상 실행은 서버 하나, 접속 주소 하나입니다.**
+```json
+[
+  {"zone_id": "A", "parked_count": 20, "capacity": 14},
+  {"zone_id": "B", "parked_count": 5, "capacity": 4}
+]
+```
+
+| 필드 | 의미 |
+|---|---|
+| `zone_id` | 프로젝트 `data/maps/zones.json`의 구역 ID(A~N). 소문자도 입력 가능 |
+| `parked_count` | 이중주차를 포함한 해당 구역의 총 주차 대수 |
+| `capacity` | 해당 구역의 최대 주차 가능 대수 |
+
+최대 주차 가능 대수는 이 JSON의 `capacity`를 우선 사용합니다.
+`capacity`를 생략한 기존 형식이나 목록에 없는 구역은 프로젝트 `data/maps/zones.json`의 값을 사용합니다.
+예를 들어 A 구역 정원이 14대라면 **20대 / 14대**로 표시합니다.
+이중주차 항목은 따로 입력하지 않으며, 화면에는 현재 대수 / 최대 대수만 표시합니다.
+초기 대수와 최대 대수는 모두 0 이상의 정수이며, 정원을 넘어도 현재 대수를 제한하지 않습니다.
+같은 구역을 두 번 입력하거나 알 수 없는 구역을 입력하면 오류로 처리합니다. 목록에 없는 구역은 0대로 표시합니다.
+
+사용자 지도와 관리자 분석 화면은 이 JSON을 직접 읽어 구역별 주차 대수를 표시합니다.
+**파일을 저장하면 다음 조회(약 3초) 때 반영**되므로 별도 적용 명령이나 서버 재시작은 필요하지 않습니다.
+JSON을 작성하는 도중 오류가 발생하면 화면은 마지막 정상 조회값과 갱신 실패 메시지를 표시합니다.
+
+작성한 파일을 검증하거나 별도 JSON 파일을 가져올 때는 프로젝트 루트에서 실행합니다.
 
 ```powershell
-# AX_Parking 프로젝트 루트에서 실행
+# 검증만 수행
+.\.venv\Scripts\python.exe -B web/initialize_parking.py --check
+# 별도 파일을 검증한 뒤 initial_parking.json으로 저장
+.\.venv\Scripts\python.exe -B web/initialize_parking.py --input my_parking.json
+# 예시 파일을 적용하지 않고 검증만 수행
+.\.venv\Scripts\python.exe -B web/initialize_parking.py --input web/examples/initial_parking.json --check
+```
+
+이 대수에는 기존 등록 차량도 포함되어 있으므로 차량 목록의 주차 차량 수를 다시 더하지 않습니다.
+차량별 이름·소속·운행 스케줄은 변경하지 않습니다. 팀별 차량 목록의 조회 권한도 유지됩니다.
+초기 대수는 **영상 시작 시점에 이미 주차된 차량**을 기준으로 입력합니다.
+관리자 화면의 **실시간 추적 모드 ON**에서 기존 모델 캐시의 이동(`ACTIVE`) 또는 입차 이후 주차 완료(`PARKED`)가 확인되면 해당 구역에 1대를 더합니다.
+번호판·웹 차량 등록 여부와 관계없이 Global ID 기준으로 집계하고, 여러 카메라의 중복 감지는 한 차량으로 처리합니다.
+처음부터 `PARKED`로만 보인 차량은 초기 대수에 포함된 것으로 간주합니다. 해당 차량의 이동이나 출차가 확인되면 원래 구역에서 차감합니다.
+잠깐 멈춘 `STOPPED` 상태나 감지 누락은 주차 완료·출차로 간주하지 않습니다. 지도 밖이거나 구역이 확인되지 않는 좌표는 집계하지 않습니다.
+반복 요청·영상 반복 재생으로 중복 증가하지 않으며, 되감으면 그 시점의 초기 대수 + 변동분으로 복원됩니다.
+`POST /api/tracking-events/`로 등록 차량의 주차 완료를 전달하는 경우에도 동일 구역의 반복 주차 이벤트는 한 번만 반영합니다.
+`GET /api/parking-zones/`는 `initial_parked_count`, `parking_delta`, `parked_count`, `capacity`, `overflow_count`를 반환합니다.
+초기 JSON은 그대로 유지하고 영상 시점별 변동은 `backend/data/vehicle_replay_state.json`에 저장합니다. 추적 모드 OFF에서는 마지막 반영된 현황을 표시합니다.
+
+### 다크모드와 반응형 화면
+
+로그인·사용자 차량 현황·운행 스케줄·관리자 분석 화면은 다크모드로 표시합니다.
+특정 휴대폰 크기에 고정하지 않고 브라우저의 실제 화면 너비에 따라 배치가 자동으로 바뀝니다.
+PC 창 크기 변경, 태블릿·휴대폰 가로/세로 전환에도 같은 웹 화면을 사용합니다.
+
+| 화면 너비(CSS px) | 배치 |
+|---|---|
+| 1,101px 이상 | 사용자 지도·차량 목록을 좌우 배치. 관리자 영상 옆에 지도·차단기 기록 배치. 운행 입력창 3열 |
+| 761~1,100px | 사용자 지도·차량 목록을 위아래 배치. 관리자 영상 아래에 지도·차단기 기록을 좌우 배치. 운행 입력창 2열 |
+| 760px 이하 | 상단 계정·지도·목록·관리자 영상을 한 열 중심으로 배치. 운행 입력창 1열, 운행 상세는 카드로 표시 |
+
+페이지 여백과 제목 글자 크기는 화면 너비에 맞춰 조절되며, 차량 목록 카드도 사용 가능한 폭에 맞춰 줄바꿈합니다.
+지도 높이는 현재 화면 높이에 맞춰 조절됩니다. 시간표는 시간 눈금의 가독성을 위해 표 안에서만 가로로 스크롤합니다.
+
+- 관리자: 영상 → 지도 → 차단기 기록 순서로 한 열에 표시합니다. 기본 재생 버튼을 크게 표시하고 프레임 이동·반복·검출 박스·카메라 필터는 **재생 설정**을 펼쳐 사용합니다.
+- 지도: 마우스 없이 구역을 터치해 차량 수를 확인할 수 있습니다.
+- 사용자: 지도와 차량 목록을 세로로 배치합니다. 스케줄 시간표는 가로로 스크롤하고, 운행 상세는 시간·차량·운전자·목적지가 보이는 카드로 표시합니다.
+- 입력 글자는 모바일·터치 기기에서 16px, 기본 조작 버튼은 높이 44px 이상으로 표시합니다. 노치·홈 표시줄 여백과 Safari의 인라인 영상 재생을 고려했습니다.
+
+같은 Wi-Fi에 연결된 실제 휴대폰에서 접속하려면 먼저 PC의 Wi-Fi IPv4 주소를 확인합니다.
+
+```powershell
+ipconfig
+```
+
+예를 들어 PC 주소가 `192.168.0.10`이라면 프로젝트 루트에서 다음처럼 실행합니다. 예시 IP는 실제 PC 주소로 바꾸세요.
+
+```powershell
+$env:WEB_ALLOWED_HOSTS = "localhost,127.0.0.1,192.168.0.10"
+.\.venv\Scripts\python.exe -B web/run.py --host 0.0.0.0 --port 8080
+```
+
+휴대폰 Safari에서 `http://192.168.0.10:8080/`에 접속합니다.
+휴대폰의 `localhost`는 PC를 가리키지 않습니다. 연결되지 않으면 같은 Wi-Fi인지, Windows 방화벽이 해당 서버의 사설 네트워크 연결을 허용하는지 확인하세요.
+
+별도의 모바일 서버나 추가 라이브러리는 필요하지 않습니다. 화면 수정 후에는 `web/frontend`에서 `npm.cmd run build`를 실행하고 브라우저를 새로고침합니다.
+
+## 1. 서버 실행 명령
+
+아래 명령은 모두 **AX_Parking 프로젝트 루트**의 PowerShell에서 실행합니다.
+
+설치·화면 빌드·데이터·재생 캐시가 이미 준비됐다면 다음 명령만 실행합니다.
+
+```powershell
 .\.venv\Scripts\python.exe -B web/run.py
 ```
 
-접속 주소: http://127.0.0.1:8080/
+접속 주소: **http://localhost:8080/** 또는 **http://127.0.0.1:8080/**
 
-`server.py`, 예전 8001 영상 서버, `npm run dev`를 동시에 실행하지 않습니다.
-React는 미리 빌드한 `dist`를 Python 웹 서버가 제공합니다.
-기본 호스트는 로컬 전용이며 외부 배포에는 HTTPS 등 별도 운영 환경 구성이 필요합니다.
+- 가상환경을 활성화하지 않아도 위 명령으로 루트 가상환경의 Python을 사용합니다.
+- 서버를 실행한 터미널은 열어 둡니다. 종료하려면 해당 터미널에서 **Ctrl+C**를 누릅니다.
+- 기본 호스트는 `127.0.0.1`, 기본 포트는 `8080`입니다.
+- 포트를 바꾸려면 `.\.venv\Scripts\python.exe -B web/run.py --port 8081`을 실행하고 `http://localhost:8081/`로 접속합니다.
 
-### 처음 준비할 때
+가상환경이 이미 활성화되어 있다면 아래 명령도 같습니다.
 
 ```powershell
+python -B web/run.py
+```
+
+### 실행 방식과 포트
+
+| 실행 방식 | 명령 | 주소 | 용도 |
+|---|---|---|---|
+| 통합 웹 | `.\.venv\Scripts\python.exe -B web/run.py` | localhost:8080 | 로그인·업무 API·React·영상 재생 |
+| React 개발 화면 | `web/frontend`에서 `npm.cmd run dev` | localhost:5173 | 화면 개발 중 변경 사항 확인 |
+| 루트 기본 뷰어 | `.\.venv\Scripts\python.exe -B server.py` | 127.0.0.1:8000 | 루트 README의 기본 분석 뷰어 |
+
+일상적인 통합 웹 실행에는 8080 서버만 필요합니다. 루트 `server.py`나 별도 영상 서버를 함께 실행할 필요가 없습니다.
+5173 개발 화면을 사용할 때는 API를 처리할 8080 통합 서버도 실행해야 합니다.
+
+### 현재 로컬 점검 결과 · 2026-10-10
+
+원본 test02 영상, 검출 결과·metadata, React 빌드 파일, 계정 자료는 존재합니다.
+영상은 30 FPS·4,980프레임·166초이며 지도는 1624×968, 구역은 14개입니다.
+차단기 공유 기록에는 6건이 있습니다.
+
+기존 test02 재생 캐시는 현재 코드·설정 서명과 일치하지 않아 재생성 안내 오류를 반환합니다.
+이번 문서 정리에서는 캐시를 재생성하지 않았습니다. 현재 로컬에서 영상 분석을 사용하려면 다음을 한 번 실행하세요.
+
+```powershell
+.\.venv\Scripts\python.exe -B web/build_replay.py --video test02 --overwrite
+.\.venv\Scripts\python.exe -B web/run.py
+```
+
+서버가 이미 실행 중이면 해당 터미널에서 Ctrl+C로 종료한 뒤 실행합니다.
+이 점검 결과는 문서 작성 시점의 상태이며, 이후 캐시를 정상 생성했다면 재생성을 반복할 필요가 없습니다.
+
+## 2. 처음 설치하는 경우
+
+### 필요한 도구
+
+- Python 3.10 이상과 프로젝트 루트의 `.venv`.
+- React 화면을 빌드할 Node.js와 npm. 현재 Vite의 Node.js 요구 범위는 `^20.19.0 || >=22.12.0`입니다.
+- 원본 영상·검출 결과·카메라 보정·지도 자료. 필요한 경로는 다음 절을 참고합니다.
+
+현재 로컬에서는 Python 3.14.7을 사용합니다.
+루트 의존성 설치에는 Ultralytics·PyTorch 등 분석용 라이브러리도 포함됩니다.
+통합 웹의 영상 재생 중에는 YOLO 추론이나 추적 계산을 실행하지 않으며 GPU가 필요 없습니다.
+
+### 설치와 화면 빌드
+
+```powershell
+# AX_Parking 루트에서 시작
+
 # .venv가 없는 경우에만 생성
 python -m venv .venv
 
-# 업무 API + 웹 서버 + 오프라인 추적 캐시 생성 라이브러리
-.\.venv\Scripts\python.exe -m pip install -r web/requirements.txt
+# Python 의존성 설치
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 
 # React 의존성 설치 및 화면 빌드
-cd web/frontend
+Push-Location web/frontend
 npm.cmd ci
 npm.cmd run build
-cd ../..
+Pop-Location
+```
 
-# 새 설치에서 JSON 초기 자료 생성. 기존 계정·스케줄은 덮어쓰지 않음
+빌드 결과는 `web/frontend/dist/`에 생성됩니다.
+8080 서버가 이 결과를 제공하므로 React 코드를 수정한 뒤에는 다시 빌드해야 합니다.
+빌드된 `dist/`를 전달받은 실행 컴퓨터에서는 Node.js 서버를 별도로 운영하지 않습니다.
+
+### 업무 데이터 초기화
+
+업무 데이터가 없는 새 설치에서는 다음을 실행합니다.
+
+```powershell
 .\.venv\Scripts\python.exe -B web/backend/seed.py
+```
 
-# 기존 검출 결과로 추적·BEV 결과를 한 번 생성 (YOLO 실행 없음)
+- 비밀번호 입력 없이 `web/backend/fixtures/`의 기본 자료를 `web/backend/data/`로 복사하고 빈 로그·빈 스케줄을 생성합니다.
+- 기본 계정은 `fixtures/users.json`에서 가져오며 비밀번호는 모두 `test`입니다.
+- 이미 존재하는 파일과 계정 비밀번호는 덮어쓰지 않습니다.
+
+### 영상 재생 캐시 준비 후 실행
+
+영상 자료가 준비된 상태에서 한 번 실행합니다.
+
+```powershell
 .\.venv\Scripts\python.exe -B web/build_replay.py --video test02
-
-# 웹 실행
 .\.venv\Scripts\python.exe -B web/run.py
 ```
 
-이미 준비된 로컬에서는 설치·초기화·빌드·캐시 생성을 반복하지 않고 `web/run.py`만 실행합니다.
-`--port 8081`로 포트를 바꿀 수 있고, 종료는 실행한 터미널에서 Ctrl+C입니다.
+캐시가 이미 있으면 생성 명령은 중단합니다. 기존 캐시가 유효하다면 생성 단계를 생략하고 서버만 실행하세요.
 
-웹 재생에는 YOLO·PyTorch·GPU가 필요 없습니다. 오프라인 추적 캐시는 CPU로 생성합니다.
-최초 YOLO 검출 결과까지 생성하는 컴퓨터만 루트 `requirements.txt`와 가중치가 필요합니다.
-팀원이 같은 코드·설정으로 만든 `web/backend/replay_data/<영상 이름>/` 전체를 전달받으면
-운영 컴퓨터에는 아래의 가벼운 실행 의존성만 설치할 수 있습니다.
+## 3. 영상·지도·분석 데이터
 
-```powershell
-.\.venv\Scripts\python.exe -m pip install -r web/requirements-runtime.txt
-```
+현재 기본 영상 제목은 `config/detection.yaml`의 `video: test02`입니다.
+아래의 `<title>`은 영상 제목이며, 예를 들어 `test02`입니다.
 
-Node.js는 화면 빌드 시에만 필요합니다. `web/frontend/dist`도 함께 전달받으면
-운영 컴퓨터에서는 npm이나 Node 서버를 실행하지 않습니다.
-
-### 필요한 파일
-
-| 경로 | 용도 |
+| 프로젝트 루트 기준 경로 | 역할 |
 |---|---|
-| `data/videos/raw/test02.mp4` | 브라우저에서 재생할 원본 모자이크 영상 |
-| `data/detections/test02/detections.jsonl` | YOLO가 이미 검출한 프레임별 박스 |
-| `data/detections/test02/metadata.json` | 해상도·FPS·카메라 칸 배치 확인 |
-| `config/calibration/camXX.json` | 기존 카메라→BEV 보정 |
-| `config/mosaic.yaml`, `tracking.yaml`, `global_tracking.yaml` | 카메라 배치와 추적 설정 |
-| `data/maps/map.png`, `zones.json` | 지도와 A~N 구역 경계 |
-| `data/gate_logs/gate_logs.json` | 차단기 기록. `video`와 `fps`가 재생 영상과 일치해야 함 |
-| `web/backend/replay_data/test02/` | 사전 계산한 결과·프레임 인덱스·manifest |
+| `data/videos/raw/<title>.mp4` | 브라우저에서 재생할 모자이크 원본 영상 |
+| `data/detections/<title>/detections.jsonl` | 프레임별 YOLO 검출 결과 |
+| `data/detections/<title>/metadata.json` | 원본 크기·FPS·프레임 수·카메라 칸 배치 |
+| `config/mosaic.yaml` | 모자이크 격자와 카메라 배치 |
+| `config/tracking.yaml` | 카메라별 추적 설정 |
+| `config/global_tracking.yaml` | 카메라 간 ID 연결 설정 |
+| `config/calibration/camXX.json` | 각 카메라의 영상→BEV 보정 |
+| `data/maps/map.png` | 관리자 영상 화면의 BEV 지도 |
+| `data/maps/zones.json` | 지도 크기와 구역 경계 |
+| `data/gate_logs/` | 차단기 기록. 선택 순서는 아래 참고 |
+| `web/backend/replay_data/<title>/` | 웹에서 재생할 사전 계산 결과 |
 
-생성 도구는 원본 영상·검출 캐시·metadata의 해상도, FPS, 프레임 수, 칸 배치를 검사합니다.
-보정 해상도가 같은 종횡비로 다르면 검출 좌표를 보정 해상도로 변환해 추적과 BEV를 계산하고,
-영상 박스는 원본 크기로 복원해 저장합니다. 카메라 각도 변경까지 자동 보정하지는 않습니다.
+카메라는 현재 cam01, cam02, cam03, cam05, cam06, cam07, cam08입니다.
+영상 제목은 영문·숫자·밑줄·하이픈으로 된 1~80자만 허용합니다.
 
-기본 영상은 `config/detection.yaml`의 `video: test02`로 선택합니다.
-루트 설정을 수정하지 않고 웹에서만 영상을 선택하려면:
+### YOLO 검출 결과가 없는 경우
+
+웹은 원본 영상만으로 즉석 검출을 하지 않습니다.
+분석 담당자가 루트의 기존 도구로 검출 결과를 먼저 준비해야 합니다.
 
 ```powershell
-$env:WEB_REPLAY_VIDEO = 'test02'
-.\.venv\Scripts\python.exe -B web/build_replay.py
-.\.venv\Scripts\python.exe -B web/run.py
+# 원본 영상과 YOLO 가중치·추론 환경이 준비된 컴퓨터에서 실행
+.\.venv\Scripts\python.exe -B scripts/preprocess.py test02
 ```
 
-영상·검출 결과·추적 코드·보정·지도·칸 배치를 변경했다면 캐시를 다시 생성합니다.
+이 명령은 분리 영상과 검출 결과를 생성하며 YOLO를 실행합니다.
+가중치 위치·GPU 설정·보정 도구의 자세한 사용법은 [루트 README](../README.md)를 따릅니다.
+검출 결과를 전달받았다면 이 단계는 생략합니다.
+
+### 재생 캐시의 구성과 갱신
+
+캐시 폴더에는 다음 파일이 한 세트로 들어 있습니다.
+
+```text
+web/backend/replay_data/<title>/
+├── manifest.json
+├── frames-<cache_id>.jsonl
+└── index-<cache_id>.json
+```
+
+생성기는 기존 `server.py`의 추적 엔진으로 모든 프레임을 순서대로 계산합니다.
+보정 크기와 검출 크기가 같은 종횡비로 다르면 추적 전 좌표 단위를 맞추고, 표시할 박스는 원본 크기로 복원합니다.
+새 manifest는 생성이 완료된 뒤 교체됩니다.
+
+원본 영상, 검출 결과·metadata, 추적 코드·설정, 카메라 보정, 지도·구역·칸 배치 또는 웹 생성 어댑터가 바뀌면 다시 생성합니다.
 
 ```powershell
 .\.venv\Scripts\python.exe -B web/build_replay.py --video test02 --overwrite
 ```
 
-새 manifest를 마지막에 교체하므로 실패 시 기존 manifest를 덮어쓰지 않습니다.
-다른 컴퓨터로 복사해 파일 수정 시각이 달라져도 SHA-256으로 원본 내용이 같음을 확인하면 사용 가능합니다.
-변경된 원본/설정 또는 미완성 캐시는 안내 오류를 반환하며 HTTP 요청에서 재분석하지 않습니다.
+서버는 파일과 설정이 캐시 생성 당시 조건과 일치하는지 검사합니다.
+유효하지 않은 캐시를 HTTP 요청 중 자동 재계산하지 않고 오류를 반환합니다.
+다른 컴퓨터로 파일을 복사해 수정 시각이 바뀐 경우에는 내용 해시로 일치 여부를 확인합니다.
 
-### 계정과 유지되는 업무 기능
+캐시를 전달받을 때는 해당 폴더 전체와 동일한 코드·설정·지도·원본 영상·검출 결과·metadata가 필요합니다.
+캐시 폴더만 복사해서는 검증과 영상 재생을 완료할 수 없습니다.
 
-현재 로컬의 더미 계정은 모두 비밀번호 `test`입니다. 새 설치에서 seed를 실행하면 직접 지정한
-비밀번호를 사용하며 기존 비밀번호는 바꾸지 않습니다.
+### 웹에서 사용할 영상 선택
 
-| 아이디 | 이름 | 권한/섹션 |
+루트 설정을 바꾸지 않으려면 같은 PowerShell에서 환경변수를 지정합니다.
+
+```powershell
+$env:WEB_REPLAY_VIDEO = 'test02'
+.\.venv\Scripts\python.exe -B web/build_replay.py --video test02
+.\.venv\Scripts\python.exe -B web/run.py
+```
+
+이미 캐시가 있다면 가운데 생성 명령을 생략합니다.
+`--video`는 생성기의 대상만 선택하므로, 서버에도 같은 제목을 지정하려면 환경변수 또는 기본 설정이 일치해야 합니다.
+
+환경변수를 해제하려면:
+
+```powershell
+Remove-Item Env:WEB_REPLAY_VIDEO -ErrorAction SilentlyContinue
+```
+
+## 4. 로그인 계정과 저장 데이터
+
+현재 로컬에서 확인한 더미 계정의 비밀번호는 모두 **`test`**입니다.
+새 설치에서도 기본 계정 JSON의 비밀번호 `test`를 사용합니다.
+
+| 아이디 | 표시 이름 | 권한·소속 |
 |---|---|---|
-| `admin` | 관리자 | 전체 업무 및 영상 분석 조회 |
-| `digital` | 권혁돈 | 디지털통신기술섹션 |
-| `digital2`, `digital3` | 디지털 사용자 2, 3 | 디지털통신기술섹션 |
+| `admin` | 관리자 | 전체 범위 API 권한·관리자 영상 화면 |
+| `digital` | 권혁돈 | 광양디지털통신기술섹션 |
+| `digital2` | 디지털 사용자 2 | 광양디지털통신기술섹션 |
+| `digital3` | 디지털 사용자 3 | 광양디지털통신기술섹션 |
 | `cold-dx` | 조의재 | 냉간 DX 섹션 |
 | `steelmaking` | 한용만 | 제강연주섹션 |
 
-사용자는 본인 섹션의 차량·일일 스케줄을 조회합니다. 일정 등록·수정·취소,
-차량/운전자 시간 중복 방지, 관리자 전체 섹션 필터를 유지합니다.
-영상·프레임 결과·영상 지도는 서버에서도 관리자 권한을 검사합니다.
-제거했던 관리 요청/승인 화면은 다시 추가하지 않았습니다.
+테스트용으로 아이디·비밀번호·이름·섹션명을 `web/backend/data/users.json`의 한 객체에 저장하고 직접 비교합니다.
+비밀번호는 평문으로 저장하며 이 방식은 테스트 전용입니다. 계정 객체의 예시는 다음과 같습니다.
 
-### 관리자 영상 화면
-
-관리자로 로그인하면 **실시간 분석** 화면을 바로 표시합니다.
-상단 실시간·차량 운행 스케줄 메뉴와 운영 현황·실시간 분석 전환 버튼은 제거했습니다.
-영상 재생, 지도, 실시간 추적 ON/OFF, 차단기 기록을 한 화면에서 제공합니다.
-넓은 화면에서는 왼쪽에 큰 영상, 오른쪽에 작은 지도와 그 아래 차단기 기록을 배치합니다.
-화면 폭이 1,100px 이하이면 영상 → 지도 → 차단기 기록 순서로 세로 배치합니다.
-일반 사용자는 기존 차량 현황·차량 운행 스케줄 메뉴를 사용합니다.
-
-- 원본 모자이크 영상 위에 Canvas로 저장된 박스를 겹쳐 표시합니다.
-- 재생/일시정지, ±5초, 프레임 이동, 배속, 반복, 박스 표시, 카메라 필터를 제공합니다.
-- 단축키: Space 재생/정지, A/D ±5초, Shift+A/D ±30초, 쉼표/마침표 한 프레임, R 처음으로.
-- 실제 표시된 영상 프레임을 기준으로 결과를 선택합니다. 결과가 늦으면 이전 박스를 대신 표시하지 않습니다.
-- **실시간 추적 모드 ON/OFF** 버튼은 기본 OFF입니다. ON을 누르면 영상 재생을 시작하고
-  현재 영상 프레임의 차량 위치와 추적 ID를 지도에 표시합니다. OFF는 차량 마커를 즉시 숨기며
-  영상 재생은 계속됩니다. 일시정지하면 차량 위치도 멈추고, 탐색하면 해당 프레임 위치로 바뀝니다.
-- 추적 모드는 기존 캐시의 `frame.bev`를 사용합니다. 이동을 시작해 기존 엔진에서 추적된 차량만
-  표시하며, 처음부터 주차 중인 차량의 모든 검출을 추적 마커로 바꾸지는 않습니다.
-  루트 README의 ACTIVE 차량 표시 기준과 카메라 필터를 적용합니다. 외부 엔진의 관측 좌표와 ID를 그대로 사용하며 웹에서 신뢰도에 따른 위치 선택이나 Global ID 재결합을 하지 않습니다.
-  잘못된 좌표·지도 범위 밖 위치·결과 없는 프레임에는 마커를 표시하지 않습니다.
-  YOLO·추적 엔진은 재생 중 실행하지 않습니다. “실시간”은 녹화 영상의 현재 재생 시점에 동기화된 위치 갱신을 뜻합니다.
-- A~N 구역에 마우스를 올리거나 Tab으로 초점을 맞추면 추적 모드와 관계없이 이동 차량 수를 보여줍니다.
-- 구역 수는 기존 엔진이 BEV에 출력한 ACTIVE 이동 차량 관측만 집계합니다. 처음부터 주차돼 있던 차량과 STOPPED/PARKED는 추가 투영하지 않습니다. 주차면 점유 수가 아닙니다.
-- 차단기 기록은 현재 프레임까지의 기록만 표시하며 클릭하면 해당 프레임으로 이동합니다.
-- 기록 첫 줄은 `[입차] 123 가 4567` 또는 `[출차] 12 나 3456` 형식입니다. 번호판은 기록의
-  `plate` 값을 사용하며, 값이 없으면 `[입차] 번호판 미확인`처럼 표시합니다. 하단 시각과 프레임 번호는 화면에 표시하지 않습니다.
-- 차단기 기록은 `data/gate_logs/gate_logs.json`을 우선 읽고, 해당 파일이 없으면 기존 `gate_log.json`을 읽습니다. 파일 수정 후 페이지를 새로고침하면 반영되며 추적 캐시를 다시 만들 필요가 없습니다. 공유 파일 둘 다 없으면 외부 기본 경로인 `data/gate_logs/<title>.json`을 읽습니다. 선택된 파일의 형식·영상 이름·FPS가 맞지 않으면 기록을 비웁니다. 진단 사유는 manifest API의 `warnings`에 남기며 화면 하단의 분석 데이터 안내 영역은 제거했습니다.
-- 등록 차량 감지 로그와 영상 차단기 기록은 구분합니다.
-- Global ID는 분석 영상의 추적 번호이며 번호판·등록 차량·스케줄과 자동 연결하지 않습니다.
-
-서버는 최대 120프레임씩 읽고, 브라우저는 기본 60프레임씩 선행 요청하며 최대 360프레임만 보관합니다.
-사용자별 재생 위치는 독립적이며 뒤로 이동해도 저장된 ID가 유지됩니다.
-JSON 응답은 압축하지만 영상 Range 응답은 압축하지 않습니다.
-화면 탭을 벗어나면 요청을 취소하고 재생을 멈추며 브라우저가 숨겨져도 재생을 멈춥니다.
-
-OpenCV에서 열리는 영상도 브라우저 코덱 지원에 따라 재생되지 않을 수 있습니다.
-HEVC 미지원 환경은 동일 프레임 수·FPS·해상도를 보존한 H.264 영상이 필요합니다.
-원본을 교체했다면 metadata와 캐시의 일치 여부도 확인해야 합니다.
-
-### 코드 구조
-
-- `frontend/src/main.jsx`: 기존 로그인, 사용자 현황·스케줄 메뉴, 관리자 실시간 분석 연결.
-- `frontend/src/VehicleSchedule.jsx`: 기존 섹션별 운행 일정.
-- `viewer-rendering.js`: 기존 app.js의 박스·카메라 이름·BEV 그리기 함수를 공유.
-- `frontend/src/CachedReplay.jsx`, `replayBuffer.js`, `cached-replay.css`: 영상·박스·지도·기록 재생과 제한된 프레임 캐시.
-- `backend/native_project.py`: 외부 영상·배치·추적·차단기 함수의 읽기 전용 연결.
-- `backend/replay/export.py`: 루트 TrackingEngine을 재사용하는 오프라인 생성기.
-- `backend/replay/store.py`: 유효성 검사 및 외부 DetectionCacheStore를 통한 인덱스 기반 결과 읽기. 추적 엔진을 import하지 않음.
-- `backend/tracking/replay_views.py`: 기존 로그인 토큰으로 보호되는 읽기 전용 재생 API.
-- `backend/tracking/project_media.py`: 새 모자이크 프로젝트의 지도·미디어 연결.
-- `backend/config/frontend.py`: React dist 제공.
-- `run.py`: Waitress로 업무 API·React·영상 파일을 한 포트에서 제공.
-- `build_replay.py`: 캐시 생성 CLI.
-
-루트 `server.py`는 import할 때 엔진을 초기화하므로 공통 어댑터는 AST로 TrackingEngine과 관련 정의 또는 차단기 기록 함수만
-로드합니다. 원본 소스를 복제하거나 변경하지 않습니다. 원본 엔진 구조가 크게 바뀌면 이 어댑터를 점검해야 합니다.
-
-현재 메뉴에서 사용하지 않는 실시간 YOLO 서버·업로드 분석·개별 CCTV 동기 재생 코드와
-해당 구버전 테스트, 설치 파일, 점검 스크립트는 삭제했습니다. 기존 업로드 결과인
-`backend/vision/data/`는 보존하며 현재 서버에서는 사용하지 않습니다.
-중복 WSGI 진입점은 `backend/config/wsgi.py`로 통일했습니다.
-
-`web/index.html`, `app.js`, `style.css`는 루트 `server.py`가 직접 참조하므로 유지합니다.
-통합 웹 서버 `web/run.py`는 `frontend/dist/`의 React 화면을 제공합니다.
-
-### API와 검증
-
-관리자 전용 GET: `/api/replay/manifest/`, `/api/replay/frames/?start=0&count=60`,
-`/api/replay/video/`, `/api/replay/map/`. 영상은 Range/HEAD를 지원합니다.
-기존 로그인·스케줄 API는 유지합니다.
-
-```powershell
-.\.venv\Scripts\python.exe -B web/backend/manage.py test tracking
-.\.venv\Scripts\python.exe -B -m unittest discover -s web/tests -v
-cd web/frontend
-npm.cmd test
-npm.cmd run build
+```json
+{
+  "id": "digital",
+  "password": "test",
+  "name": "권혁돈",
+  "role": "USER",
+  "team_id": "SECTION_DIGITAL_COMMUNICATION",
+  "team_name": "광양디지털통신기술섹션"
+}
 ```
 
-외부 연동 정리 후 Django 업무·재생 테스트 38개, 캐시·외부 연동 13개,
-프론트엔드 27개 테스트와 React 빌드를 통과했습니다.
-실제 4,980프레임 캐시를 기존 엔진으로 다시 생성하고 지도 14개 구역·차단기 기록 6건·영상 Range 응답을 확인했습니다.
-기존 캐시에서 웹 자체 추가 필드를 제외한 후 4,980프레임 전체를 비교해 기존 엔진의 좌표·ID·상태·박스가 보존됨을 확인했습니다.
-외부 코드·설정·자료와 사용자 데이터 46개 파일의 작업 전후 SHA-256이 같아 변경되지 않았음을 확인했습니다.
-연결 가능한 브라우저가 없어 실제 코덱 재생과 화면 조작은 직접 확인하지 못했습니다.
+- 로그인 요청은 `{"id": "digital", "password": "test"}` 형식이며 JSON의 `id`와 `password`가 입력값과 일치하면 로그인합니다. 비밀번호 해시 계산이나 별도 비밀번호 파일은 사용하지 않습니다.
+- `name`과 `team_name`은 화면 표시용입니다. 로그인 시 읽고, 페이지를 열거나 브라우저 탭으로 돌아올 때 `/api/auth/me/`에서 최신 값을 다시 읽습니다. 열린 화면도 30초마다 갱신하므로 `users.json` 수정 후 재로그인 없이 상단 이름과 조회 범위에 반영됩니다. 즉시 확인하려면 새로고침하세요.
+- `id`는 로그인 아이디이자 일정 작성자·운전자 연결 기준이며, `team_id`는 섹션별 조회 범위에 사용하므로 기존 연결이 있는 값을 임의로 변경하지 않습니다.
+- 소속을 바꿀 때는 `teams.json`에 정의된 `team_id`와 해당 섹션의 `team_name`을 함께 맞춥니다.
+- 비밀번호를 바꾸려면 실행 자료인 `data/users.json`의 `password`를 수정합니다. 초기 자료인 `fixtures/users.json`만 수정하면 기존 계정에는 반영되지 않습니다.
+- 로그인 이후 요청에 사용하는 서명 토큰과 관리자·섹션 권한 검사는 유지합니다. 비밀번호 자체는 API 응답에 포함하지 않습니다.
 
-`web/run.ps1`은 기본으로 통합 서버를 실행하며 `prepare`, `build`, `init`, `test`도 지원합니다.
-구형 개별 서버 실행 옵션 `parking`, `frontend`는 제거했습니다.
-React 개발 화면이 필요할 때만 `web/frontend`에서 `npm.cmd run dev`를 실행합니다.
-개발 화면은 `http://localhost:5173/`이며, 먼저 실행한 8080 통합 서버로 API를 프록시합니다.
-운영에서는 8080 서버만 실행합니다.
-영상·검출 결과·모델·생성 캐시·dist·node_modules·DB·서명 키는 Git에서 제외합니다.
+| `web/backend/data/` 파일 | 내용 |
+|---|---|
+| `users.json` | 아이디·평문 비밀번호·이름·권한·섹션 ID·섹션명 |
+| `teams.json` | 섹션 정보 |
+| `vehicles.json` | 등록 차량·소속·저장된 차량 위치 |
+| `vehicle_schedules.json` | 날짜별 운행 일정·최대 한 달 평일 반복 |
+| `vehicle_replay_state.json` | 추적 모드에서 갱신하는 차량 상태·구역. 자동 생성, Git 제외 |
+| `tracking_logs.json` | 등록 차량 위치 갱신 로그 |
+| `map_layout.json`, `parking_zones.json` | 지도용 기본·대체 자료 |
 
-### 실행에 불필요한 부분 정리 · 2026-10-10
+업무 저장소는 JSON 파일입니다. SQLite 경로는 Django 설정에 남아 있지만 현재 업무 기능은 ORM을 사용하지 않으며, 실행을 위해 `migrate`를 먼저 할 필요가 없습니다.
+`fixtures/`는 초기 자료, `data/`는 실제 실행 중 읽고 쓰는 자료입니다.
 
-- 제거: 화면에서 사용하지 않는 관리 요청·승인 API, 구형 개별 CCTV API·카메라 등록 연결 코드와 관련 테스트.
-- 제거: 이전 운영 현황·개별 CCTV·관리 요청 화면의 미사용 CSS, 중복 서버 실행 옵션, CORS 설정과 의존성.
-- 정리: 현재 manifest가 참조하지 않는 이전 프레임·인덱스, 생성된 Ultralytics 설정, 내용이 없는 SQLite 파일. 약 181 MiB를 확보했습니다.
-- 유지: 로그인·섹션별 스케줄·등록 차량 위치 갱신·현재 영상 재생, 원본 자료와 기존 업로드 자료, 현재 캐시·dist·개발 및 테스트 코드.
-- 외부 `server.py`가 참조하는 `web/index.html`, `app.js`, `style.css`는 필요하므로 보존했습니다.
-- 관리 요청 API는 더 이상 제공하지 않습니다. 기존 `backend/data/vehicle_requests.json`은 보관하고 새 설치에서는 생성하지 않습니다.
+로그인 토큰은 브라우저의 `localStorage`에 보관하며 서버에서 8시간 유효성을 검사합니다.
+서명 키는 `WEB_SECRET_KEY` 환경변수 또는 `web/.secret-key`를 사용합니다.
+키 파일이 없으면 자동 생성되며 키를 변경하면 기존 토큰을 다시 사용할 수 없으므로 재로그인해야 합니다.
 
-새로운 설치 라이브러리는 없습니다. 기존 실행 명령은 그대로입니다.
+## 5. 현재 화면과 기능
+
+### 관리자: 실시간 분석
+
+관리자로 로그인하면 영상·지도·차단기 기록을 한 화면에서 표시합니다.
+넓은 화면은 왼쪽 큰 영상, 오른쪽 지도와 그 아래 차단기 기록으로 배치합니다.
+폭이 1,100px 이하이면 세로로 배치합니다.
+
+- 재생·일시정지, ±5초, 한 프레임 이동, 처음으로, 0.5/1/1.5/2배속, 반복.
+- 검출 박스 ON/OFF와 카메라별 표시 필터.
+- **실시간 추적 모드 ON/OFF**. 기본 OFF이며, ON을 누르면 재생을 시작하고 현재 프레임의 지도 위치를 표시합니다. 등록 차량의 상태·구역도 약 1초마다 해당 재생 시점에 맞춰 동기화합니다. OFF에서는 위치 표시와 동기화를 멈추며 마지막으로 동기화한 차량 상태는 유지합니다.
+- 지도 구역에 마우스를 올리거나 Tab으로 초점을 맞추면 현재 프레임의 이동 차량 관측 수를 표시합니다.
+- 차단기 기록을 누르면 해당 프레임으로 이동합니다.
+
+여기서 “실시간”은 녹화 영상의 현재 재생 시점과 위치 표시를 동기화한다는 뜻입니다.
+재생 중 새 YOLO 검출이나 추적 계산을 실행하는 모드는 아닙니다.
+
+박스·지도 표시는 기존 뷰어의 공통 그리기 함수를 사용합니다.
+지도에는 기존 엔진의 **ACTIVE** 관측만 표시합니다.
+처음부터 주차돼 있던 차량은 엔진의 `has_moved` 기준 때문에 BEV에 올라오지 않으며 STOPPED/PARKED도 현재 지도 표시·집계에서 제외합니다.
+
+구역 집계는 기존 BEV 관측을 구역 경계로 나눈 값입니다.
+같은 차량이 여러 카메라의 관측에 포함될 수 있으므로 고유 차량 수나 주차면 점유 수로 해석하지 않습니다.
+Global ID는 분석 영상의 추적 번호입니다. 등록 차량 연결은 아래의 차단기 번호판·카메라별 추적 번호가 있는 경우에만 수행하며, 운행 스케줄의 시간·운전자와 자동 연결하지 않습니다.
+
+| 단축키 | 동작 |
+|---|---|
+| Space | 재생·일시정지 |
+| A / D | 5초 뒤로·앞으로 |
+| Shift+A / Shift+D | 30초 뒤로·앞으로 |
+| `,` / `.` | 이전·다음 프레임 |
+| R | 처음으로 |
+
+결과가 없는 프레임에 이전 프레임의 박스를 대신 표시하지 않습니다.
+브라우저는 기본 60프레임씩 요청하고 최대 360프레임을 보관하며, 서버 요청 한도는 120프레임입니다.
+사용자별 재생 위치는 독립적이고 뒤로 이동해도 저장된 ID를 그대로 읽습니다.
+브라우저 탭을 숨기거나 해당 화면을 벗어나면 재생을 멈춥니다.
+
+### 일반 사용자: 차량 현황·차량 운행 스케줄
+
+일반 사용자는 본인 섹션의 차량과 일일 운행 일정을 확인합니다.
+
+- 차량 현황: 등록 차량 목록에 `A 구역`처럼 저장된 구역 이름을 표시합니다. 이동 차량은 구역 대신 `운행중`, 출차 차량은 `출차`, 확인된 구역이 없으면 `구역 미확인`으로 표시합니다. 최종 감지 시각은 화면에 표시하지 않습니다.
+- 지도 아래에는 별도 범례·구역 필터·차량 상세·중복 차량 목록·위치 수신 대기 안내를 표시하지 않습니다. 지도 확대·축소와 위치 갱신은 유지합니다.
+- 운행 스케줄: 날짜 이동, **06:00~20:00** 시간표, 차량·운전자·목적지·목적, 30초마다 갱신. 일반 사용자·관리자 모두 해당 시간 안에서만 신청·수정할 수 있으며, 06:00 시작과 20:00 종료를 허용합니다.
+- 본인의 운행 등록과 본인이 등록한 일정의 수정·취소.
+- 같은 시간의 차량 또는 운전자 중복 예약 방지. 종료 시간은 시작 시간보다 늦어야 합니다. 기존 시간 외 일정은 삭제하지 않고 운행 상세 목록에 유지하며, 시간표에는 06:00~20:00에 해당하는 부분만 표시합니다.
+
+API와 스케줄 컴포넌트에는 관리자 전체 조회·편집 기능도 남아 있습니다.
+다만 **현재 관리자 화면에는 스케줄 메뉴를 표시하지 않고 실시간 분석만 보여 줍니다.**
+
+등록 차량 위치는 저장된 업무 데이터, 관리자 `tracking-events` API 또는 추적 모드의 차단기·저장 추적 결과 연결을 사용합니다.
+관리 요청·승인 화면과 구형 개별 CCTV 재생 화면은 현재 제공하지 않습니다.
+
+### 최대 한 달 평일 반복 운행
+
+운행 등록에서 **평일 반복 (월~금)**을 선택하고 **반복 시작일·종료일**을 지정합니다.
+기본값은 반복하지 않는 단일 날짜 일정입니다.
+
+- 시작일과 종료일을 포함하며 토·일은 제외합니다. 공휴일이 월~금이면 포함합니다.
+- 최대 기간은 시작일의 한 달 뒤 같은 날짜 직전까지입니다. 예: 10월 12일~11월 11일.
+- 다음 달에 같은 날짜가 없으면 그달 마지막 날짜를 기준으로 계산합니다. 예: 2027년 1월 31일 시작은 2월 27일까지.
+- 주말만 있는 기간, 종료일이 시작일보다 이른 경우, 한 달을 초과하는 경우는 등록할 수 없습니다.
+- 운행 시간은 반복일 모두 동일하며 06:00~20:00 범위입니다.
+- 실제 운행일이 겹칠 때 같은 차량 또는 운전자의 시간 중복을 검사합니다. 반복 기간 중 하루라도 충돌하면 전체 등록·수정을 거부합니다.
+- 반복 일정의 수정·취소는 해당 기간 전체에 적용합니다. 개별 날짜만 제외하는 기능은 제공하지 않습니다.
+- 일반 사용자는 소속 섹션의 일정을 조회하고 본인이 등록한 일정만 수정·취소합니다. 관리자 API는 전체 섹션을 관리합니다.
+
+저장 파일은 `web/backend/data/vehicle_schedules.json`입니다. 날짜별 복사본 대신 기간을 가진 일정 한 건으로 저장합니다.
+조회 응답의 `date`는 반복 시작일을 유지하므로 다른 반복일에서 수정해도 시작일이 밀리지 않습니다.
+
+```json
+{
+  "date": "2026-10-12",
+  "repeat_weekdays": true,
+  "repeat_until": "2026-11-11",
+  "start_time": "08:00",
+  "end_time": "15:00"
+}
+```
+
+위는 반복 관련 필드 예시이며 실제 등록에는 차량·운전자·목적지·운행 목적도 필요합니다.
+단일 날짜 일정은 `repeat_weekdays: false`, `repeat_until: null`로 저장합니다.
+기존 `date: "ALL"`과 `repeat_daily` 방식은 삭제했으며 API에서도 받지 않습니다.
+기존 고정 시연 일정 4건은 내용·차량·시간을 유지하고 2026-10-10~2026-11-09 평일 반복으로 전환했습니다.
+
+광양디지털통신기술섹션의 시연 차량은 다음 4대입니다.
+차량 연결에 쓰는 `id`는 유지하고 번호판·이름은 `vehicles.json`에서 관리합니다.
+
+| 차량 ID | 번호판 | 기본 고정 기록 | 운전자 |
+|---|---|---|---|
+| `V001` | `111가 1111` | 06:00–07:00 | 권혁돈 |
+| `V-DIGITAL-002` | `222가 2222` | 07:00–08:00 | 디지털 사용자 2 |
+| `V-DIGITAL-003` | `111가 1234` | 10:00–11:00 | 디지털 사용자 3 |
+| `V-DIGITAL-004` | `222나 4567` | 13:00–14:00 | 권혁돈 |
+
+기존 날짜별 운행 기록의 당시 번호판·이름은 과거 이력으로 보존합니다.
+`fixtures/vehicle_schedules.json`과 `fixtures/vehicles.json`에도 시연 자료를 넣었습니다.
+초기화는 기존 실행 파일을 덮어쓰지 않습니다.
+
+### 입차 시 차량 목록 갱신 시연
+
+1. 관리자 계정으로 실시간 분석을 열고 **실시간 추적 모드 ON**을 누릅니다.
+2. 차단기 기록의 번호판을 등록 차량과 비교합니다. 번호판의 공백 차이는 무시합니다.
+3. 입차 프레임에서 `gate.camera_id`와 이벤트의 `track_id`를 저장 검출 결과의 카메라·`local_id`에 연결합니다. `track_id`를 Global ID로 해석하지 않습니다.
+4. 해당 관측의 기존 Global ID를 따라 카메라가 바뀐 뒤에도 저장된 BEV 결과를 읽습니다. 웹에서 YOLO·추적·좌표 투영을 다시 계산하지 않습니다.
+5. `ACTIVE`·`STOPPED`는 **운행중**, `PARKED`는 기존 `data/maps/zones.json`의 A~N 경계와 대조한 **해당 구역**으로 표시합니다. 이동 중에는 이전 주차 구역을 지웁니다.
+6. 관측이 끊긴 이동 차량은 **구역 미확인**으로 표시합니다. 확인된 주차 상태는 마지막 확인 구역을 유지합니다. 출차 기록은 **출차**로 바꾸고 구역을 지웁니다. 입차만으로 주차 구역을 만들어 넣지 않습니다.
+
+다른 브라우저 또는 시크릿 창에서 `digital`로 로그인하면 3초마다 차량 목록 갱신을 확인할 수 있습니다.
+추적 모드 ON에서 되감기·처음으로·반복 재생을 하면 그 시점의 상태를 다시 적용합니다.
+입차 전으로 이동하면 해당 차량은 `vehicles.json`에 저장된 초기 상태로 돌아갑니다.
+카메라 표시 필터는 차량 목록 연동 범위를 제한하지 않습니다.
+
+`vehicle_replay_state.json`에 재생 시점의 상태를 따로 저장하고 조회 응답에 합칩니다.
+차량 원장 `vehicles.json`, 운행 시간표, 외부 차단기 기록과 원본 추적 결과는 이 동기화로 덮어쓰지 않습니다.
+초기 상태는 앞의 두 차량 `MOVING`, 나머지 두 차량 `UNKNOWN`이며 주차 구역은 지정하지 않았습니다.
+동기화 상태는 사용자별 재생 화면과 달리 공유됩니다. 여러 관리자가 동시에 ON을 켜면 마지막에 처리된 요청의 상태가 사용자 차량 목록에 표시됩니다.
+기존 데이터만 조회하려면 추적 모드를 OFF로 전환한 뒤 `web/backend/data/vehicle_replay_state.json`을 제거합니다.
+
+현재 `test02`의 차단기 기록에는 위 4대 중 `111가 1111`(8.2초), `222가 2222`(약 27.87초)의 입차만 있습니다.
+현재 캐시에서 두 차량의 연결된 Global ID는 각각 1과 4이며, 두 ID 모두 주차 확정 결과가 없습니다.
+따라서 이 자료로는 운행중·구역 미확인 전환까지 확인할 수 있습니다.
+`111가 1234`, `222나 4567`과 A~N 주차 구역 전환을 시연하려면 해당 번호판의 차단기 기록 및 연결되는 `PARKED` 추적 결과가 필요합니다.
+등록되지 않은 나머지 번호판은 차단기 목록에만 표시하고 다른 등록 차량의 상태를 변경하지 않습니다.
+
+## 6. 차단기 기록
+
+다음 순서에서 **처음 존재하는 파일 하나**를 읽습니다.
+
+1. `data/gate_logs/gate_logs.json`
+2. `data/gate_logs/gate_log.json`
+3. `data/gate_logs/<title>.json`
+
+현재 로컬은 첫 번째 파일이 없어 `data/gate_logs/gate_log.json`을 사용합니다.
+첫 파일이 존재하지만 내용이 잘못된 경우 다음 파일로 자동 전환하지 않습니다.
+
+```json
+{
+  "video": "test02",
+  "fps": 30.0,
+  "gate": {"id": "GATE-01", "camera_id": "cam01"},
+  "events": [
+    {"frame": 246, "type": "IN", "plate": "123가4567"}
+  ]
+}
+```
+
+- `video`는 선택된 영상 제목, `fps`는 재생 캐시 FPS와 같아야 합니다.
+- `events[].frame`은 0부터 시작하는 영상 범위 내 정수입니다.
+- 현재 프레임까지 발생한 기록을 최신순으로 표시합니다. 영상 처음에는 기록이 없을 수 있습니다.
+- 표시 형식은 `[입차] 123 가 4567` 또는 `[출차] 123 가 4567`입니다. 번호판이 없으면 “번호판 미확인”을 표시합니다.
+- 기록 아래 시간과 프레임 번호는 표시하지 않습니다. 프레임 값 자체는 동기화와 클릭 이동에 계속 필요합니다.
+- 파일 수정 후 페이지를 새로고침하면 다시 읽습니다. 차단기 기록만 수정한 경우 추적 캐시를 재생성하지 않습니다.
+- 기록이 없거나 형식·영상 제목·FPS가 잘못되면 기록 목록을 비우며, manifest API의 `warnings`에 사유를 넣습니다.
+
+루트의 `scripts/detect_gate_events.py`로 기록을 생성할 수도 있습니다. 사용법은 루트 README를 참고합니다.
+
+## 7. 코드 구조와 실행 흐름
+
+```text
+web/
+├── README.md
+├── run.py                         # Waitress 통합 서버, 기본 8080
+├── run.ps1                        # 실행·생성·빌드·초기화·테스트 보조 명령
+├── build_replay.py                 # 오프라인 재생 캐시 생성 CLI
+├── viewer-rendering.js             # 기존 뷰어와 React의 공통 그리기 함수
+├── index.html / app.js / style.css # 루트 server.py가 제공하는 기본 뷰어
+├── backend/
+│   ├── manage.py
+│   ├── seed.py
+│   ├── native_project.py           # 루트 구현의 읽기 전용 연결
+│   ├── config/                     # Django·React 파일 제공·JSON 압축
+│   ├── tracking/                   # 인증·차량·일정·지도·재생 API
+│   ├── replay/
+│   │   ├── export.py               # 기존 추적 엔진으로 캐시 생성
+│   │   └── store.py                # 캐시 검증·프레임·차단기 기록 읽기
+│   ├── fixtures/                   # 초기 업무 자료
+│   ├── data/                       # 실행 중 업무 JSON
+│   └── replay_data/                # 생성된 재생 캐시
+├── frontend/
+│   ├── package.json / package-lock.json
+│   ├── vite.config.js
+│   ├── src/
+│   │   ├── main.jsx                # 로그인·권한별 화면
+│   │   ├── CachedReplay.jsx        # 영상·박스·지도·차단기 기록
+│   │   ├── replayBuffer.js         # 제한된 프레임 캐시·표시용 집계
+│   │   ├── ParkingMap.jsx          # 일반 사용자 등록 차량 지도
+│   │   └── VehicleSchedule.jsx     # 일일 운행 일정
+│   ├── tests/
+│   └── dist/                       # 빌드 후 생성
+└── tests/                          # 외부 연결·재생 저장소 테스트
+```
+
+실행 경로는 다음과 같습니다.
+
+```text
+루트 전처리 도구 → 검출 JSONL
+  → web/build_replay.py
+  → 루트 TrackingEngine / LocalTracker / GlobalTracker / 보정 함수
+  → web/backend/replay_data/<title>/
+
+브라우저 → web/run.py → Django WSGI
+  ├─ frontend/dist/                     React 화면
+  ├─ tracking/                          로그인·차량·일정 JSON
+  └─ replay/store.py                    검증된 캐시·원본 영상·지도·차단기 기록
+       → CachedReplay.jsx
+       → viewer-rendering.js            현재 프레임의 박스·지도 표시
+```
+
+[외부 연결 어댑터](backend/native_project.py)는 `src.mosaic`의 영상·배치를 직접 사용합니다.
+`server.py`는 일반 import 시 엔진을 초기화하므로, 필요한 클래스·함수를 AST로 선택해 기존 정의를 실행합니다.
+오프라인 생성에는 `TrackingEngine`, HTTP 프레임 읽기에는 `DetectionCacheStore.read_frame()`,
+차단기 기록에는 기존 `gate_log()`를 사용합니다.
+원본 알고리즘을 웹에 복사하지 않지만 원본 정의와 구조에 의존하므로 외부 엔진 구조가 변경되면 어댑터를 점검해야 합니다.
+
+## 8. API와 설정
+
+업무 API는 로그인 토큰을 검사하고 섹션별 조회 범위를 제한합니다.
+관리자 영상 API는 일반 사용자에게 허용되지 않습니다.
+
+| 경로 | 메서드 | 용도 |
+|---|---|---|
+| `/api/auth/login/` | POST | 로그인 |
+| `/api/auth/me/` | GET | 현재 계정 |
+| `/api/vehicles/`, `/api/vehicles/<id>/` | GET | 권한 범위의 등록 차량 |
+| `/api/admin/vehicles/` | POST | 관리자 차량 등록 |
+| `/api/vehicle-schedules/` | GET, POST | 일일 일정 조회·등록 |
+| `/api/vehicle-schedules/<id>/` | PUT, DELETE | 권한 범위의 일정 수정·취소 |
+| `/api/parking-map/`, `/api/parking-map/image/` | GET, GET/HEAD | 일반 사용자용 지도 자료·이미지 |
+| `/api/parking-zones/` | GET | 지도 기준 구역 |
+| `/api/tracking-logs/` | GET | 관리자 등록 차량 감지 로그 |
+| `/api/tracking-events/` | POST | 관리자 등록 차량 위치 갱신 |
+| `/api/replay/manifest/` | GET | 관리자 재생 정보·차단기 기록 |
+| `/api/replay/frames/?start=0&count=60` | GET | 관리자 사전 계산 프레임 |
+| `/api/replay/vehicle-state/` | POST | 관리자 표시 프레임의 등록 차량 상태 동기화 (`cache_id`, 정수 `frame`) |
+| `/api/replay/video/`, `/api/replay/map/` | GET, HEAD | 관리자 영상·지도 파일 |
+
+인증 헤더는 `Authorization: Bearer <token>`입니다.
+브라우저의 영상·이미지 요청은 `token` 쿼리를 사용할 수 있으며 재생 요청은 `cache_id`도 검사합니다.
+영상 API는 HTTP Range를 지원하며 JSON 압축과 별도로 처리합니다.
+
+| 설정 | 적용 범위 |
+|---|---|
+| `WEB_REPLAY_VIDEO` | 웹 재생·기본 캐시 생성 대상. 없으면 루트 detection 설정 사용 |
+| `WEB_BEV_MAP` | 일반 사용자 지도 경로. 관리자 영상 지도는 계속 `data/maps/map.png` 사용 |
+| `WEB_SECRET_KEY` | 로그인 토큰 서명 키 |
+| `WEB_DEBUG=1` | Django 디버그 모드 |
+| `WEB_ALLOWED_HOSTS` | 접속을 허용할 호스트·IP 주소를 쉼표로 구분. 휴대폰 테스트 시 PC의 LAN IP 추가 |
+| `VITE_API_URL` | React의 API 기본 URL. 기본값 `/api`, 빌드·개발 시 적용 |
+
+기본 `ALLOWED_HOSTS`는 localhost·127.0.0.1·testserver입니다.
+`--host`를 바꾸는 것만으로 다른 호스트 이름의 접속까지 허용되지는 않습니다.
+실제 휴대폰 접속은 위의 모바일 안내처럼 `WEB_ALLOWED_HOSTS`에 PC의 LAN IP를 추가하고 서버를 다시 시작합니다.
+
+## 9. 개발·보조 명령·검증
+
+### React 개발 화면
+
+먼저 프로젝트 루트의 첫 번째 터미널에서 통합 서버를 실행합니다.
 
 ```powershell
 .\.venv\Scripts\python.exe -B web/run.py
 ```
 
-### 루트 구현 재사용 정리 · 2026-10-10
+두 번째 터미널에서는:
 
-외부 추적 결과에 웹이 따로 지도 위치를 만드는 코드를 제거했습니다.
-`server.py`의 `TrackingEngine`이 만든 `bev`를 그대로 사용하고,
-`DetectionCacheStore.read_frame()`으로 캐시 프레임을 읽습니다.
-기존 `app.js`의 `drawCameraLabel()`, `drawDetection()`, `drawBevTracking()`은
-`viewer-rendering.js`로 옮겨 원래 뷰어와 React가 같은 함수 본문을 호출합니다.
-웹 자체 SVG 차량 마커·상태 색상·별도 박스 그리기는 제거했습니다.
+```powershell
+cd web/frontend
+npm.cmd run dev
+```
 
-구역 툴팁은 현재 엔진이 출력한 이동 차량만 표시합니다. 처음부터 주차된 차량은
-루트 README의 `has_moved` 기준에 따라 지도 집계에 포함하지 않습니다.
-로그인·섹션별 스케줄과 사전 계산 재생 방식은 유지하며 변경은 `web/` 내부에 한정했습니다.
+개발 화면은 http://localhost:5173/ 이며 `/api`를 8080 서버로 프록시합니다.
+통합 서버의 포트를 바꿨다면 `web/frontend/vite.config.js`의 프록시 대상도 맞춰야 합니다.
+일반 실행용 8080 화면에는 변경 후 `npm.cmd run build`가 필요합니다.
+
+### PowerShell 실행 도우미
+
+프로젝트 루트에서 실행합니다.
+
+```powershell
+.\web\run.ps1 app
+.\web\run.ps1 prepare
+.\web\run.ps1 build
+.\web\run.ps1 init
+.\web\run.ps1 test
+```
+
+각각 서버 실행, 기본 영상의 최초 캐시 생성, React 빌드, 업무 데이터 초기화, 테스트입니다.
+`build`는 npm 설치를 수행하지 않으므로 먼저 `npm.cmd ci`를 실행해야 합니다.
+`prepare`에는 덮어쓰기 옵션이 없으므로 캐시 재생성 시에는 `web/build_replay.py --overwrite`를 직접 사용합니다.
+
+PowerShell 실행 정책 때문에 `run.ps1`이나 `Activate.ps1`이 막히면 가상환경 활성화 없이 첫 절의 Python 직접 실행 명령을 사용할 수 있습니다.
+
+### 검증 명령
+
+```powershell
+# AX_Parking 루트
+.\.venv\Scripts\python.exe -B web/backend/manage.py check
+.\.venv\Scripts\python.exe -B web/backend/manage.py test tracking
+.\.venv\Scripts\python.exe -B -m unittest discover -s web/tests -v
+
+Push-Location web/frontend
+npm.cmd test
+npm.cmd run build
+Pop-Location
+```
+
+로그인 검증에는 정상·실패 로그인, 계정 JSON 수정 반영, 비밀번호 응답 제외, 초기화 시 기존 업무 자료 보존을 포함합니다.
+섹션별 권한·일정 중복 예약 방지와 영상 재생의 기존 테스트도 함께 실행합니다.
+
+## 10. 자주 발생하는 문제
+
+| 증상 | 확인·처리 |
+|---|---|
+| `ERR_CONNECTION_REFUSED` | 서버 터미널의 오류를 확인하고 `web/run.py` 실행 여부와 8080 주소를 확인합니다. URL 뒤에 설명 문구를 붙이지 않습니다. |
+| 8080 포트 사용 중 | 기존 서버 터미널에서 Ctrl+C로 종료하거나 기존 서버를 사용합니다. 필요한 경우 `--port 8081`로 실행합니다. |
+| “웹 화면 빌드가 필요합니다” / HTTP 503 | `web/frontend`에서 `npm.cmd ci`와 `npm.cmd run build`를 실행합니다. |
+| `ModuleNotFoundError` | 루트 가상환경의 Python으로 루트 `requirements.txt`를 설치했는지 확인합니다. |
+| 재생 결과가 준비되지 않음 | 필요한 자료를 준비하고 선택된 영상의 캐시를 생성합니다. |
+| 원본·보정·추적·지도 변경 오류 | 변경된 원본·metadata·보정이 서로 맞는지 확인한 뒤 `--overwrite`로 캐시를 재생성합니다. |
+| YAML quoted scalar 오류 | `config/detection.yaml` 등 설정의 따옴표가 닫혔는지 확인합니다. |
+| 로그인 실패 | `users.json`이 있는지, 실제 계정 비밀번호를 사용했는지 확인합니다. seed는 기존 비밀번호를 재설정하지 않습니다. |
+| 관리자 영상 API 401/403 | 다시 로그인하고 관리자 계정인지 확인합니다. |
+| 지도 없음 | 관리자 지도는 `data/maps/map.png`, 구역은 `data/maps/zones.json`을 확인합니다. 일반 사용자 지도 경로는 `WEB_BEV_MAP`으로 따로 지정할 수 있습니다. |
+| 지도에 차량이 없음 | 추적 모드 ON, 현재 프레임 결과, 카메라 필터, ACTIVE 관측 여부, 보정·지도 크기를 확인합니다. 처음부터 주차된 차량은 제외됩니다. |
+| 차단기 기록이 바뀌지 않음 | 우선순위가 더 높은 파일 존재 여부, video·fps·frame을 확인하고 페이지를 새로고침합니다. |
+| 영상은 있으나 재생 불가 | 원본 파일·인증·브라우저 코덱을 확인합니다. OpenCV에서 열리는 것만으로 브라우저 재생을 보장하지 않습니다. |
+| 영상은 재생되지만 화면 수정 미반영 | React를 다시 빌드하고 브라우저를 새로고침합니다. |
+
+영상 코덱을 변경해야 한다면 H.264 등 브라우저가 지원하는 형식으로 준비하되
+동일한 프레임 수·FPS·해상도를 유지해야 합니다. 원본 내용이 변경되면 관련 metadata·검출 결과와 재생 캐시의 일치 여부도 확인합니다.
+
+## 11. Git에 포함되는 자료
+
+현재 ignore 규칙은 원본·분리 영상, YOLO 가중치, 검출 `detections.jsonl`,
+루트 가상환경, node_modules, React dist, 재생 캐시, 업로드 자료, SQLite 파일, 서명 키 등을 제외합니다.
+새 컴퓨터에서는 제외된 실행 자료를 별도로 준비해야 합니다.
+검출 `metadata.json`, 지도·보정 자료와 초기 업무 fixtures는 별도로 관리합니다.
+
+`web/backend/data/` 전체와 테스트 계정 `fixtures/users.json`은 현재 `web/.gitignore`에서 제외하지 않습니다.
+이 JSON에는 테스트용 평문 비밀번호가 포함됩니다. 실제 운영 계정과 비밀번호를 입력하지 않습니다.
+코드에는 특정 컴퓨터의 절대 경로를 넣지 않고 프로젝트 상대 경로를 사용합니다.

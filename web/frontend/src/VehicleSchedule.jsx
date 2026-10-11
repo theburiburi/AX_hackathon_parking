@@ -1,9 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
 import "./vehicleSchedule.css";
 
-const HOURS = Array.from({ length: 24 }, (_, i) => i);
+const START_MINUTE = 6 * 60, END_MINUTE = 20 * 60;
+const WINDOW_MINUTES = END_MINUTE - START_MINUTE;
+const HOURS = Array.from({ length: 14 }, (_, i) => i + 6);
 const TEAMS = {
-  SECTION_DIGITAL_COMMUNICATION: "디지털통신기술섹션",
+  SECTION_DIGITAL_COMMUNICATION: "광양디지털통신기술섹션",
   SECTION_COLD_DX: "냉간 DX 섹션",
   SECTION_STEELMAKING_CASTING: "제강연주섹션",
 };
@@ -14,6 +16,16 @@ export function moveDay(day, direction) {
   const value = new Date(`${day}T12:00:00Z`);
   value.setUTCDate(value.getUTCDate() + direction);
   return value.toISOString().slice(0, 10);
+}
+export function repeatLimit(day) {
+  const start = new Date(`${day}T12:00:00Z`);
+  const anchor = new Date(start);
+  anchor.setUTCDate(1);
+  anchor.setUTCMonth(anchor.getUTCMonth() + 1);
+  const lastDay = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() + 1, 0)).getUTCDate();
+  anchor.setUTCDate(Math.min(start.getUTCDate(), lastDay));
+  anchor.setUTCDate(anchor.getUTCDate() - 1);
+  return anchor.toISOString().slice(0, 10);
 }
 const longDate = (day) => new Date(`${day}T12:00:00+09:00`).toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul", year: "numeric", month: "long", day: "numeric", weekday: "long" });
 
@@ -37,21 +49,21 @@ export function ScheduleBoard({ vehicles, schedules, selectedId, onSelect, date 
     if (!rows.some((vehicle) => vehicle.id === item.vehicle_id)) rows.push({ id: item.vehicle_id, name: item.vehicle_name, plate_number: item.plate_number, team_id: item.team_id });
   }
   return <div className="schedule-scroll" tabIndex="0" role="region" aria-label="차량별 하루 시간표. 가로로 스크롤할 수 있습니다.">
-    <table className="schedule-board">
-      <caption className="schedule-sr-only">{date} 차량 운행 시간표 · 한국시간 00:00~24:00</caption>
+    <table className="schedule-board" style={{ "--schedule-hours": HOURS.length }}>
+      <caption className="schedule-sr-only">{date} 차량 운행 시간표 · 한국시간 06:00~20:00</caption>
       <colgroup><col className="schedule-vehicle-col" />{HOURS.map((h) => <col key={h} />)}</colgroup>
       <thead>
-        <tr><th rowSpan="2" scope="col" className="schedule-vehicle">차량 / 소속 섹션</th><th colSpan="6" scope="colgroup">새벽 · 00–06</th><th colSpan="6" scope="colgroup">오전 · 06–12</th><th colSpan="6" scope="colgroup">오후 · 12–18</th><th colSpan="6" scope="colgroup">저녁 · 18–24</th></tr>
+        <tr><th rowSpan="2" scope="col" className="schedule-vehicle">차량 / 소속 섹션</th><th colSpan="6" scope="colgroup">오전</th><th colSpan="8" scope="colgroup">오후</th></tr>
         <tr>{HOURS.map((h) => <th key={h} scope="col">{String(h).padStart(2, "0")}</th>)}</tr>
       </thead>
       <tbody>{rows.map((vehicle) => {
-        const items = schedules.filter((item) => item.vehicle_id === vehicle.id);
+        const items = schedules.filter((item) => item.vehicle_id === vehicle.id && minuteOfDay(item.end_time) > START_MINUTE && minuteOfDay(item.start_time) < END_MINUTE);
         return <tr key={vehicle.id}>
           <th scope="row" className="schedule-vehicle"><strong>{vehicle.plate_number}</strong><span>{vehicle.name}</span><small>{TEAMS[vehicle.team_id] || vehicle.team_id}</small></th>
-          <td colSpan="24" className="schedule-track-cell"><div className="schedule-track">
+          <td colSpan={HOURS.length} className="schedule-track-cell"><div className="schedule-track">
             {!items.length && <span className="schedule-free">등록된 운행 없음</span>}
             {items.map((item) => <button key={item.id} type="button" className={`schedule-block ${colorFor(item.team_id)} ${selectedId === item.id ? "active" : ""}`}
-              style={{ left: `${minuteOfDay(item.start_time) / 1440 * 100}%`, width: `${(minuteOfDay(item.end_time) - minuteOfDay(item.start_time)) / 1440 * 100}%` }}
+              style={{ left: `${(Math.max(START_MINUTE, minuteOfDay(item.start_time)) - START_MINUTE) / WINDOW_MINUTES * 100}%`, width: `${(Math.min(END_MINUTE, minuteOfDay(item.end_time)) - Math.max(START_MINUTE, minuteOfDay(item.start_time))) / WINDOW_MINUTES * 100}%` }}
               onClick={() => onSelect(item.id)} aria-pressed={selectedId === item.id}
               aria-label={`${item.plate_number} ${item.start_time}–${item.end_time} ${item.driver_name} · ${item.destination} · ${item.purpose}`}
               title={`${item.start_time}–${item.end_time} ${item.driver_name}\n${item.destination} · ${item.purpose}`}>
@@ -65,26 +77,41 @@ export function ScheduleBoard({ vehicles, schedules, selectedId, onSelect, date 
   </div>;
 }
 
-function ScheduleForm({ initial, date, user, vehicles, members, busy, error, onSave, onClose }) {
-  const [form, setForm] = useState(initial || { date, vehicle_id: "", driver_id: user.role === "ADMIN" ? "" : user.id, start_time: "09:00", end_time: "10:00", destination: "", purpose: "" });
+export function ScheduleForm({ initial, date, user, vehicles, members, busy, error, onSave, onClose }) {
+  const [form, setForm] = useState(() => initial ? {
+    ...initial, repeat_weekdays: !!initial.repeat_weekdays,
+    repeat_until: initial.repeat_until || repeatLimit(initial.date),
+  } : { date, repeat_weekdays: false, repeat_until: repeatLimit(date), vehicle_id: "", driver_id: user.role === "ADMIN" ? "" : user.id, start_time: "09:00", end_time: "10:00", destination: "", purpose: "" });
   const firstInput = useRef(null);
   useEffect(() => { firstInput.current?.focus(); }, []);
   const vehicle = vehicles.find((v) => v.id === form.vehicle_id);
   const drivers = members.filter((member) => member.team_id === vehicle?.team_id);
   const change = (key) => (event) => setForm({ ...form, [key]: event.target.value });
+  const changeDate = (event) => {
+    const nextDate = event.target.value;
+    if (!nextDate) return;
+    const limit = repeatLimit(nextDate);
+    setForm({ ...form, date: nextDate,
+      repeat_until: form.repeat_until >= nextDate && form.repeat_until <= limit ? form.repeat_until : limit });
+  };
   return <section className="schedule-editor" aria-labelledby="schedule-editor-title">
-    <div className="schedule-heading"><div><h3 id="schedule-editor-title">{initial ? "운행 일정 수정" : "새 운행 일정"}</h3><p>같은 날 안에서 시간을 선택하세요. 종료 시간은 24:00까지 입력할 수 있습니다.</p></div><button type="button" disabled={busy} onClick={onClose}>닫기</button></div>
+    <div className="schedule-heading"><div><h3 id="schedule-editor-title">{initial ? "운행 일정 수정" : "새 운행 일정"}</h3><p>운행 신청 가능 시간은 06:00~20:00입니다. 종료 시간은 시작 시간보다 늦어야 합니다.</p></div><button type="button" disabled={busy} onClick={onClose}>닫기</button></div>
     <form onSubmit={(event) => { event.preventDefault(); onSave(form); }}>
       <fieldset disabled={busy} className="schedule-form-grid">
-        <label>운행 날짜<input ref={firstInput} required type="date" value={form.date} onChange={change("date")} /></label>
+        <label>{form.repeat_weekdays ? "반복 시작일" : "운행 날짜"}<input ref={firstInput} required type="date" value={form.date} onChange={changeDate} /></label>
         <label>차량<select required value={form.vehicle_id} onChange={(event) => setForm({ ...form, vehicle_id: event.target.value, driver_id: user.role === "ADMIN" ? "" : user.id })}>
           <option value="">차량 선택</option>{vehicles.map((v) => <option key={v.id} value={v.id}>{v.plate_number} · {v.name}</option>)}
         </select></label>
         <label>운전자{user.role === "ADMIN" ? <select required value={form.driver_id} onChange={change("driver_id")}><option value="">운전자 선택</option>{drivers.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select> : <input readOnly value={user.name} />}</label>
-        <label>시작 시간<input required type="time" value={form.start_time} onChange={change("start_time")} /></label>
-        <label>종료 시간<input required type="text" inputMode="numeric" pattern="([01][0-9]|2[0-3]):[0-5][0-9]|24:00" placeholder="18:00" value={form.end_time} onChange={change("end_time")} /></label>
+        <label>시작 시간<input required type="time" min="06:00" max="19:59" step="60" value={form.start_time} onChange={change("start_time")} /></label>
+        <label>종료 시간<input required type="time" min="06:01" max="20:00" step="60" value={form.end_time} onChange={change("end_time")} /></label>
         <label>목적지<input required maxLength="120" placeholder="예: 제강 공장" value={form.destination} onChange={change("destination")} /></label>
         <label className="schedule-purpose">운행 목적<input required maxLength="200" placeholder="예: 설비 점검 및 현장 회의" value={form.purpose} onChange={change("purpose")} /></label>
+        <label className="schedule-repeat"><input type="checkbox" checked={form.repeat_weekdays} onChange={event => setForm({ ...form, repeat_weekdays: event.target.checked })} />평일 반복 (월~금)</label>
+        {form.repeat_weekdays && <>
+          <label>반복 종료일<input required type="date" min={form.date} max={repeatLimit(form.date)} value={form.repeat_until} onChange={change("repeat_until")} /></label>
+          <p className="schedule-repeat-help">시작일부터 최대 한 달 · 토·일 제외 · 공휴일 포함{initial && " · 변경은 반복 기간 전체에 적용됩니다."}</p>
+        </>}
         <button className="schedule-primary" type="submit">{busy ? "저장 중…" : initial ? "변경 저장" : "일정 등록"}</button>
       </fieldset>
       {error && <p role="alert" className="error">{error}</p>}
@@ -118,7 +145,7 @@ function ScheduleDay({ date, team, user, api, token }) {
     try {
       await call(api, token, editor?.id ? `${editor.id}/` : "", { method: editor?.id ? "PUT" : "POST", body: JSON.stringify(form) });
       setEditor(null); setSelectedId(null); setConfirmDelete(null);
-      setMessage(`${form.date} ${form.start_time}–${form.end_time} 일정이 저장되었습니다.`); setRevision((value) => value + 1);
+      setMessage(`${form.repeat_weekdays ? `${form.date}~${form.repeat_until} 평일 반복` : form.date} ${form.start_time}–${form.end_time} 일정이 저장되었습니다.`); setRevision((value) => value + 1);
     } catch (err) { setSaveError(err.message); }
     finally { setBusy(false); }
   };
@@ -141,7 +168,7 @@ function ScheduleDay({ date, team, user, api, token }) {
       <div><span>조회 범위</span><strong className="schedule-scope">{TEAMS[team] || "전체 섹션"}</strong></div>
     </div>
     <section className="panel schedule-panel">
-      <div className="schedule-heading"><div><h2>일일 운행 시간표</h2><p>한국시간 00:00–24:00 · 30초마다 갱신 · 운행 블록을 누르면 상세 정보를 볼 수 있습니다.</p></div>
+      <div className="schedule-heading"><div><h2>일일 운행 시간표</h2><p>한국시간 06:00–20:00 · 30초마다 갱신 · 운행 블록을 누르면 상세 정보를 볼 수 있습니다.</p></div>
         <button className="schedule-primary" disabled={busy || !data.vehicles.length || !!error} onClick={() => { setEditor({}); setSaveError(""); setConfirmDelete(null); }}>+ 운행 등록</button>
       </div>
       <div className="schedule-legend">{Object.entries(TEAMS).filter(([id]) => !team || team === id).map(([id, label]) => <span key={id}><i className={colorFor(id)} />{label}</span>)}</div>
@@ -149,16 +176,16 @@ function ScheduleDay({ date, team, user, api, token }) {
       {message && <p className="success" role="status">{message}</p>}
       {editor && <ScheduleForm key={editor.id || "new"} initial={editor.id ? editor : null} date={date} user={user} vehicles={data.vehicles} members={data.members} busy={busy} error={saveError} onSave={save} onClose={() => { setEditor(null); setSaveError(""); }} />}
       <ScheduleBoard vehicles={data.vehicles} schedules={data.schedules} selectedId={selectedId} onSelect={select} date={date} />
-      <p className="schedule-hint">짧은 일정의 전체 내용은 아래 목록에서 확인하세요. 일반 사용자는 본인이 등록한 일정만 수정·취소할 수 있습니다.</p>
+      <p className="schedule-hint">일반 사용자는 본인이 등록한 일정만 수정·취소할 수 있습니다. 평일 반복 일정의 변경·취소는 반복 기간 전체에 적용됩니다.</p>
     </section>
     <section ref={detailRef} className="panel schedule-detail">
       <div className="schedule-heading"><h2>운행 상세 <span className="record-count">{data.schedules.length}건</span></h2><span>시간순 정렬</span></div>
       {!editor && saveError && <p className="error" role="alert">{saveError}</p>}
-      {!data.schedules.length ? <div className="schedule-empty"><strong>이 날짜에는 운행 일정이 없습니다.</strong><p>운행 등록 버튼으로 첫 일정을 추가하세요.</p></div> : <div className="schedule-scroll"><table className="schedule-list">
-        <thead><tr><th scope="col">시간</th><th scope="col">차량 / 섹션</th><th scope="col">운전자</th><th scope="col">목적지</th><th scope="col">운행 목적</th><th scope="col">관리</th></tr></thead>
-        <tbody>{data.schedules.map((item) => <tr key={item.id} className={selectedId === item.id ? "schedule-selected" : ""}>
-          <td className="schedule-time">{item.start_time}–{item.end_time}</td><td><strong>{item.plate_number}</strong><small>{TEAMS[item.team_id] || item.team_id}</small></td><td>{item.driver_name}</td><td>{item.destination}</td><td>{item.purpose}</td>
-          <td>{item.can_edit ? <div className="schedule-actions">{confirmDelete === item.id ? <><span>일정을 취소할까요?</span><button disabled={busy} className="schedule-danger" onClick={() => remove(item.id)}>취소 확정</button><button disabled={busy} onClick={() => setConfirmDelete(null)}>유지</button></> : <><button disabled={busy || !!error} aria-label={`${item.start_time} ${item.driver_name} 일정 수정`} onClick={() => { setEditor(item); setSaveError(""); setConfirmDelete(null); setSelectedId(item.id); }}>수정</button><button disabled={busy || !!error} className="schedule-danger" aria-label={`${item.start_time} ${item.driver_name} 일정 취소`} onClick={() => { setConfirmDelete(item.id); setEditor(null); setSaveError(""); }}>취소</button></>}</div> : <span className="schedule-readonly">조회 전용</span>}</td>
+      {!data.schedules.length ? <div className="schedule-empty"><strong>이 날짜에는 운행 일정이 없습니다.</strong><p>운행 등록 버튼으로 첫 일정을 추가하세요.</p></div> : <div className="schedule-scroll"><table className="schedule-list" role="table" aria-label="운행 상세 목록">
+        <thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">시간</th><th role="columnheader" scope="col">차량 / 섹션</th><th role="columnheader" scope="col">운전자</th><th role="columnheader" scope="col">목적지</th><th role="columnheader" scope="col">운행 목적</th><th role="columnheader" scope="col">관리</th></tr></thead>
+        <tbody role="rowgroup">{data.schedules.map((item) => <tr role="row" key={item.id} className={selectedId === item.id ? "schedule-selected" : ""}>
+          <td role="cell" data-label="시간" className="schedule-time">{item.start_time}–{item.end_time}{item.repeat_weekdays && <small>평일 반복 · {item.date}~{item.repeat_until}</small>}</td><td role="cell" data-label="차량 / 섹션"><strong>{item.plate_number}</strong><small>{TEAMS[item.team_id] || item.team_id}</small></td><td role="cell" data-label="운전자">{item.driver_name}</td><td role="cell" data-label="목적지">{item.destination}</td><td role="cell" data-label="운행 목적">{item.purpose}</td>
+          <td role="cell" data-label="관리">{item.can_edit ? <div className="schedule-actions">{confirmDelete === item.id ? <><span>{item.repeat_weekdays ? "반복 기간 전체의 일정을 취소할까요?" : "일정을 취소할까요?"}</span><button disabled={busy} className="schedule-danger" onClick={() => remove(item.id)}>취소 확정</button><button disabled={busy} onClick={() => setConfirmDelete(null)}>유지</button></> : <><button disabled={busy || !!error} aria-label={`${item.start_time} ${item.driver_name} 일정 수정`} onClick={() => { setEditor(item); setSaveError(""); setConfirmDelete(null); setSelectedId(item.id); }}>수정</button><button disabled={busy || !!error} className="schedule-danger" aria-label={`${item.start_time} ${item.driver_name} 일정 취소`} onClick={() => { setConfirmDelete(item.id); setEditor(null); setSaveError(""); }}>취소</button></>}</div> : <span className="schedule-readonly">조회 전용</span>}</td>
         </tr>)}</tbody>
       </table></div>}
     </section>

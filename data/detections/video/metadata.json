@@ -1,0 +1,168 @@
+{
+  "format_version": 4,
+  "title": "video",
+  "source_video": "data/video/raw.mp4",
+  "source_size": [
+    3840,
+    2160
+  ],
+  "fps": 30.0,
+  "frame_count": 12779,
+  "camera_ids": [
+    "cam01",
+    "cam02",
+    "cam03",
+    "cam05",
+    "cam06",
+    "cam07",
+    "cam08"
+  ],
+  "layout": {
+    "grid": {
+      "rows": 3,
+      "cols": 3
+    },
+    "cameras": [
+      {
+        "id": "cam01",
+        "cell": [
+          1,
+          1
+        ]
+      },
+      {
+        "id": "cam02",
+        "cell": [
+          1,
+          2
+        ]
+      },
+      {
+        "id": "cam03",
+        "cell": [
+          1,
+          3
+        ]
+      },
+      {
+        "id": "cam05",
+        "cell": [
+          2,
+          1
+        ]
+      },
+      {
+        "id": "cam06",
+        "cell": [
+          2,
+          2
+        ]
+      },
+      {
+        "id": "cam07",
+        "cell": [
+          2,
+          3
+        ]
+      },
+      {
+        "id": "cam08",
+        "cell": [
+          3,
+          1
+        ]
+      }
+    ],
+    "crop_rects": {
+      "cam01": [
+        0,
+        0,
+        1280,
+        720
+      ],
+      "cam02": [
+        1280,
+        0,
+        2560,
+        720
+      ],
+      "cam03": [
+        2560,
+        0,
+        3840,
+        720
+      ],
+      "cam05": [
+        0,
+        720,
+        1280,
+        1440
+      ],
+      "cam06": [
+        1280,
+        720,
+        2560,
+        1440
+      ],
+      "cam07": [
+        2560,
+        720,
+        3840,
+        1440
+      ],
+      "cam08": [
+        0,
+        1440,
+        1280,
+        2160
+      ]
+    }
+  },
+  "prepare": {
+    "created_at": "2026-10-10T03:45:26.650991+00:00",
+    "elapsed_seconds": 900.0537423999631,
+    "mosaic_encoder": "h264_nvenc",
+    "mosaic_quality": 26,
+    "cams_encoder": "libx264",
+    "cams_quality": 18,
+    "mosaic": "data/video/mosaic.mp4",
+    "cams": {
+      "cam01": "data/video/cams/cam01.mp4",
+      "cam02": "data/video/cams/cam02.mp4",
+      "cam03": "data/video/cams/cam03.mp4",
+      "cam05": "data/video/cams/cam05.mp4",
+      "cam06": "data/video/cams/cam06.mp4",
+      "cam07": "data/video/cams/cam07.mp4",
+      "cam08": "data/video/cams/cam08.mp4"
+    },
+    "content": "data/video/content.jsonl",
+    "filled_frames": {
+      "cam01": 2314,
+      "cam02": 6586,
+      "cam03": 10014,
+      "cam05": 2873,
+      "cam06": 7981,
+      "cam07": 3711,
+      "cam08": 7659
+    }
+  },
+  "detection": {
+    "created_at": "2026-10-10T04:13:25.800768+00:00",
+    "elapsed_seconds": 1525.0403819999774,
+    "frame_count": 12779,
+    "total_detections": 1229152,
+    "model": {
+      "weights": "yolo26x.pt",
+      "device": 0
+    },
+    "inference": {
+      "imgsz": 960,
+      "conf": 0.2,
+      "iou": 0.7,
+      "class_agnostic_iou": 0.7,
+      "quantize": 16,
+      "batch_size": 7
+    },
+    "detections": "data/video/detections.jsonl"
+  }
+}

@@ -1,0 +1,50 @@
+[
+  {
+    "id": "admin",
+    "password": "test",
+    "name": "관리자",
+    "role": "ADMIN",
+    "team_id": null,
+    "team_name": "관리자"
+  },
+  {
+    "id": "digital",
+    "password": "test",
+    "name": "권혁돈",
+    "role": "USER",
+    "team_id": "SECTION_DIGITAL_COMMUNICATION",
+    "team_name": "광양디지털통신기술섹션"
+  },
+  {
+    "id": "cold-dx",
+    "password": "test",
+    "name": "조의재",
+    "role": "USER",
+    "team_id": "SECTION_COLD_DX",
+    "team_name": "냉간 DX 섹션"
+  },
+  {
+    "id": "steelmaking",
+    "password": "test",
+    "name": "한용만",
+    "role": "USER",
+    "team_id": "SECTION_STEELMAKING_CASTING",
+    "team_name": "제강연주섹션"
+  },
+  {
+    "id": "digital2",
+    "password": "test",
+    "name": "디지털 사용자 2",
+    "role": "USER",
+    "team_id": "SECTION_DIGITAL_COMMUNICATION",
+    "team_name": "광양디지털통신기술섹션"
+  },
+  {
+    "id": "digital3",
+    "password": "test",
+    "name": "디지털 사용자 3",
+    "role": "USER",
+    "team_id": "SECTION_DIGITAL_COMMUNICATION",
+    "team_name": "광양디지털통신기술섹션"
+  }
+]

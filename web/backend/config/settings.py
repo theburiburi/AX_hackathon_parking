@@ -9,7 +9,9 @@ if not secret_file.exists():
     secret_file.write_text(secrets.token_urlsafe(48), encoding="utf-8")
 SECRET_KEY = os.environ.get("WEB_SECRET_KEY") or secret_file.read_text(encoding="utf-8").strip()
 DEBUG = os.environ.get("WEB_DEBUG") == "1"
-ALLOWED_HOSTS = ["localhost", "127.0.0.1", "testserver"]
+ALLOWED_HOSTS = [host.strip() for host in os.environ.get(
+    "WEB_ALLOWED_HOSTS", "localhost,127.0.0.1,testserver"
+).split(",") if host.strip()]
 INSTALLED_APPS = ["django.contrib.contenttypes", "django.contrib.staticfiles", "rest_framework", "tracking"]
 MIDDLEWARE = ["config.compression.JsonCompressionMiddleware", "django.middleware.common.CommonMiddleware"]
 ROOT_URLCONF = "config.urls"

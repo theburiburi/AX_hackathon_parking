@@ -18,11 +18,11 @@ test("first render works before map and layout arrive", () => {
 });
 
 test("vehicles without coordinates render when map and layout are missing", () => {
-  assert.match(render({ vehicles: [vehicle] }), /TEST-01/);
+  assert.match(render({ vehicles: [vehicle] }), /1 위치 미확인/);
 });
 
 test("missing map does not access null vehicle coordinates", () => {
-  assert.match(render({ layout: { map_id: map.filename, zones: [] }, vehicles: [{ ...vehicle, map_position: null }] }), /TEST-01/);
+  assert.match(render({ layout: { map_id: map.filename, zones: [] }, vehicles: [{ ...vehicle, map_position: null }] }), /1 위치 미확인/);
 });
 
 test("map can render while layout is missing or its zones are not yet available", () => {
@@ -30,9 +30,12 @@ test("map can render while layout is missing or its zones are not yet available"
   assert.match(render({ parkingMap: map, layout: { map_id: map.filename }, vehicles: [vehicle] }), /parking-canvas/);
 });
 
-test("loaded layout renders zone controls", () => {
+test("map footer does not duplicate zone filters, vehicle details or the vehicle list", () => {
   const layout = { map_id: map.filename, zones: [{ id: "A", name: "A 구역", color: "#38bdf8", label: [50, 50], polygon: [[0, 0], [100, 0], [100, 100]] }] };
-  assert.match(render({ parkingMap: map, layout, vehicles: [vehicle] }), /A 구역/);
+  const html = render({ parkingMap: map, layout, vehicles: [vehicle] });
+  assert.match(html, /parking-canvas/);
+  assert.doesNotMatch(html, /parking-legend|parking-zone-filters|parking-detail|parking-vehicle-list|parking-note/);
+  assert.doesNotMatch(html, /사진 속 차량|점선 마커|차량 위치 수신 대기/);
 });
 
 test("zone location works without recognition coordinates and exact coordinates take precedence", () => {
@@ -45,10 +48,10 @@ test("zone location works without recognition coordinates and exact coordinates 
   assert.deepEqual(displayPosition({ ...parked, map_position: coordinates }, map.filename, zones), { ...coordinates, source: "exact" });
 });
 
-test("zone-only vehicle is identified by plate and shown as approximate", () => {
+test("zone-only vehicle still contributes to the map position count", () => {
   const html = render({ parkingMap: map, layout: { map_id: map.filename, zones: [{ id: "A", name: "A 구역", label: [59, 22] }] }, vehicles: [{ ...vehicle, current_zone_id: "A" }] });
-  assert.match(html, /TEST-01/);
-  assert.match(html, /A · 구역 기준/);
+  assert.match(html, /<strong>1<\/strong> 위치 확인/);
+  assert.match(html, /0 위치 미확인/);
 });
 
 test("old numbered layouts cannot show numbered regions or false approximate positions", () => {
@@ -64,7 +67,7 @@ test("native zone IDs and labels are authoritative instead of hardcoded letters"
   const zone = { id: "EXTERNAL", name: "외부 구역", label: [50, 50] };
   const layout = { map_id: map.filename, source: "native", zones: [zone] };
   const html = render({ parkingMap: map, layout, vehicles: [{ ...vehicle, current_zone_id: zone.id }] });
-  assert.match(html, /외부 구역/);
-  assert.match(html, /EXTERNAL · 구역 기준/);
+  assert.match(html, /<strong>1<\/strong> 위치 확인/);
+  assert.deepEqual(displayPosition({ ...vehicle, current_zone_id: zone.id }, map.filename, [zone]), { x: 50, y: 50, source: "zone" });
   assert.equal(zoneName(zone.id, [zone]), "외부 구역");
 });

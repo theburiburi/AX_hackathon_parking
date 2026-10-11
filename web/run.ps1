@@ -8,7 +8,7 @@ $webPython = Join-Path $PSScriptRoot '../.venv/Scripts/python.exe'
 Push-Location $PSScriptRoot
 try {
     if ($Service -ne 'build' -and -not (Test-Path -LiteralPath $webPython)) {
-        throw 'Create AX_Parking/.venv and install web/requirements.txt in that environment first.'
+        throw 'Create AX_Parking/.venv and install the root requirements.txt in that environment first.'
     }
     switch ($Service) {
         'app' { & $webPython -B run.py }

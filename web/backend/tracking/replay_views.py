@@ -1,10 +1,43 @@
-"""Authenticated read-only replay endpoints. Never run inference or tracking."""
+"""Authenticated replay reads and explicit demo state sync; no inference."""
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from replay.store import ReplayError, ReplayStore
+from replay.vehicle_state import replay_snapshot
+from threading import RLock
+from . import json_store
 from .media_stream import media_response
 from .views import login_required
+from .parking_state import vehicle_fingerprint, manual_zone_deltas
+
+_vehicle_lock = RLock()
+
+
+@api_view(["POST"])
+@login_required("ADMIN")
+def vehicle_state(request):
+    """Explicit demo synchronization; GET and frame prefetch stay read-only."""
+    data = request.data
+    if not isinstance(data, dict) or type(data.get("frame")) is not int:
+        return Response({"detail": "frame은 정수여야 합니다."}, status=400)
+    try:
+        with _vehicle_lock:
+            store = open_store(request)
+            if data.get("cache_id") != store.manifest["cache_id"]:
+                return Response({"detail": "재생 결과가 변경됐습니다. 다시 불러오세요."}, status=409)
+            n = data["frame"]
+            if not 0 <= n < store.manifest["frame_count"]:
+                return Response({"detail": "영상 프레임 범위를 벗어났습니다."}, status=400)
+            vehicles = json_store.read("vehicles")
+            updates, parking_deltas = replay_snapshot(store, n, vehicles)
+            snapshot = {"cache_id": store.manifest["cache_id"], "video": store.title,
+                        "frame": n, "vehicles": updates, "parking_deltas": parking_deltas,
+                        "parking_base_deltas": manual_zone_deltas(vehicles),
+                        "base_states": {vehicle["id"]: vehicle_fingerprint(vehicle) for vehicle in vehicles if vehicle["id"] in updates}}
+            json_store.write("vehicle_replay_state", snapshot)
+        return Response({"frame": n, "updated": len(updates)})
+    except (ReplayError, OSError, ValueError, KeyError, TypeError) as exc:
+        return Response({"detail": str(exc)}, status=503)
 
 
 def open_store(request):

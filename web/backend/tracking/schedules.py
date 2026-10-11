@@ -1,5 +1,6 @@
 """Daily, section-scoped vehicle bookings for the single-process local web server."""
-from datetime import date
+from calendar import monthrange
+from datetime import date, timedelta
 import re
 from threading import RLock
 from uuid import uuid4
@@ -34,10 +35,11 @@ def valid_date(value):
 
 
 def minutes(value, end=False):
+    # Existing historical records can still end at midnight.
     if end and value == "24:00":
         return 1440
     if not isinstance(value, str) or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value):
-        raise ValidationError("시간을 HH:MM 형식으로 입력하세요. 종료는 24:00까지 가능합니다.")
+        raise ValidationError("시간을 HH:MM 형식으로 입력하세요.")
     hour, minute = map(int, value.split(":"))
     return hour * 60 + minute
 
@@ -50,8 +52,25 @@ def can_edit(user, item):
     return user["role"] == "ADMIN" or item["created_by"] == user["id"]
 
 
+def last_repeat_day(start):
+    """Inclusive end of one calendar month, clamping the next-month anchor."""
+    year, month = (start.year + 1, 1) if start.month == 12 else (start.year, start.month + 1)
+    return date(year, month, min(start.day, monthrange(year, month)[1])) - timedelta(days=1)
+
+
+def occurrence_days(item):
+    start = date.fromisoformat(item["date"])
+    if not item.get("repeat_weekdays"):
+        return {start}
+    end = min(date.fromisoformat(item["repeat_until"]), last_repeat_day(start))
+    return {start + timedelta(days=offset) for offset in range((end - start).days + 1)
+            if (start + timedelta(days=offset)).weekday() < 5}
+
+
 def present(user, item):
-    return {**item, "can_edit": can_edit(user, item)}
+    # Keep the series start date when opening an occurrence for editing.
+    return {**item, "repeat_weekdays": item.get("repeat_weekdays", False),
+            "can_edit": can_edit(user, item)}
 
 
 def validated(data, user, old=None):
@@ -67,9 +86,24 @@ def validated(data, user, old=None):
     if not driver:
         raise ValidationError("차량과 같은 섹션의 운전자를 선택하세요.")
     day = valid_date(data.get("date"))
+    if "repeat_daily" in data:
+        raise ValidationError("매일 고정 기능은 삭제되었습니다. 평일 반복을 선택하세요.")
+    repeat_weekdays = data.get("repeat_weekdays", old.get("repeat_weekdays", False) if old else False)
+    if type(repeat_weekdays) is not bool:
+        raise ValidationError("평일 반복 여부는 true 또는 false로 입력하세요.")
+    repeat_until = None
+    if repeat_weekdays:
+        repeat_until = valid_date(data.get("repeat_until", old.get("repeat_until") if old else None))
+        start_day, end_day = date.fromisoformat(day), date.fromisoformat(repeat_until)
+        if end_day < start_day or end_day > last_repeat_day(start_day):
+            raise ValidationError("반복 종료일은 시작일 이후 최대 한 달 이내로 선택하세요.")
+        if not occurrence_days({"date": day, "repeat_weekdays": True, "repeat_until": repeat_until}):
+            raise ValidationError("반복 기간에 평일(월~금)이 하루 이상 포함되어야 합니다.")
     start, end = minutes(data.get("start_time")), minutes(data.get("end_time"), end=True)
     if start >= end:
-        raise ValidationError("종료 시간은 시작 시간보다 늦어야 합니다. 자정을 넘는 일정은 날짜별로 나누세요.")
+        raise ValidationError("종료 시간은 시작 시간보다 늦어야 합니다.")
+    if start < 6 * 60 or end > 20 * 60:
+        raise ValidationError("운행 신청은 06:00~20:00 사이에만 가능합니다.")
     text = {}
     for key, label, maximum in (("destination", "목적지", 120), ("purpose", "운행 목적", 200)):
         value = data.get(key)
@@ -78,7 +112,8 @@ def validated(data, user, old=None):
         text[key] = value.strip()
     return {
         "id": old["id"] if old else uuid4().hex,
-        "date": day, "start_time": data["start_time"], "end_time": data["end_time"],
+        "date": day, "repeat_weekdays": repeat_weekdays, "repeat_until": repeat_until,
+        "start_time": data["start_time"], "end_time": data["end_time"],
         "vehicle_id": vehicle["id"], "vehicle_name": vehicle["name"], "plate_number": vehicle["plate_number"],
         "team_id": vehicle["team_id"], "driver_id": driver["id"], "driver_name": driver["name"],
         "created_by": old["created_by"] if old else user["id"],
@@ -90,8 +125,11 @@ def validated(data, user, old=None):
 def conflict(candidate, bookings):
     start = minutes(candidate["start_time"])
     end = minutes(candidate["end_time"], end=True)
+    days = occurrence_days(candidate)
     for item in bookings:
-        if item["id"] == candidate["id"] or item["date"] != candidate["date"]:
+        if item["id"] == candidate["id"]:
+            continue
+        if not days.intersection(occurrence_days(item)):
             continue
         if start < minutes(item["end_time"], end=True) and minutes(item["start_time"]) < end:
             if item["vehicle_id"] == candidate["vehicle_id"]:
@@ -111,7 +149,7 @@ def collection(request):
         def selected(item):
             return visible(user, item) and (not team or item["team_id"] == team)
         with _lock:
-            bookings = [present(user, item) for item in records() if item["date"] == day and selected(item)]
+            bookings = [present(user, item) for item in records() if selected(item) and date.fromisoformat(day) in occurrence_days(item)]
         vehicles = [v for v in json_store.read("vehicles") if selected(v)]
         members = [{k: u[k] for k in ("id", "name", "team_id")} for u in json_store.read("users") if u["role"] == "USER" and selected(u)]
         return Response({"date": day, "schedules": sorted(bookings, key=lambda item: (item["start_time"], item["plate_number"])), "vehicles": vehicles, "members": members})

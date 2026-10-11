@@ -1,0 +1,72 @@
+[
+  {
+    "zone_id": "A",
+    "parked_count": 0,
+    "capacity": 14
+  },
+  {
+    "zone_id": "B",
+    "parked_count": 0,
+    "capacity": 4
+  },
+  {
+    "zone_id": "C",
+    "parked_count": 0,
+    "capacity": 3
+  },
+  {
+    "zone_id": "D",
+    "parked_count": 0,
+    "capacity": 6
+  },
+  {
+    "zone_id": "E",
+    "parked_count": 0,
+    "capacity": 6
+  },
+  {
+    "zone_id": "F",
+    "parked_count": 0,
+    "capacity": 7
+  },
+  {
+    "zone_id": "G",
+    "parked_count": 0,
+    "capacity": 10
+  },
+  {
+    "zone_id": "H",
+    "parked_count": 0,
+    "capacity": 8
+  },
+  {
+    "zone_id": "I",
+    "parked_count": 0,
+    "capacity": 7
+  },
+  {
+    "zone_id": "J",
+    "parked_count": 0,
+    "capacity": 15
+  },
+  {
+    "zone_id": "K",
+    "parked_count": 0,
+    "capacity": 16
+  },
+  {
+    "zone_id": "L",
+    "parked_count": 0,
+    "capacity": 13
+  },
+  {
+    "zone_id": "M",
+    "parked_count": 0,
+    "capacity": 3
+  },
+  {
+    "zone_id": "N",
+    "parked_count": 0,
+    "capacity": 13
+  }
+]
