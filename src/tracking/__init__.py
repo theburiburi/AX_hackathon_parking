@@ -1,4 +1,5 @@
 from .global_tracker import (
+    EntryGate,
     GlobalObservation,
     GlobalTrack,
     GlobalTracker,
@@ -12,6 +13,7 @@ from .local_tracker import (
 )
 
 __all__ = [
+    "EntryGate",
     "GlobalObservation",
     "GlobalTrack",
     "GlobalTracker",

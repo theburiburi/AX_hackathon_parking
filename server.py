@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import itertools
 import json
 import math
@@ -27,8 +28,11 @@ from starlette.types import (
 
 from src.calibration import CameraProjector
 from src.mosaic import MosaicVideo, default_title, load_video
+from src.view_mode import VIEW_MODES_FILENAME, ViewModes
 
+from src.tracking.parking_log import ParkingLog
 from src.tracking import (
+    EntryGate,
     GlobalObservation,
     GlobalTracker,
     LocalTracker,
@@ -84,13 +88,43 @@ GLOBAL_TRACKING_CONFIG_PATH = (
     "global_tracking.yaml"
 )
 
+GATE_CONFIG_PATH = ROOT / "config" / "gate.yaml"
 
 
-# 재생바로 이동하면 이동한 위치를 첫 프레임처럼 보고 tracking을 새로 시작한다.
-# 단, 이 시간만큼 앞에서 시작해 이동한 프레임에서는
-# 차량이 이미 추적 중인 상태가 되게 한다 (UNKNOWN -> ACTIVE 판정 시간 고려).
-# 현재 위치에서 이 범위 안의 앞쪽 프레임이면 이어서 계산한다 (일반 재생).
-SEEK_WARMUP_SEC = 1.5
+
+# 탐색 시 입구에서 발급한 ID를 잃지 않도록 추적 상태를 주기적으로 저장한다.
+TRACKING_CHECKPOINT_INTERVAL_FRAMES = 300
+
+
+PARKING_EVENT_LABELS = {
+    "PARKED": "주차",
+    "LOST": "주차(추정)",
+    "LEFT": "출발",
+}
+
+
+def format_parking_event(
+    event: dict,
+) -> str:
+
+    minutes, seconds = divmod(event["time"], 60.0)
+
+    text = (
+        f"[PARKING] {int(minutes):02d}:{seconds:06.3f} "
+        f"G{event['global_id']:03d} [{event['plate']}] "
+        f"{PARKING_EVENT_LABELS.get(event['type'], event['type'])} "
+        f"{event['zone']}구역 -> {event['zone']} "
+        f"{event['count']}/{event['capacity']}"
+    )
+
+    if event["type"] == "LOST":
+
+        text += (
+            f" (마지막 위치 ({event['x']:.0f}, {event['y']:.0f})"
+            f" 기준 가장 가까운 구역)"
+        )
+
+    return text
 
 
 class FrameRequestCancelled(Exception):
@@ -286,6 +320,21 @@ def load_yaml(
     return data
 
 
+def load_json_file(
+    path: Path,
+) -> dict:
+
+    if not path.exists():
+
+        print(f"[WARN] {path} not found")
+
+        return {}
+
+    with path.open("r", encoding="utf-8") as file:
+
+        return json.load(file)
+
+
 # =========================================================
 # Cached YOLO
 # =========================================================
@@ -302,6 +351,9 @@ class CachedDetection:
     class_name: str
 
     confidence: float
+
+    # 축소 모드 프레임에서 전체 화면 좌표로 바꾼 경우의 원래 검출 (화면 표시용).
+    raw: CachedDetection | None = None
 
 
 class DetectionCacheStore:
@@ -466,6 +518,18 @@ class TrackingEngine:
             scene.camera_ids
         )
 
+        # 축소 모드(좌우 검은 띠) 프레임 기록. tracking은 전체 화면 좌표를 쓴다.
+        self.view_modes = ViewModes.load(
+            scene.detections_dir / VIEW_MODES_FILENAME
+        )
+
+        if self.view_modes is None:
+            print(
+                f"[WARN] {VIEW_MODES_FILENAME} not found. "
+                "Letterboxed frames are tracked in raw coordinates. "
+                f"Run: python scripts/detect_view_modes.py {scene.name}"
+            )
+
         (
             self.mosaic_width,
             self.mosaic_height,
@@ -488,6 +552,7 @@ class TrackingEngine:
         self.tracking_config: dict = {}
 
         self.global_tracking_config: dict = {}
+        self.gate_config: dict = {}
 
         self.local_trackers: dict[
             str,
@@ -508,7 +573,11 @@ class TrackingEngine:
         # 이 시간이 지나면 Global Re-ID probe 시작.
         self.global_probe_motion_sec = 0.35
 
-        self.seek_warmup_frames = 45
+        self.seek_warmup_frames = 0  # info API의 기존 필드 유지
+        self.checkpoints: dict[int, tuple] = {}
+
+        # 콘솔에 출력한 마지막 주차 기록 프레임 (재계산 시 중복 출력 방지)
+        self.parking_printed_frame = -1
 
         # frame 요청마다 번호를 붙이고, 처리 중에 더 최근 요청이 들어오면
         # 이전 요청은 계산을 중단한다 (재생바를 여러 번 옮긴 경우 마지막만 처리).
@@ -602,6 +671,8 @@ class TrackingEngine:
                 )
             )
 
+            self.gate_config = load_yaml(GATE_CONFIG_PATH)
+
             self.nominal_fps = float(
                 self.tracking_config.get(
                     "nominal_fps",
@@ -618,19 +689,6 @@ class TrackingEngine:
                 )
             )
 
-            self.seek_warmup_frames = (
-                max(
-                    0,
-                    int(
-                        round(
-                            SEEK_WARMUP_SEC
-                            *
-                            self.nominal_fps
-                        )
-                    ),
-                )
-            )
-
             self._reset_runtime()
 
     def _reset_runtime(
@@ -639,6 +697,20 @@ class TrackingEngine:
 
         self.local_trackers = (
             self._create_local_trackers()
+        )
+        # 구역별 주차 대수 / 주차 기록 (data/maps/zones.json)
+        self.parking_log = ParkingLog(
+            load_json_file(MAP_DIR / "zones.json").get("zones", []),
+            lost_after_sec=float(
+                self.global_tracking_config.get("parking_lost_after_sec", 10.0)
+            ),
+            exit_camera_ids=(self.gate_config["camera_id"],),
+        )
+
+        gate_rect = self.crop_rects[self.gate_config["camera_id"]]
+        self.entry_gate = EntryGate(
+            self.gate_config,
+            camera_size=(gate_rect[2] - gate_rect[0], gate_rect[3] - gate_rect[1]),
         )
 
         self.global_enabled = bool(
@@ -661,6 +733,22 @@ class TrackingEngine:
         self.current_frame = -1
 
         self.last_result = None
+        self.checkpoints.clear()
+
+    def _save_checkpoint(self) -> None:
+        self.checkpoints[self.current_frame] = copy.deepcopy((
+            self.local_trackers,
+            self.global_tracker,
+            self.entry_gate,
+            self.parking_log,
+            self.last_result,
+        ))
+
+    def _restore_checkpoint(self, frame_index: int) -> None:
+        (self.local_trackers, self.global_tracker, self.entry_gate,
+         self.parking_log, self.last_result) = copy.deepcopy(
+            self.checkpoints[frame_index])
+        self.current_frame = frame_index
 
     def _load_projectors(
         self,
@@ -789,6 +877,7 @@ class TrackingEngine:
                         1.20,
                     )
                 ),
+                unknown_motion_gap_sec=float(config.get("unknown_motion_gap_sec", 0.25)),
 
                 active_to_stopped_sec=float(
                     config.get(
@@ -913,6 +1002,9 @@ class TrackingEngine:
                     300.0,
                 )
             ),
+            last_position_match_distance_px=float(
+                config.get("last_position_match_distance_px", 200.0)
+            ),
 
             max_speed_px_per_sec=float(
                 config.get(
@@ -939,13 +1031,6 @@ class TrackingEngine:
                 config.get(
                     "max_match_score",
                     0.95,
-                )
-            ),
-
-            retention_sec=float(
-                config.get(
-                    "retention_sec",
-                    120.0,
                 )
             ),
 
@@ -1018,6 +1103,21 @@ class TrackingEngine:
                     3.0,
                 )
             ),
+            probe_handoff_grace_sec=float(config.get("probe_handoff_grace_sec", 2.0)),
+
+            overlap_match_distance_px=float(config.get("overlap_match_distance_px", 120.0)),
+            overlap_window_sec=float(config.get("overlap_window_sec", 0.5)),
+            overlap_score_bonus=float(config.get("overlap_score_bonus", 0.15)),
+            handoff_confirmation_frames=int(config.get("handoff_confirmation_frames", 3)),
+            entry_camera_id=self.entry_gate.camera_id,
+
+            bev_motion_window_sec=float(config.get("bev_motion_window_sec", 1.0)),
+            bev_motion_min_px=float(config.get("bev_motion_min_px", 30.0)),
+            bev_motion_min_straightness=float(
+                config.get("bev_motion_min_straightness", 0.8)),
+            bev_motion_max_angle_deg=float(config.get("bev_motion_max_angle_deg", 45.0)),
+            bev_motion_max_speed_ratio=float(
+                config.get("bev_motion_max_speed_ratio", 2.5)),
 
             print_events=False,
         )
@@ -1029,6 +1129,21 @@ class TrackingEngine:
     # =====================================================
     # Detection conversion
     # =====================================================
+
+    def _to_full_view(
+        self,
+        detection: CachedDetection,
+    ) -> CachedDetection:
+
+        return CachedDetection(
+            x1=self.view_modes.to_full_x(detection.x1),
+            y1=detection.y1,
+            x2=self.view_modes.to_full_x(detection.x2),
+            y2=detection.y2,
+            class_name=detection.class_name,
+            confidence=detection.confidence,
+            raw=detection,
+        )
 
     @staticmethod
     def _make_detection(
@@ -1081,6 +1196,7 @@ class TrackingEngine:
         bev_x: float,
         bev_y: float,
         timestamp: float,
+        entry_eligible: bool = False,
     ) -> GlobalObservation:
 
         return GlobalObservation(
@@ -1108,6 +1224,7 @@ class TrackingEngine:
             bev_y=bev_y,
 
             timestamp=timestamp,
+            entry_eligible=entry_eligible,
         )
 
     def _should_probe_unknown(
@@ -1127,6 +1244,21 @@ class TrackingEngine:
         if track.has_moved:
 
             return False
+
+        if track.occluded:
+            return False
+
+        # 후보 GID가 있으면 이미지 움직임 판정과 관계없이 BEV 위치를 계속 모은다.
+        # (카메라 쪽으로 다가오는 먼 차량은 이미지에서 거의 움직이지 않는다)
+        if (
+            self.global_tracker is not None
+            and self.global_tracker.get_provisional_global_id(
+                track.camera_id,
+                track.local_id,
+            ) is not None
+        ):
+
+            return True
 
         if (
             track.moving_candidate_since
@@ -1208,6 +1340,15 @@ class TrackingEngine:
                 in detection_data
             ]
 
+            if (
+                self.view_modes is not None
+                and self.view_modes.letterboxed(camera_id, frame_index)
+            ):
+                detections = [
+                    self._to_full_view(detection)
+                    for detection in detections
+                ]
+
             tracked = (
 
                 self.local_trackers[
@@ -1257,6 +1398,8 @@ class TrackingEngine:
                 track = (
                     tracked.track
                 )
+
+                entry_eligible = self.entry_gate.observe(track, timestamp)
 
                 should_probe = (
                     self._should_probe_unknown(
@@ -1312,8 +1455,49 @@ class TrackingEngine:
                         bev_y,
 
                         timestamp,
+                        entry_eligible,
                     )
                 )
+
+                bev_item = {
+
+                    "camera_id":
+                        camera_id,
+
+                    "local_id":
+                        track.local_id,
+
+                    "global_id":
+                        None,
+
+                    "state":
+                        track.state.value,
+
+                    "class_name":
+                        track.class_name,
+
+                    "confidence":
+                        float(
+                            track.confidence
+                        ),
+
+                    "x":
+                        float(
+                            bev_x
+                        ),
+
+                    "y":
+                        float(
+                            bev_y
+                        ),
+
+                    "stopped_seconds":
+                        float(
+                            track.stopped_duration(
+                                timestamp
+                            )
+                        ),
+                }
 
                 if track.has_moved:
 
@@ -1321,52 +1505,12 @@ class TrackingEngine:
                         observation
                     )
 
-                    bev_items.append(
-                        {
-
-                            "camera_id":
-                                camera_id,
-
-                            "local_id":
-                                track.local_id,
-
-                            "global_id":
-                                None,
-
-                            "state":
-                                track.state.value,
-
-                            "class_name":
-                                track.class_name,
-
-                            "confidence":
-                                float(
-                                    track.confidence
-                                ),
-
-                            "x":
-                                float(
-                                    bev_x
-                                ),
-
-                            "y":
-                                float(
-                                    bev_y
-                                ),
-
-                            "stopped_seconds":
-                                float(
-                                    track.stopped_duration(
-                                        timestamp
-                                    )
-                                ),
-                        }
-                    )
+                    bev_items.append(bev_item)
 
                 elif should_probe:
 
                     probe_observations.append(
-                        observation
+                        (observation, track, bev_item)
                     )
 
         # -------------------------------------------------
@@ -1382,6 +1526,34 @@ class TrackingEngine:
             is not None
         ):
 
+            # 후보 GID가 있는 UNKNOWN 차량이 BEV에서 꾸준히 움직이고
+            # 속도 벡터가 그 GID와 비슷하면 ACTIVE를 기다리지 않고 확정 매칭으로 넘긴다.
+            # 이미 GID를 받은 UNKNOWN 차량도 계속 관측을 보낸다.
+            for observation, track, bev_item in probe_observations:
+
+                candidate_id = self.global_tracker.probe_existing(
+                    observation
+                )
+
+                if candidate_id is None:
+                    continue
+
+                if (
+                    self.global_tracker.get_global_id(*observation.local_key)
+                    is not None
+                    or (
+                        # 완전히 정지한 차량은 BEV 좌표가 튀어도 이어받지 않는다.
+                        track.moving_candidate_since is not None
+                        and self.global_tracker.bev_motion_matches(
+                            observation.local_key,
+                            candidate_id,
+                        )
+                    )
+                ):
+
+                    confirmed_observations.append(observation)
+                    bev_items.append(bev_item)
+
             assignments = (
                 self.global_tracker.update(
 
@@ -1392,14 +1564,6 @@ class TrackingEngine:
                     timestamp=timestamp,
                 )
             )
-
-            for observation in (
-                probe_observations
-            ):
-
-                self.global_tracker.probe_existing(
-                    observation
-                )
 
         # -------------------------------------------------
         # 4. BEV Global IDs
@@ -1440,6 +1604,25 @@ class TrackingEngine:
             ] = global_id
 
         # -------------------------------------------------
+        # 4-1. Parking Log (구역별 주차 대수)
+        # -------------------------------------------------
+
+        new_parking_events = self.parking_log.update(
+            frame_index,
+            timestamp,
+            bev_items,
+        )
+
+        # 재생바를 뒤로 옮겨 다시 계산할 때는 같은 기록을 다시 출력하지 않는다.
+        for event in new_parking_events:
+
+            if event["frame"] > self.parking_printed_frame:
+
+                print(format_parking_event(event))
+
+                self.parking_printed_frame = event["frame"]
+
+        # -------------------------------------------------
         # 5. Camera Overlay Result
         # -------------------------------------------------
 
@@ -1457,8 +1640,10 @@ class TrackingEngine:
                 ]
             ):
 
+                # 화면에는 영상에 실제로 찍힌 좌표로 그린다.
                 detection = (
-                    tracked.detection
+                    tracked.detection.raw
+                    or tracked.detection
                 )
 
                 track = (
@@ -1601,6 +1786,9 @@ class TrackingEngine:
 
             "bev":
                 bev_items,
+
+            "parking":
+                self.parking_log.snapshot(),
         }
 
         self.current_frame = (
@@ -1632,84 +1820,115 @@ class TrackingEngine:
 
         with self.lock:
 
-            target_frame = max(
-                0,
-                min(
-                    int(
-                        target_frame
-                    ),
-                    self.cache.frame_count
-                    -
-                    1,
-                ),
+            return self._advance_to(
+                target_frame,
+                request_id,
             )
+
+    def get_frames(
+        self,
+        start_frame: int,
+        count: int,
+    ) -> list[dict]:
+        """
+        start_frame부터 연속된 count개 프레임 결과.
+        재생 중 웹이 프레임마다 요청하지 않고 한 번에 미리 받아 둔다.
+        """
+
+        request_id = next(
+            self.request_counter
+        )
+
+        self.latest_request = request_id
+
+        with self.lock:
+
+            start_frame = max(0, int(start_frame))
+            end_frame = min(
+                start_frame + max(1, int(count)),
+                self.cache.frame_count,
+            )
+
+            return [
+                self._advance_to(frame_index, request_id)
+                for frame_index in range(start_frame, end_frame)
+            ]
+
+    def _advance_to(
+        self,
+        target_frame: int,
+        request_id: int,
+    ) -> dict:
+
+        target_frame = max(
+            0,
+            min(
+                int(
+                    target_frame
+                ),
+                self.cache.frame_count
+                -
+                1,
+            ),
+        )
+
+        if (
+            target_frame
+            ==
+            self.current_frame
+            and
+            self.last_result
+            is not None
+        ):
+
+            return (
+                self.last_result
+            )
+
+        # 앞으로 이동할 때는 빠진 프레임도 계산해 입구 ID를 보존한다.
+        # 뒤로 이동할 때는 가장 가까운 이전 체크포인트부터 재계산한다.
+        if target_frame < self.current_frame:
+            previous_checkpoints = self.checkpoints.copy()
+            checkpoint_frame = max(
+                (frame for frame in previous_checkpoints if frame <= target_frame),
+                default=None,
+            )
+            if checkpoint_frame is None:
+                self._reset_runtime()
+                self.checkpoints = previous_checkpoints
+            else:
+                self._restore_checkpoint(checkpoint_frame)
+
+        result = None
+
+        for frame_index in range(
+            self.current_frame + 1,
+            target_frame + 1,
+        ):
 
             if (
-                target_frame
-                ==
-                self.current_frame
-                and
-                self.last_result
-                is not None
+                self.latest_request
+                !=
+                request_id
             ):
 
-                return (
-                    self.last_result
+                raise FrameRequestCancelled(
+                    f"frame {target_frame} request superseded"
                 )
 
-            # 일반 재생 (조금 앞의 프레임): 이어서 계산.
-            # 재생바 이동 (뒤로 / 멀리 앞으로): 이동한 위치에서 새로 시작.
-            distance = (
-                target_frame
-                -
-                self.current_frame
+            result = (
+                self._process_frame(
+                    frame_index
+                )
             )
 
-            if not (
-                0
-                <
-                distance
-                <=
-                self.seek_warmup_frames
-            ):
+            if frame_index % TRACKING_CHECKPOINT_INTERVAL_FRAMES == 0:
+                self._save_checkpoint()
 
-                self._reset_runtime()
+        if result is None:
+            return self.last_result
 
-                self.current_frame = (
-                    max(
-                        0,
-                        target_frame
-                        -
-                        self.seek_warmup_frames,
-                    )
-                    -
-                    1
-                )
-
-            result = None
-
-            for frame_index in range(
-                self.current_frame + 1,
-                target_frame + 1,
-            ):
-
-                if (
-                    self.latest_request
-                    !=
-                    request_id
-                ):
-
-                    raise FrameRequestCancelled(
-                        f"frame {target_frame} request superseded"
-                    )
-
-                result = (
-                    self._process_frame(
-                        frame_index
-                    )
-                )
-
-            return result
+        return result
 
     def info(
         self,
@@ -1908,6 +2127,36 @@ def tracking_frame(
             detail=str(
                 exc
             ),
+        ) from exc
+
+
+@app.get(
+    "/api/tracking/frames/{start_frame}"
+)
+def tracking_frames(
+    start_frame: int,
+    count: int = 30,
+):
+
+    try:
+
+        return tracking_engine.get_frames(
+            start_frame,
+            min(max(count, 1), 120),
+        )
+
+    except FrameRequestCancelled as exc:
+
+        raise HTTPException(
+            status_code=409,
+            detail=str(exc),
+        ) from exc
+
+    except Exception as exc:
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(exc),
         ) from exc
 
 

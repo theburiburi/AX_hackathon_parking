@@ -8,6 +8,13 @@ from typing import Any
 
 import numpy as np
 
+# 움직이던 차량이 가려진 정지 차량 뒤로 사라지면, 남은 검출은
+# 정지 차량이 다시 보이는 것이다. 움직이던 track이 그 정지 차량의
+# 보관 박스(IoU 이 값 이상, 크기 거의 같음) 위에 이 시간 이상 멈춰 있으면
+# 검출을 정지 차량에게 돌려준다. 앞을 지나가는 차량은 겹친 채 머물지 않는다.
+OCCLUDED_REAPPEAR_IOU = 0.8
+OCCLUDED_REAPPEAR_SEC = 0.5
+
 
 class TrackState(str, Enum):
     UNKNOWN = "UNKNOWN"
@@ -54,6 +61,9 @@ class LocalTrack:
 
     # 움직임이 시작됐을 가능성이 있는 시각.
     moving_candidate_since: float | None = None
+    moving_evidence_sec: float = 0.0
+    last_motion_evidence_at: float | None = None
+    last_detection_gap_sec: float = 0.0
 
     # ACTIVE 차량이 정지하기 시작했을 가능성이 있는 시각.
     stationary_candidate_since: float | None = None
@@ -73,6 +83,12 @@ class LocalTrack:
     smoothed_history: deque[PositionSample] = field(
         default_factory=deque
     )
+    occluded: bool = False
+
+    # 움직이던 track이 가려진 정지 차량의 보관 박스 위에 머물기 시작한 시각과
+    # 그 정지 차량의 Local ID.
+    covered_dwell_since: float | None = None
+    covered_dwell_track_id: int | None = None
 
     @property
     def label(
@@ -227,6 +243,7 @@ class LocalTracker:
         smoothing_window: int = 7,
 
         unknown_to_active_sec: float = 0.35,
+        unknown_motion_gap_sec: float = 0.25,
         stopped_to_active_sec: float = 0.50,
         parked_to_active_sec: float = 1.00,
 
@@ -286,6 +303,7 @@ class LocalTracker:
         self.unknown_to_active_sec = float(
             unknown_to_active_sec
         )
+        self.unknown_motion_gap_sec = max(0.0, float(unknown_motion_gap_sec))
 
         self.stopped_to_active_sec = float(
             stopped_to_active_sec
@@ -645,23 +663,67 @@ class LocalTracker:
     ]:
         possible_matches = []
 
+        candidate_diagonals = {
+            candidate.index: self._bbox_diagonal(candidate.bbox)
+            for candidate in candidates
+        }
+
         for track_id, track in (
             self.tracks.items()
         ):
+            predicted_x, predicted_y = track.raw_ground_x, track.raw_ground_y
+            if (track.state == TrackState.ACTIVE or track.moving_candidate_since is not None):
+                history = track.raw_history
+                if len(history) >= 2:
+                    first, last = history[0], history[-1]
+                    elapsed = last.timestamp - first.timestamp
+                    if elapsed > 0:
+                        horizon = min(0.2, max(0.0, timestamp - last.timestamp))
+                        predicted_x = last.x + (last.x - first.x) / elapsed * horizon
+                        predicted_y = last.y + (last.y - first.y) / elapsed * horizon
+            track_diagonal = track.diagonal
+            tx1, ty1, tx2, ty2 = track.bbox
             for candidate in candidates:
                 distance = math.hypot(
-                    track.raw_ground_x
+                    predicted_x
                     -
                     candidate.ground_x,
-                    track.raw_ground_y
+                    predicted_y
                     -
                     candidate.ground_y,
                 )
+
+                # 빠른 제외: 박스가 겹치지 않고(IoU 0) 중심 거리가
+                # 매칭 허용 거리의 상한보다 멀면 아래 검사도 반드시 제외한다.
+                cx1, cy1, cx2, cy2 = candidate.bbox
+                if (
+                    (cx1 >= tx2 or cx2 <= tx1 or cy1 >= ty2 or cy2 <= ty1)
+                    and distance > max(
+                        self.match_distance_px,
+                        max(track_diagonal, candidate_diagonals[candidate.index])
+                        * self.match_distance_bbox_ratio,
+                    )
+                ):
+                    continue
 
                 iou = self._iou(
                     track.bbox,
                     candidate.bbox,
                 )
+
+                # An abrupt camera reframing can put a parked vehicle's
+                # old box over a different, much larger nearby vehicle.
+                # Do not carry its Local (and therefore Global) ID across
+                # that change in apparent object size.
+                old_area = track.width * track.height
+                new_area = max(1.0, candidate.bbox[2] - candidate.bbox[0]) * max(
+                    1.0, candidate.bbox[3] - candidate.bbox[1]
+                )
+                if (
+                    track.state in (TrackState.STOPPED, TrackState.PARKED)
+                    and (new_area > old_area * 2.25 or old_area > new_area * 2.25)
+                ):
+                    continue
 
                 threshold = (
                     self._match_threshold(
@@ -753,6 +815,11 @@ class LocalTracker:
                     )
                 )
 
+                # A covered stationary box can coincide with the moving car.
+                # Let the moving track claim its own detection first.
+                if track.occluded and track.state != TrackState.ACTIVE:
+                    cost += 0.8
+
                 possible_matches.append(
                     (
                         cost,
@@ -799,6 +866,82 @@ class LocalTracker:
                     detection_index,
                 )
             )
+
+        # A camera-wide reframing can move a stationary car beyond its
+        # ordinary one-frame distance limit. Use the displacement of other
+        # stationary cars that were matched confidently in this frame to
+        # recover its corresponding detection. A single moving neighbor is
+        # not enough evidence to move a parked identity.
+        reference_moves = []
+        for track_id, track in self.tracks.items():
+            stationary = track.state in (TrackState.STOPPED, TrackState.PARKED)
+            stable_unknown = (
+                track.state == TrackState.UNKNOWN
+                and timestamp - track.first_seen >= 1.0
+                and track.moving_candidate_since is None
+            )
+            if not (stationary or stable_unknown):
+                continue
+            if timestamp - track.last_seen > 0.15:
+                continue
+            for candidate in candidates:
+                width = max(1.0, candidate.bbox[2] - candidate.bbox[0])
+                height = max(1.0, candidate.bbox[3] - candidate.bbox[1])
+                dx = candidate.ground_x - track.raw_ground_x
+                dy = candidate.ground_y - track.raw_ground_y
+                if (0.7 <= width / track.width <= 1.4
+                        and 0.7 <= height / track.height <= 1.4
+                        and 30.0 <= math.hypot(dx, dy) <= 150.0
+                        and abs(dy) <= 40.0):
+                    reference_moves.append((
+                        track_id, candidate.index, track.raw_ground_x,
+                        track.raw_ground_y, dx, dy,
+                        (track_id, candidate.index) in matches,
+                    ))
+
+        recovery_options = []
+        for track_id, track in self.tracks.items():
+            if track_id in matched_tracks or track.state not in (TrackState.STOPPED, TrackState.PARKED):
+                continue
+            if timestamp - track.last_seen > 0.15:
+                continue
+            for candidate in candidates:
+                if candidate.index in matched_detections:
+                    continue
+                old_width, old_height = track.width, track.height
+                new_width = max(1.0, candidate.bbox[2] - candidate.bbox[0])
+                new_height = max(1.0, candidate.bbox[3] - candidate.bbox[1])
+                if not (0.65 <= new_width / old_width <= 1.5
+                        and 0.65 <= new_height / old_height <= 1.5):
+                    continue
+                dx = candidate.ground_x - track.raw_ground_x
+                dy = candidate.ground_y - track.raw_ground_y
+                if math.hypot(dx, dy) < self._match_threshold(track, candidate, timestamp):
+                    continue
+                supporters = sorted((
+                    (math.hypot(dx - other_dx, dy - other_dy), other_track,
+                     other_candidate, confirmed)
+                    for other_track, other_candidate, x, y, other_dx, other_dy, confirmed
+                    in reference_moves
+                    if other_track != track_id and other_candidate != candidate.index
+                    and math.hypot(x - track.raw_ground_x, y - track.raw_ground_y) <= 350.0
+                    and math.hypot(dx - other_dx, dy - other_dy) <= 40.0
+                ))
+                supported_costs = [
+                    first[0] + second[0]
+                    for index, first in enumerate(supporters)
+                    for second in supporters[index + 1:]
+                    if first[1] != second[1] and first[2] != second[2]
+                    and (first[3] or second[3])
+                ]
+                if supported_costs:
+                    recovery_options.append((min(supported_costs), track_id, candidate.index))
+
+        for _, track_id, detection_index in sorted(recovery_options):
+            if track_id not in matched_tracks and detection_index not in matched_detections:
+                matches.append((track_id, detection_index))
+                matched_tracks.add(track_id)
+                matched_detections.add(detection_index)
 
         return matches
 
@@ -1149,26 +1292,35 @@ class LocalTracker:
         moving: bool,
     ) -> None:
         if not moving:
-            track.moving_candidate_since = None
-            return
-
-        if (
-            track.moving_candidate_since
-            is None
-        ):
-            track.moving_candidate_since = (
-                timestamp
+            # A missing detection can leave one resumed frame without enough
+            # motion history. Ordinary non-moving detections still reset the
+            # timer so camera scaling cannot accumulate false evidence.
+            resumed_after_gap = (
+                track.last_motion_evidence_at is not None
+                and track.last_detection_gap_sec > 1.5 / self.nominal_fps
+                and timestamp - track.last_motion_evidence_at <= self.unknown_motion_gap_sec
             )
+            if resumed_after_gap:
+                return
+            track.moving_candidate_since = None
+            track.last_motion_evidence_at = None
+            track.moving_evidence_sec = 0.0
             return
 
-        duration = (
-            timestamp
-            -
-            track.moving_candidate_since
-        )
+        previous_motion_at = track.last_motion_evidence_at
+        if (previous_motion_at is None
+                or timestamp - previous_motion_at > self.unknown_motion_gap_sec):
+            track.moving_candidate_since = timestamp
+            track.last_motion_evidence_at = timestamp
+            track.moving_evidence_sec = 0.0
+            return
+
+        elapsed = max(0.0, timestamp - previous_motion_at)
+        track.moving_evidence_sec += min(elapsed, 2.0 / self.nominal_fps)
+        track.last_motion_evidence_at = timestamp
 
         if (
-            duration
+            track.moving_evidence_sec
             <
             self.unknown_to_active_sec
         ):
@@ -1181,6 +1333,8 @@ class LocalTracker:
         )
 
         track.moving_candidate_since = None
+        track.last_motion_evidence_at = None
+        track.moving_evidence_sec = 0.0
 
         self._clear_stop_state(
             track
@@ -1582,6 +1736,8 @@ class LocalTracker:
         candidate: DetectionCandidate,
         timestamp: float,
     ) -> None:
+        track.occluded = False
+        track.last_detection_gap_sec = max(0.0, timestamp - track.last_seen)
         track.bbox = (
             candidate.bbox
         )
@@ -1609,6 +1765,74 @@ class LocalTracker:
             track,
             timestamp,
         )
+
+    def _return_covered_detections(
+        self,
+        matches: list[tuple[int, int]],
+        candidates: list[DetectionCandidate],
+        timestamp: float,
+    ) -> list[tuple[int, int]]:
+        # A moving car that disappears behind a parked car leaves only the
+        # parked car's detection. The moving track wins that detection while
+        # the parked track is occluded, then sits still on the parked car's
+        # box. Once that lasts, hand the detection back and drop the moving
+        # track: its car is out of sight, and its Global ID must stay free
+        # for the camera where the car shows up next.
+        matched_track_ids = {track_id for track_id, _ in matches}
+        lost_track_ids = []
+        result = []
+        for track_id, detection_index in matches:
+            track = self.tracks[track_id]
+            owner_id = None
+            if track.state == TrackState.ACTIVE:
+                bbox = candidates[detection_index].bbox
+                width = max(1.0, bbox[2] - bbox[0])
+                height = max(1.0, bbox[3] - bbox[1])
+                for other_id, other in self.tracks.items():
+                    if (other_id in matched_track_ids or not other.occluded
+                            or other.state == TrackState.ACTIVE):
+                        continue
+                    if (self._iou(bbox, other.bbox) >= OCCLUDED_REAPPEAR_IOU
+                            and 0.85 <= width / other.width <= 1.18
+                            and 0.85 <= height / other.height <= 1.18):
+                        owner_id = other_id
+                        break
+            if owner_id is None:
+                track.covered_dwell_since = None
+                track.covered_dwell_track_id = None
+            elif track.covered_dwell_track_id != owner_id:
+                track.covered_dwell_since = timestamp
+                track.covered_dwell_track_id = owner_id
+            if (owner_id is not None
+                    and timestamp - track.covered_dwell_since >= OCCLUDED_REAPPEAR_SEC):
+                result.append((owner_id, detection_index))
+                matched_track_ids.add(owner_id)
+                lost_track_ids.append(track_id)
+            else:
+                result.append((track_id, detection_index))
+        for track_id in lost_track_ids:
+            del self.tracks[track_id]
+        return result
+
+    @staticmethod
+    def _covered_fraction(rear_bbox, front_bbox) -> float:
+        x1 = max(rear_bbox[0], front_bbox[0])
+        y1 = max(rear_bbox[1], front_bbox[1])
+        x2 = min(rear_bbox[2], front_bbox[2])
+        y2 = min(rear_bbox[3], front_bbox[3])
+        overlap = max(0.0, x2 - x1) * max(0.0, y2 - y1)
+        rear_area = max(1.0, rear_bbox[2] - rear_bbox[0]) * max(1.0, rear_bbox[3] - rear_bbox[1])
+        return overlap / rear_area
+
+    @staticmethod
+    def _mark_occluded(track: LocalTrack) -> None:
+        # A partly hidden bbox is not evidence that the parked car moved.
+        track.occluded = True
+        track.moving_candidate_since = None
+        track.last_motion_evidence_at = None
+        track.moving_evidence_sec = 0.0
+        track.raw_history.clear()
+        track.smoothed_history.clear()
 
     def _create_track(
         self,
@@ -1713,12 +1937,37 @@ class LocalTracker:
             )
         )
 
+        matches = self._return_covered_detections(
+            matches, candidates, timestamp)
+
         matched_detection_indices = set()
 
         result_by_detection: dict[
             int,
             LocalTrack,
         ] = {}
+
+        foreground_boxes = [
+            (track_id, candidates[detection_index].bbox)
+            for track_id, detection_index in matches
+            if (self.tracks[track_id].state == TrackState.ACTIVE
+                or self.tracks[track_id].moving_candidate_since is not None)
+        ]
+        matched_track_ids = {track_id for track_id, _ in matches}
+        foreground_boxes.extend(
+            (track_id, track.bbox)
+            for track_id, track in self.tracks.items()
+            if track_id not in matched_track_ids
+            and track.state == TrackState.ACTIVE
+            and timestamp - track.last_seen <= 0.2
+        )
+
+        def covered_by_moving_car(track_id: int, track: LocalTrack) -> bool:
+            return (track.state != TrackState.ACTIVE and any(
+                other_id != track_id
+                and self._covered_fraction(track.bbox, box) >= 0.25
+                for other_id, box in foreground_boxes
+            ))
 
         for (
             track_id,
@@ -1736,11 +1985,11 @@ class LocalTracker:
                 ]
             )
 
-            self._update_track(
-                track,
-                candidate,
-                timestamp,
-            )
+            if covered_by_moving_car(track_id, track):
+                self._mark_occluded(track)
+                track.last_seen = timestamp
+            else:
+                self._update_track(track, candidate, timestamp)
 
             matched_detection_indices.add(
                 detection_index
@@ -1749,6 +1998,10 @@ class LocalTracker:
             result_by_detection[
                 detection_index
             ] = track
+
+        for track_id, track in self.tracks.items():
+            if track_id not in matched_track_ids and covered_by_moving_car(track_id, track):
+                self._mark_occluded(track)
 
         for candidate in candidates:
             if (

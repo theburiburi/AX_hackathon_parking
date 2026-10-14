@@ -133,6 +133,26 @@
 
                     </div>
 
+                    <!-- 구역별 주차 기록: 화면에 표시된 프레임까지의 기록 -->
+                    <div class="gate-log parking-log">
+
+                        <div class="camera-header gate-log-header">
+
+                            <span>PARKING LOG</span>
+
+                            <span id="parking-log-status">
+                                기록 없음
+                            </span>
+
+                        </div>
+
+                        <ol
+                            id="parking-log-list"
+                            class="gate-log-list"
+                        ></ol>
+
+                    </div>
+
                 </article>
 
             </section>
@@ -240,6 +260,7 @@
     </div>
 
 
+    <script src="/web/bev_items.js"></script>
     <script
         src="/web/app.js"
     ></script>

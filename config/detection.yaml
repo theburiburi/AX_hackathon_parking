@@ -1,7 +1,7 @@
 # 기본으로 사용할 원본 영상 제목 (data/videos/raw/<video>.mp4).
 # server.py, calibrate_camera.py, play_mosaic.py의 기본값으로 사용된다.
 # 칸 ↔ 카메라 배치는 config/mosaic.yaml 에서 관리한다.
-video: "test01"
+video: "test02"
 
 model:
   weights: yolo26x.pt

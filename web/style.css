@@ -515,7 +515,8 @@ button:disabled {
     grid-template-rows:
         30px
         minmax(0, 1fr)
-        minmax(0, 0.55fr);
+        minmax(0, 0.4fr)
+        minmax(0, 0.4fr);
 }
 
 
@@ -685,4 +686,37 @@ button:disabled {
 .gate-log-detail {
     color:
         #9299a3;
+}
+
+
+/* =========================================================
+ * PARKING LOG (GATE LOG 아래)
+ * =========================================================
+ */
+
+
+#parking-log-status {
+    color:
+        #9299a3;
+
+    font-weight:
+        normal;
+}
+
+
+.gate-log-type.parked {
+    background:
+        #ff4fdb;
+}
+
+
+.gate-log-type.lost {
+    background:
+        #c7a6ff;
+}
+
+
+.gate-log-type.left {
+    background:
+        #ffd740;
 }
