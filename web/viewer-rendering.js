@@ -1,5 +1,6 @@
 // Drawing code from the repository viewer, shared without a second renderer.
 // Tracking, state classification and BEV projection remain in server.py/src.
+import { collapseBevItems, detectionLabel, globalVehicleLabel } from "./bev_items.js";
 export const STATE_COLORS = {
     UNKNOWN: "#8b929c",
     ACTIVE: "#22e86f",
@@ -141,22 +142,13 @@ export function drawDetection(
         boxHeight
     );
 
-    /*
-     * ACTIVE 차량만 번호 표시.
-     */
-    if (
-        detection.state
-        !==
-        "ACTIVE"
-    ) {
-
+    // Confirmed GIDs stay visible after parking; provisional IDs carry "?".
+    const vehicleLabel = detectionLabel(detection);
+    if (vehicleLabel === null) {
         return;
     }
 
-    const label =
-        detection.global_id !== null
-            ? `G${String(detection.global_id).padStart(3, "0")}`
-            : `L${String(detection.local_id).padStart(3, "0")}`;
+    const label = vehicleLabel.text;
 
     overlayContext.font =
         "bold 11px Arial";
@@ -185,11 +177,14 @@ export function drawDetection(
     overlayContext.fillStyle =
         color;
 
+    const previousAlpha = overlayContext.globalAlpha ?? 1;
+    overlayContext.globalAlpha = previousAlpha * (vehicleLabel.provisional ? 0.6 : 1);
     overlayContext.fillText(
         label,
         x + 3,
         labelY + 11
     );
+    overlayContext.globalAlpha = previousAlpha;
 }
 
 export function drawBevTracking(
@@ -211,23 +206,10 @@ export function drawBevTracking(
 
     for (
         const item
-        of latestTracking.bev
+        of collapseBevItems(latestTracking.bev)
     ) {
 
-        /*
-         * BEV에는 ACTIVE 차량만 표시.
-         *
-         * STOPPED / PARKED는 CCTV bbox에는 남지만
-         * BEV에서는 사라진다.
-         */
-        if (
-            item.state
-            !==
-            "ACTIVE"
-        ) {
-
-            continue;
-        }
+        // Retain parked observations and draw one marker per shared GID.
 
         const x =
             layout.offsetX
@@ -251,7 +233,7 @@ export function drawBevTracking(
             "#ffffff";
 
         const stateColor =
-            STATE_COLORS.ACTIVE;
+            STATE_COLORS[item.state] || STATE_COLORS.ACTIVE;
 
         /*
          * 기존 outer 8px -> 6px.
@@ -289,31 +271,9 @@ export function drawBevTracking(
 
         bevContext.fill();
 
-        let label;
-
-        if (
-            item.global_id
-            !==
-            null
-        ) {
-
-            label =
-                `G${String(
-                    item.global_id
-                ).padStart(
-                    3,
-                    "0"
-                )}`;
-        }
-        else {
-
-            label =
-                `L${String(
-                    item.local_id
-                ).padStart(
-                    3,
-                    "0"
-                )}`;
+        const label = globalVehicleLabel(item.global_id);
+        if (label === null) {
+            continue;
         }
 
         bevContext.font =

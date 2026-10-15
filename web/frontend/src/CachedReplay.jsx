@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { ReplayBuffer, frameForTime, replayTracks, replayZoneCounts } from "./replayBuffer";
 import { drawCameraLabel, drawDetection, drawBevTracking } from "../../viewer-rendering.js";
+import { collapseBevItems } from "../../bev_items.js";
 import { watchReplayVehicles } from "./replayVehicleSync";
 import { useParkingOccupancy, ParkingOccupancySummary } from "./ParkingOccupancy";
 import "./cached-replay.css";
@@ -47,7 +48,7 @@ export function ReplayMap({ manifest, frame, imageUrl, camera, tracking = false,
     const current = occupancy?.find(area => area.id === zone.id);
     return { ...zone, parkingLabel: current ? `${current.parked_count}대 / ${current.capacity ?? "—"}대` : "—대 / —대" };
   });
-  const tracks = tracking ? replayTracks(frame, manifest.map, camera) : [];
+  const tracks = tracking ? collapseBevItems(replayTracks(frame, manifest.map, camera)) : [];
   const selected = zones.find(zone => zone.id === hover);
   return <section className="ops-panel replay-map"><div className="panel-heading"><div><h2>{tracking ? "차량 위치 추적" : "구역별 차량 현황"}</h2><p>구역별 현재 주차 대수 / 최대 주차 가능 대수</p></div>{tracking && <span className="record-count" role="status">{frame ? `추적 ${tracks.length}대` : "위치 결과 대기"}</span>}</div>
     <div className="replay-map-stage" style={{ aspectRatio: `${manifest.map.width}/${manifest.map.height}` }}>
@@ -68,6 +69,7 @@ export function ReplayMap({ manifest, frame, imageUrl, camera, tracking = false,
       {selected && <output className="replay-zone-tooltip" role="status">{selected.id} 구역 · {selected.parkingLabel}{tracking && frame && ` · 이동 ${selected.count}대`}</output>}
     </div>
     {tracking && <div className="replay-track-legend"><span><i className="active" />이동 차량</span>
+      <span><i className="stopped" />정차 차량</span><span><i className="parked" />주차 차량</span>
       <span>{!frame ? "현재 프레임의 위치를 불러오는 중입니다." : !tracks.length ? "현재 프레임에서 추적 중인 차량이 없습니다." : ""}</span></div>}
     {failed && <p className="error">지도를 불러오지 못했습니다. 로그인 상태와 파일을 확인하세요.</p>}
   </section>;

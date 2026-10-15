@@ -51,7 +51,7 @@ export function visibleDetections(frame, camera = "") {
 // Display aggregation only: use positions already emitted by the native
 // engine. UNKNOWN boxes do not become web-invented BEV positions.
 export function replayZoneCounts(frame, map, camera = "") {
-  const items = replayTracks(frame, map, camera);
+  const items = replayTracks(frame, map, camera).filter(item => item.state === "ACTIVE");
   return map.zones.map(zone => ({ ...zone,
     count: items.filter(item => item.x >= zone.bndbox.xmin && item.x <= zone.bndbox.xmax
       && item.y >= zone.bndbox.ymin && item.y <= zone.bndbox.ymax).length,
@@ -61,7 +61,7 @@ export function replayZoneCounts(frame, map, camera = "") {
 // Only filter existing observations for the viewport. The shared repository
 // renderer handles state colors, marker style and ID labels.
 export function replayTracks(frame, map, camera = "") {
-  return (frame?.bev || []).filter(item => item.state === "ACTIVE"
+  return (frame?.bev || []).filter(item => ["ACTIVE", "STOPPED", "PARKED"].includes(item.state)
     && (!camera || item.camera_id === camera)
     && Number.isFinite(item.x) && Number.isFinite(item.y)
     && item.x >= 0 && item.y >= 0 && item.x < map.width && item.y < map.height

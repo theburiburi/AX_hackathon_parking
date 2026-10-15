@@ -41,3 +41,6 @@ data/detections/*/detections.jsonl
 #   data/detections/<title>/metadata.json
 #   config/calibration/        카메라 calibration
 #   data/maps/                 BEV 지도, 주차 구역
+
+# 웹 비밀 키 (커밋 금지)
+web/.secret-key

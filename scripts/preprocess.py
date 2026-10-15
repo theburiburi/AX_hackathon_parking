@@ -24,6 +24,11 @@ from src.mosaic import (  # noqa: E402
     DETECTION_CONFIG_PATH,
     load_video,
 )
+from src.view_mode import (  # noqa: E402
+    VIEW_MODES_FILENAME,
+    ViewModeRecorder,
+    load_letterbox,
+)
 
 
 """
@@ -297,6 +302,7 @@ def main() -> None:
 
     processed = 0
     total_detections = 0
+    view_recorder = ViewModeRecorder(camera_ids, *load_letterbox())
     started_at = time.perf_counter()
     success = False
 
@@ -315,6 +321,11 @@ def main() -> None:
                 )
                 for x1, y1, x2, y2 in rects.values()
             ]
+
+            view_recorder.add(
+                processed,
+                dict(zip(camera_ids, crops)),
+            )
 
             for camera_id, crop in zip(camera_ids, crops):
 
@@ -407,6 +418,12 @@ def main() -> None:
 
         temp_detections_path.replace(
             detections_path
+        )
+
+        # 축소 모드(좌우 검은 띠) 프레임 기록. server.py가 전체 화면 좌표로 되돌린다.
+        view_recorder.finish().save(
+            video.detections_dir / VIEW_MODES_FILENAME,
+            processed,
         )
 
         metadata = {

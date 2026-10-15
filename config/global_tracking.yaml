@@ -7,6 +7,17 @@ global_tracking:
   # Global Tracking 기능 사용 여부.
   enabled: true
 
+  # GID 생성은 config/gate.yaml의 cam01 IN 구역 통과에만 허용한다.
+  # 입구에서 새 차량이 확인될 때마다 G001, G002... 순서로 발급한다.
+  # 다른 카메라는 BEV 위치·시간·움직임이 맞는 기존 GID만 이어받는다.
+  # 연결할 수 없는 차량은 GID 없이 유지한다.
+
+  # 모든 카메라 쌍에 동일하게 적용하는 동시 관측 BEV 거리·시간 조건.
+  overlap_match_distance_px: 120.0
+  overlap_window_sec: 0.5
+  overlap_score_bonus: 0.15
+  handoff_confirmation_frames: 3
+
 
   # =======================================================
   # EARLY GLOBAL PROBE
@@ -17,11 +28,35 @@ global_tracking:
   #
   # LocalTracker의 unknown_to_active_sec보다 짧게 둬야
   # 글로벌 ID를 미리 준비할 수 있다.
-  probe_motion_sec: 0.35
+  probe_motion_sec: 0.0
+
+  # 구역별 주차 대수 (PARKING LOG)
+  # GID 차량이 구역 안에서 PARKED가 되면 그 구역 +1.
+  # PARKED가 아니어도 이 시간(초) 동안 어디서도 보이지 않으면
+  # 마지막 위치에서 가장 가까운 구역 +1. 다시 움직여 구역을 벗어나면 -1.
+  parking_lost_after_sec: 10.0
+
+  # BEV 이동 일치로 GID 이어받기.
+  # 후보 GID가 있는 UNKNOWN 차량이 아래 조건을 모두 만족하면
+  # Local ACTIVE(이미지 움직임 1.5초)를 기다리지 않고 같은 GID로 확정한다.
+  # (카메라 쪽으로 다가오는 먼 차량은 이미지에서 거의 움직이지 않아 ACTIVE가 늦다)
+  #   - 최근 bev_motion_window_sec 동안 BEV에서 bev_motion_min_px 이상 이동
+  #   - 경로가 곧음 (직선 거리 / 이동 경로 >= bev_motion_min_straightness)
+  #   - 진행 방향이 GID의 마지막 방향과 bev_motion_max_angle_deg 이내
+  #   - 속력이 GID 마지막 속력의 1/ratio ~ ratio 배
+  bev_motion_window_sec: 1.0
+  bev_motion_min_px: 30.0
+  bev_motion_min_straightness: 0.8
+  bev_motion_max_angle_deg: 45.0
+  bev_motion_max_speed_ratio: 2.5
 
   # UNKNOWN 차량의 provisional 후보 정보를
   # 마지막 관측 후 얼마나 유지할지.
   probe_retention_sec: 3.0
+
+  # 새 카메라에서 일찍 찾은 후보가 ACTIVE로 확정될 때까지 허용하는 추가 시간.
+  # 처음 발견 시점은 아래 max_reid_gap_sec 안에 들어와야 한다.
+  probe_handoff_grace_sec: 2.0
 
   # 같은 Global ID가 연속으로 이 횟수만큼
   # 최적 후보로 선택되어야 provisional GID로 인정한다.
@@ -40,7 +75,11 @@ global_tracking:
   # 기존 Global Track이 마지막으로 관측된 후
   # 이 시간 이내에 등장한 Local Track만
   # 같은 차량 후보로 고려한다.
-  max_reid_gap_sec: 3.0
+  max_reid_gap_sec: 5.0
+
+  # 직선 속도 예측이 빗나가도 마지막 실제 BEV 위치에서 가까운
+  # 재등장만 보조 후보로 허용한다.
+  last_position_match_distance_px: 200.0
 
   # 시간 차이가 거의 없을 때 허용할 기본 BEV 거리.
   base_match_distance_px: 80.0
@@ -109,11 +148,3 @@ global_tracking:
   #
   # score는 낮을수록 같은 차량일 가능성이 높다.
   max_match_score: 0.95
-
-
-  # =======================================================
-  # TRACK RETENTION
-  # =======================================================
-
-  # 관측이 끊긴 GlobalTrack을 메모리에 보관하는 시간.
-  retention_sec: 120.0

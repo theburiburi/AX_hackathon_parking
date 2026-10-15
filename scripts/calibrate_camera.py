@@ -19,6 +19,7 @@ if str(ROOT) not in sys.path:
     )
 
 from src.mosaic import default_title, load_video  # noqa: E402
+from src.view_mode import is_letterboxed, load_letterbox, unletterbox_image  # noqa: E402
 from src.calibration.mapping import (  # noqa: E402
     CalibrationMapping,
     apply_homography,
@@ -52,6 +53,18 @@ BEV_DISPLAY_MAX_HEIGHT = 650
 
 
 ZOOM_STEP = 1.25
+
+# 키보드 확대 / 축소 / 이동 (macOS에서 휠이 안 될 때)
+KEY_ZOOM_IN = (ord("+"), ord("="))
+KEY_ZOOM_OUT = (ord("-"), ord("_"))
+KEY_ZOOM_RESET = (ord("0"),)
+KEY_PAN = {
+    ord("i"): (0, -1),
+    ord("k"): (0, 1),
+    ord("j"): (-1, 0),
+    ord("l"): (1, 0),
+}
+KEY_PAN_STEP = 0.15
 MIN_ZOOM = 1.0
 MAX_ZOOM = 20.0
 
@@ -618,6 +631,22 @@ class CalibrationTool:
             mosaic[y1:y2, x1:x2].copy()
         )
 
+        # 축소 모드(좌우 검은 띠) 프레임은 전체 화면 좌표로 펼쳐서 보여준다.
+        # calibration 점은 항상 전체 화면 좌표로 저장된다.
+        letterbox = load_letterbox()
+
+        if is_letterboxed(self.frame, *letterbox):
+
+            self.frame = unletterbox_image(
+                self.frame,
+                *letterbox,
+            )
+
+            print(
+                "Letterboxed frame: shown stretched to "
+                "full-view coordinates."
+            )
+
         self.bev_map = (
             self._load_bev_map()
         )
@@ -846,6 +875,69 @@ class CalibrationTool:
             display_height,
         )
 
+    def _keyboard_view(
+        self,
+        key: int,
+    ) -> None:
+        """
+        macOS(Cocoa)에서는 마우스 휠 / 트랙패드 스크롤이 OpenCV 창에
+        전달되지 않는 경우가 있어 키보드로도 확대 / 이동할 수 있게 한다.
+        """
+
+        hover = getattr(
+            self,
+            "hover",
+            None,
+        )
+
+        if hover is None:
+
+            view = self.image_view
+            x = view.display_width // 2
+            y = view.display_height // 2
+
+        else:
+
+            view, x, y = hover
+
+        if key in KEY_ZOOM_IN:
+
+            view.zoom_at(
+                mouse_x=x,
+                mouse_y=y,
+                direction=1,
+            )
+
+        elif key in KEY_ZOOM_OUT:
+
+            view.zoom_at(
+                mouse_x=x,
+                mouse_y=y,
+                direction=-1,
+            )
+
+        elif key in KEY_ZOOM_RESET:
+
+            view.zoom = 1.0
+            view.pan_x = 0.0
+            view.pan_y = 0.0
+            view.clamp_pan()
+
+        else:
+
+            dx, dy = KEY_PAN[key]
+            step_x = view.display_width * KEY_PAN_STEP
+            step_y = view.display_height * KEY_PAN_STEP
+
+            view.start_drag(0, 0)
+            view.drag(
+                int(-dx * step_x),
+                int(-dy * step_y),
+            )
+            view.end_drag()
+
+        self._refresh_windows()
+
     def _get_wheel_direction(
         self,
         flags: int,
@@ -879,6 +971,13 @@ class CalibrationTool:
     ) -> bool:
 
         changed = False
+
+        # 키보드 확대 / 이동은 마우스가 마지막으로 올라간 창에 적용한다.
+        self.hover = (
+            view,
+            x,
+            y,
+        )
 
         if (
             event
@@ -1537,8 +1636,10 @@ class CalibrationTool:
                 self.frame_index
             ),
 
-            # image 좌표는 잘라낸 칸 기준이다.
+            # image 좌표는 잘라낸 칸 기준, 전체 화면 모드 좌표다.
             "video": self.scene.name,
+
+            "view": "full",
 
             "crop_rect": list(
                 self.crop_rect
@@ -2149,6 +2250,19 @@ class CalibrationTool:
         )
 
         print(
+            "+ / - : zoom in / out at mouse cursor "
+            "(use when the wheel does not work)"
+        )
+
+        print(
+            "0 : reset zoom"
+        )
+
+        print(
+            "I / J / K / L : pan up / left / down / right"
+        )
+
+        print(
             "U : undo last point"
         )
 
@@ -2241,6 +2355,12 @@ class CalibrationTool:
             if key == ord("u"):
 
                 self._undo()
+
+            elif key in KEY_ZOOM_IN + KEY_ZOOM_OUT + KEY_ZOOM_RESET + tuple(KEY_PAN):
+
+                self._keyboard_view(
+                    key,
+                )
 
             elif key == ord("c"):
 

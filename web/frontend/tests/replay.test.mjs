@@ -90,12 +90,13 @@ test("unavailable or invalid map points never become phantom vehicle positions",
   assert.deepEqual(replayTracks({ bev: [] }, map), []);
 });
 
-test("map display matches native ACTIVE policy without changing parked observations in source frames", () => {
+test("map display retains native stopped and parked observations without changing source frames", () => {
   const point = { state: "ACTIVE", x: 10.125, y: 20.75, global_id: 9, local_id: 2, camera_id: "cam01" };
   const frame = { bev: [point, { ...point, state: "STOPPED" }, { ...point, state: "PARKED" }] };
   const before = structuredClone(frame);
   const rows = replayTracks(frame, { width: 100, height: 100 });
-  assert.equal(rows.length, 1);
+  assert.equal(rows.length, 3);
+  assert.deepEqual(rows.map(item => item.state), ["ACTIVE", "STOPPED", "PARKED"]);
   assert.equal(rows[0].x, point.x); assert.equal(rows[0].y, point.y);
   assert.deepEqual(frame, before);
 });

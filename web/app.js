@@ -1,4 +1,5 @@
 import { drawCameraLabel as nativedrawCameraLabel, drawDetection as nativedrawDetection, drawBevTracking as nativedrawBevTracking } from "./viewer-rendering.js";
+import { globalVehicleLabel } from "./bev_items.js";
 
 /* =========================================================
  * Mosaic video
@@ -145,7 +146,21 @@ const trackingCache = new Map();
 
 const TRACKING_CACHE_SIZE = 600;
 
+// 이 범위 안에서 앞으로 간 것은 재생으로, 그 밖은 재생바 이동으로 본다.
 const TRACKING_PREFETCH_FRAMES = 15;
+
+// 재생 중에는 이만큼 앞 프레임까지 미리 받아 둔다.
+// 프레임마다 요청하면 응답이 도착할 때 영상은 이미 다음 프레임이라
+// 결과를 그리지 못하므로, 여러 프레임을 한 번에 받는다.
+const TRACKING_PLAYBACK_LEAD_FRAMES = 60;
+
+const TRACKING_BATCH_FRAMES = 30;
+
+// 묶음 최소 크기. 뒤처져 있을 때는 작게 받아 빨리 따라잡는다.
+const TRACKING_CATCHUP_FRAMES = 4;
+
+// 재생 중 정확한 프레임 결과가 아직 없으면 이만큼 이전 결과까지 대신 그린다.
+const TRACKING_PLAYBACK_TOLERANCE_FRAMES = 3;
 
 // 받아 와야 하는 기준 프레임 (재생바를 옮기면 영상 표시보다 먼저 바뀐다)
 let targetFrame = 0;
@@ -733,10 +748,25 @@ function showTracking(
     frameIndex
 ) {
 
-    const result =
+    let result =
         trackingCache.get(
             frameIndex
         );
+
+    // 재생 중에는 바로 앞 프레임 결과로 잠깐 대신해 깜빡임을 막는다.
+    for (
+        let back = 1;
+        !result
+        && !video.paused
+        && back <= TRACKING_PLAYBACK_TOLERANCE_FRAMES;
+        back++
+    ) {
+
+        result =
+            trackingCache.get(
+                frameIndex - back
+            );
+    }
 
     if (result) {
 
@@ -744,6 +774,10 @@ function showTracking(
 
             latestTracking =
                 result;
+
+            applyParking(
+                result.parking
+            );
 
             drawOverlay();
 
@@ -785,7 +819,7 @@ function nextFrameToFetch() {
     const ahead =
         video.paused
             ? 0
-            : TRACKING_PREFETCH_FRAMES;
+            : TRACKING_PLAYBACK_LEAD_FRAMES;
 
     const last =
         Math.min(
@@ -819,9 +853,8 @@ function requestTrackingFrame(
     }
 
     // 재생으로 조금 앞으로 간 것이 아니면 재생바 이동으로 본다.
-    // 서버는 이동한 위치에서 tracking을 새로 시작하므로
-    // 이전 위치의 결과(다른 track id)와 섞이지 않게 캐시를 비우고,
-    // 처리 중인 요청은 중단한 뒤 이 프레임을 바로 요청한다.
+    // 서버는 입구부터 이어지는 추적 상태를 복원한다. 화면 캐시는 비우고
+    // 처리 중인 요청을 중단한 뒤 새 위치의 결과를 요청한다.
     const isSeek =
         frameIndex < targetFrame
         ||
@@ -854,6 +887,20 @@ async function pumpTrackingRequest() {
         return;
     }
 
+    // 일시정지 / 이동 직후에는 보이는 프레임 1개만 받는다.
+    // 재생 중에는 지금 앞서 있는 프레임 수만큼 묶어서 받는다.
+    // (묶음이 클수록 마지막 프레임이 늦게 도착하므로, 앞서 있을 때만 크게)
+    const count =
+        video.paused
+            ? 1
+            : Math.max(
+                TRACKING_CATCHUP_FRAMES,
+                Math.min(
+                    TRACKING_BATCH_FRAMES,
+                    frameIndex - displayedFrame
+                )
+            );
+
     const request = {
         frame: frameIndex,
         controller: new AbortController(),
@@ -867,7 +914,7 @@ async function pumpTrackingRequest() {
 
         const response =
             await fetch(
-                `/api/tracking/frame/${frameIndex}`,
+                `/api/tracking/frames/${frameIndex}?count=${count}`,
                 {
                     signal:
                         request.controller.signal
@@ -905,7 +952,7 @@ async function pumpTrackingRequest() {
             );
         }
 
-        const result =
+        const results =
             await response.json();
 
         if (trackingRequest !== request) {
@@ -913,19 +960,22 @@ async function pumpTrackingRequest() {
             return;
         }
 
-        trackingCache.set(
-            result.frame_index,
-            result
-        );
+        for (const result of results) {
 
-        if (trackingCache.size > TRACKING_CACHE_SIZE) {
+            trackingCache.set(
+                result.frame_index,
+                result
+            );
+        }
+
+        while (trackingCache.size > TRACKING_CACHE_SIZE) {
 
             trackingCache.delete(
                 trackingCache.keys().next().value
             );
         }
 
-        if (result.frame_index === displayedFrame) {
+        if (trackingCache.has(displayedFrame)) {
 
             showTracking(
                 displayedFrame
@@ -1704,6 +1754,204 @@ let gateLog = null;
 
 // 마지막으로 그린 상태 (같으면 다시 그리지 않음)
 let gateLogRenderKey = null;
+
+
+/* =========================================================
+ * Parking log (구역별 주차 대수 / 기록, tracking 결과에 포함)
+ * =========================================================
+ */
+
+
+const parkingLogList =
+    document.getElementById(
+        "parking-log-list"
+    );
+
+const parkingLogStatus =
+    document.getElementById(
+        "parking-log-status"
+    );
+
+const PARKING_EVENT_STYLES = {
+    PARKED: { label: "주차", style: "parked" },
+    LOST: { label: "주차(추정)", style: "lost" },
+    LEFT: { label: "출발", style: "left" },
+};
+
+let parkingLogRenderKey = null;
+
+
+function applyParking(
+    parking
+) {
+
+    if (!parking) {
+
+        return;
+    }
+
+    for (const [zoneId, count] of Object.entries(parking.counts)) {
+
+        zoneOccupancy[zoneId] =
+            count;
+    }
+
+    renderParkingLog(
+        parking.events
+    );
+}
+
+
+function renderParkingLog(
+    events
+) {
+
+    const renderKey =
+        `${events.length}:${events.length ? events[events.length - 1].frame : -1}`;
+
+    if (renderKey === parkingLogRenderKey) {
+
+        return;
+    }
+
+    parkingLogRenderKey =
+        renderKey;
+
+    parkingLogList.replaceChildren();
+
+    const parked =
+        Object.values(zoneOccupancy)
+            .reduce((sum, count) => sum + count, 0);
+
+    parkingLogStatus.textContent =
+        events.length === 0
+            ? "기록 없음"
+            : `주차 ${parked}대 · ${events.length}건`;
+
+    if (events.length === 0) {
+
+        const empty =
+            document.createElement("li");
+
+        empty.className =
+            "gate-log-empty";
+
+        empty.textContent =
+            "아직 주차된 GID 차량이 없습니다.";
+
+        parkingLogList.appendChild(
+            empty
+        );
+
+        return;
+    }
+
+    // 최근 기록이 위로 오게 한다.
+    for (const event of [...events].reverse()) {
+
+        parkingLogList.appendChild(
+            createParkingLogItem(
+                event
+            )
+        );
+    }
+}
+
+
+function createParkingLogItem(
+    event
+) {
+
+    const kind =
+        PARKING_EVENT_STYLES[event.type]
+        ||
+        { label: event.type, style: "" };
+
+    const item =
+        document.createElement("li");
+
+    item.className =
+        "gate-log-item";
+
+    item.title =
+        `frame ${event.frame} · 클릭하면 이 시점으로 이동`;
+
+    const time =
+        document.createElement("span");
+
+    time.className =
+        "gate-log-time";
+
+    time.textContent =
+        formatTime(
+            event.time
+        );
+
+    const type =
+        document.createElement("span");
+
+    type.className =
+        `gate-log-type ${kind.style}`;
+
+    type.textContent =
+        kind.label;
+
+    const text =
+        document.createElement("span");
+
+    text.className =
+        "gate-log-text";
+
+    const vehicle =
+        document.createElement("span");
+
+    vehicle.className =
+        "gate-log-plate";
+
+    vehicle.textContent =
+        `${globalVehicleLabel(event.global_id)} ${event.plate || ""} `;
+
+    const detail =
+        document.createElement("span");
+
+    detail.className =
+        "gate-log-detail";
+
+    detail.textContent =
+        `${event.zone}구역 → ${event.zone} ${event.count}/${event.capacity}`
+        + (
+            event.type === "LOST"
+                ? " (마지막 위치 기준)"
+                : ""
+        );
+
+    text.append(
+        vehicle,
+        detail
+    );
+
+    item.append(
+        time,
+        type,
+        text
+    );
+
+    item.addEventListener(
+        "click",
+        () => {
+
+            video.pause();
+
+            seekTo(
+                frameToTime(
+                    event.frame
+                )
+            );
+        }
+    );
+
+    return item;
+}
 
 
 async function loadGateLog() {
