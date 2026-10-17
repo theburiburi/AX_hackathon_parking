@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 BACKEND = Path(__file__).resolve().parents[1] / "backend"
@@ -84,6 +85,27 @@ assert not ({'server', 'cv2', 'numpy', 'torch', 'ultralytics', 'fastapi'} & sys.
             path.write_text(json.dumps(data), encoding="utf-8")
             self.assertEqual(read_gate_log(root, "demo", 30, 5)[0]["events"], data["events"])
 
+    def test_offline_engine_reset_loads_native_parking_zones(self):
+        native = tracking_definitions()
+        engine = native.TrackingEngine.__new__(native.TrackingEngine)
+        engine.camera_ids = []
+        engine.tracking_config = {}
+        engine.global_tracking_config = {"enabled": False}
+        engine.gate_config = native.load_yaml(native.GATE_CONFIG_PATH)
+        engine.crop_rects = {engine.gate_config["camera_id"]: (0, 0, 640, 360)}
+        engine.checkpoints = {}
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            zones = {"zones": [{"id": "A", "capacity": 3, "bndbox": {
+                "xmin": 0, "ymin": 0, "xmax": 100, "ymax": 100}}]}
+            (root / "zones.json").write_text(json.dumps(zones), encoding="utf-8")
+            with patch.object(native, "MAP_DIR", root):
+                engine._reset_runtime()
+        self.assertEqual(engine.parking_log.counts, {"A": 0})
+        self.assertEqual(engine.parking_log.zones[0]["capacity"], 3)
+        self.assertIsNone(engine.global_tracker)
+        self.assertEqual(Path(native.load_json_file.__code__.co_filename), PROJECT / "server.py")
+
     def test_native_map_display_does_not_require_video_or_detection_configuration(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
@@ -92,6 +114,33 @@ assert not ({'server', 'cv2', 'numpy', 'torch', 'ultralytics', 'fastapi'} & sys.
             image.write_bytes(b"map")
             with patch.object(project_media, "PROJECT", root), patch.dict(os.environ, {}, clear=True), patch.object(mosaic, "load_layout", side_effect=AssertionError("Map API must not load video layout")):
                 self.assertEqual(project_media.selected_map(root / "media", lambda *args: None, {".png"}), image)
+
+    def test_offline_frame_processing_prints_parking_events_without_missing_helpers(self):
+        native = tracking_definitions()
+        for event_type, label in (("PARKED", "주차"), ("LOST", "주차(추정)"), ("LEFT", "출발")):
+            with self.subTest(event_type=event_type):
+                event = {"frame": 30, "time": 1.0, "type": event_type, "global_id": 2,
+                         "plate": "123가 4567", "zone": "A", "count": 1, "capacity": 3,
+                         "x": 10.0, "y": 20.0}
+                engine = native.TrackingEngine.__new__(native.TrackingEngine)
+                engine.camera_ids = []
+                engine.cache = SimpleNamespace(read_frame=lambda n: {"frame_index": n, "cameras": {}})
+                engine.nominal_fps = 30.0
+                engine.global_enabled = False
+                engine.parking_printed_frame = -1
+                engine.parking_log = SimpleNamespace(
+                    update=lambda *args: [event], snapshot=lambda: {"events": [event]})
+                with patch("builtins.print") as output:
+                    frame = engine._process_frame(30)
+                    engine._process_frame(30)
+                output.assert_called_once()
+                message = output.call_args.args[0]
+                self.assertIn(f"G002 [123가 4567] {label} A구역", message)
+                self.assertIn("1/3", message)
+                if event_type == "LOST":
+                    self.assertIn("마지막 위치 (10, 20)", message)
+                self.assertEqual(frame["parking"]["events"], [event])
+        self.assertEqual(Path(native.format_parking_event.__code__.co_filename), PROJECT / "server.py")
 
     def test_zone_geometry_and_capacity_come_from_external_json(self):
         with tempfile.TemporaryDirectory() as folder:

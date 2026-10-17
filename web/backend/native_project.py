@@ -41,7 +41,7 @@ def tracking_definitions(project=PROJECT):
         elif isinstance(node, ast.ClassDef) and node.name in required:
             found.add(node.name)
             body.append(node)
-        elif isinstance(node, ast.FunctionDef) and node.name == "load_yaml":
+        elif isinstance(node, ast.FunctionDef) and node.name in {"load_yaml", "load_json_file", "format_parking_event"}:
             body.append(node)
         elif isinstance(node, ast.Assign) and all(isinstance(t, ast.Name) and t.id.isupper() for t in node.targets):
             body.append(node)

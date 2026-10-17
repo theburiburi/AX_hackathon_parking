@@ -19,70 +19,118 @@ def point(state, **changes):
             "x": 20, "y": 20, "confidence": .9, **changes}
 
 
+def event(kind, n, **changes):
+    return {"type": kind, "frame": n, "global_id": 1, "zone": "A", **changes}
+
+
 class ParkingTimelineTests(SimpleTestCase):
-    def timeline(self, observations, gate=None):
-        result = ParkingTimeline(LAYOUT, gate or {})
-        for n, rows in enumerate(observations):
-            cameras = {}
-            for row in rows:
-                cameras.setdefault(row["camera_id"], []).append(row)
-            result.update({"frame_index": n, "bev": rows, "cameras": cameras})
+    def timeline(self, frames):
+        result = ParkingTimeline(LAYOUT)
+        for n, frame in enumerate(frames):
+            result.update({"frame_index": n, **frame})
         return result
 
-    def test_only_completed_parking_increments_and_camera_duplicates_count_once(self):
-        parked = point("PARKED")
-        rows = [[point("ACTIVE")], [point("STOPPED")], [parked, {**parked, "camera_id": "cam02", "local_id": 22}],
-                [parked], [], [point("STOPPED")], [point("ACTIVE")]]
-        result = self.timeline(rows)
-        for frame, expected in ((0, {}), (1, {}), (2, {"A": 1}), (3, {"A": 1}), (4, {"A": 1}), (5, {"A": 1}), (6, {})):
-            self.assertEqual(result.at(frame), expected)
-        self.assertEqual(result.at(1), {})  # A backward seek restores the earlier total.
+    def test_parking_events_count_and_cumulative_repeats_do_not_add_twice(self):
+        parked, left = event("PARKED", 1), event("LEFT", 4)
+        result = self.timeline([
+            {"parking": {"events": []}},
+            {"parking": {"events": [parked, parked], "counts": {"A": 99}}},
+            {"parking": {"events": [parked]}},
+            {"bev": [point("ACTIVE")]},
+            {"parking": {"events": [parked, left]}},
+            {"parking": {"events": [parked, left]}},
+        ])
+        for n, expected in ((0, {}), (1, {"A": 1}), (2, {"A": 1}),
+                            (3, {"A": 1}), (4, {}), (5, {}), (1, {"A": 1})):
+            self.assertEqual(result.at(n), expected)
 
-    def test_initial_parked_vehicle_is_not_added_and_departure_reduces_baseline(self):
-        result = self.timeline([[point("PARKED")], [], [point("ACTIVE")], [point("PARKED", x=70)]])
-        self.assertEqual(result.at(0), {})
-        self.assertEqual(result.at(2), {"A": -1})
-        self.assertEqual(result.at(3), {"A": -1, "B": 1})
-
-    def test_moving_between_zones_transfers_count_and_parked_jitter_does_not(self):
-        result = self.timeline([[point("ACTIVE")], [point("PARKED")], [point("PARKED", x=70)],
-                                [point("ACTIVE")], [point("PARKED", x=70)]])
-        self.assertEqual(result.at(2), {"A": 1})
-        self.assertEqual(result.at(3), {})
-        self.assertEqual(result.at(4), {"B": 1})
-
-    def test_invalid_or_out_of_zone_coordinates_never_invent_parking(self):
-        for x in (float("nan"), float("inf"), -1, 100, 40, "20", True):
-            result = self.timeline([[point("ACTIVE")], [point("PARKED", x=x)]])
-            with self.subTest(x=x):
-                self.assertEqual(result.at(1), {})
-
-    def test_different_global_ids_count_separately_even_with_same_local_id(self):
-        a, b = point("ACTIVE"), point("ACTIVE", global_id=2, camera_id="cam02")
-        result = self.timeline([[a, b], [{**a, "state": "PARKED"}, {**b, "state": "PARKED"}]])
-        self.assertEqual(result.at(1), {"A": 2})
-
-    def test_gate_entry_then_parked_counts_without_active_bev_or_plate(self):
-        gate = {"gate": {"camera_id": "cam01"}, "events": [
-            {"frame": 0, "type": "IN", "track_id": 10}, {"frame": 2, "type": "OUT", "track_id": 10}]}
-        result = self.timeline([[point("STOPPED")], [point("PARKED")], []], gate)
-        self.assertEqual(result.at(1), {"A": 1})
-        self.assertEqual(result.at(2), {})
-
-    def test_unknown_gate_exit_does_not_subtract_arbitrary_zone(self):
-        gate = {"gate": {"camera_id": "cam02"}, "events": [{"frame": 1, "type": "OUT", "track_id": 10}]}
-        result = self.timeline([[point("PARKED")], []], gate)
+    def test_lost_estimates_count_and_departures_release_them(self):
+        lost, left, parked = event("LOST", 0), event("LEFT", 1), event("PARKED", 2)
+        result = self.timeline([
+            {"parking": {"events": [lost], "counts": {"A": 1}}},
+            {"parking": {"events": [lost, left]}},
+            {"parking": {"events": [lost, left, parked]}},
+        ])
+        self.assertEqual(result.at(0), {"A": 1})
         self.assertEqual(result.at(1), {})
+        self.assertEqual(result.at(2), {"A": 1})
 
-    def test_stale_parked_observations_cannot_undo_gate_exit(self):
-        gate = {"gate": {"camera_id": "cam01"}, "events": [
-            {"frame": 2, "type": "OUT", "track_id": 10}, {"frame": 4, "type": "IN", "track_id": 10}]}
-        result = self.timeline([[point("ACTIVE")], [point("PARKED")], [point("PARKED")],
-                                [point("PARKED")], [point("ACTIVE")], [point("PARKED")]], gate)
-        self.assertEqual(result.at(1), {"A": 1})
-        self.assertEqual(result.at(2), {})
+    def test_lost_then_confirmed_in_same_zone_keeps_one_vehicle(self):
+        lost, parked = event("LOST", 0), event("PARKED", 1)
+        result = self.timeline([
+            {"parking": {"events": [lost]}},
+            {"parking": {"events": [lost, parked]}},
+            {"parking": {"events": [lost, parked, parked]}},
+            {"parking": {"events": [lost, parked, event("LEFT", 3)]}},
+        ])
+        for n in (0, 1, 2):
+            self.assertEqual(result.at(n), {"A": 1})
         self.assertEqual(result.at(3), {})
-        self.assertEqual(result.at(5), {"A": 1})
+        self.assertEqual(result.at(0), {"A": 1})
+
+    def test_lost_then_confirmed_in_another_zone_transfers_without_extra_vehicle(self):
+        lost = event("LOST", 0)
+        for transfer in ([event("PARKED", 1, zone="B")],
+                         [event("LEFT", 1), event("PARKED", 1, zone="B")]):
+            with self.subTest(transfer=transfer):
+                result = self.timeline([
+                    {"parking": {"events": [lost]}},
+                    {"parking": {"events": [lost, *transfer]}},
+                    {"parking": {"events": [lost, *transfer]}},
+                ])
+                self.assertEqual(result.at(0), {"A": 1})
+                self.assertEqual(result.at(1), {"B": 1})
+                self.assertEqual(result.at(2), {"B": 1})
+
+    def test_bev_states_without_native_events_cannot_invent_parking(self):
+        result = self.timeline([
+            {"bev": [point("ACTIVE")]},
+            {"bev": [point("PARKED"), point("PARKED", global_id=None)]},
+            {"bev": [point("STOPPED")], "parking": {"counts": {"A": 50}}},
+        ])
+        self.assertEqual(result.at(2), {})
+
+    def test_different_global_ids_count_separately(self):
+        result = self.timeline([{"parking": {"events": [
+            event("PARKED", 0), event("PARKED", 0, global_id=2)]}}])
+        self.assertEqual(result.at(0), {"A": 2})
+
+    def test_same_frame_departure_and_new_parking_transfer_the_vehicle(self):
+        parked = event("PARKED", 0)
+        transfer = [parked, event("LEFT", 1), event("PARKED", 1, zone="B")]
+        result = self.timeline([
+            {"parking": {"events": [parked]}},
+            {"parking": {"events": transfer}},
+            {"parking": {"events": transfer}},
+        ])
+        self.assertEqual(result.at(0), {"A": 1})
+        self.assertEqual(result.at(1), {"B": 1})
+        self.assertEqual(result.at(2), {"B": 1})
+
+    def test_left_only_releases_the_confirmed_vehicle_in_the_matching_zone(self):
+        parked = event("PARKED", 0)
+        result = self.timeline([
+            {"parking": {"events": [parked]}},
+            {"parking": {"events": [parked, event("LEFT", 1, zone="B"),
+                                     event("LEFT", 1, global_id=2)]}},
+        ])
+        self.assertEqual(result.at(1), {"A": 1})
+
+    def test_invalid_events_never_invent_counts(self):
+        changes = [{"global_id": None}, {"global_id": True}, {"global_id": "1"},
+                   {"global_id": 0}, {"zone": "UNKNOWN"}, {"zone": None},
+                   {"frame": -1}, {"frame": True}, {"frame": "0"}, {"type": "IN"}]
+        for change in changes:
+            with self.subTest(change=change):
+                result = self.timeline([{"parking": {"events": [event("PARKED", 0, **change)]}}])
+                self.assertEqual(result.at(0), {})
+
+    def test_future_events_wait_for_their_video_frame(self):
+        parked = event("PARKED", 2)
+        result = self.timeline([{"parking": {"events": [parked]}} for _ in range(3)])
+        self.assertEqual(result.at(0), {})
+        self.assertEqual(result.at(1), {})
+        self.assertEqual(result.at(2), {"A": 1})
 
     def test_capacity_and_overflow_recompute_when_counts_or_capacity_change(self):
         initial = [{"zone_id": "A", "parked_count": 20}]

@@ -19,7 +19,7 @@ const server = await createServer({
 });
 after(() => server.close());
 const { Dashboard, VehicleList } = await server.ssrLoadModule("/src/main.jsx");
-const { ReplayTrackOverlay } = await server.ssrLoadModule("/src/CachedReplay.jsx");
+const { ReplayTrackOverlay, ReplayGateLog } = await server.ssrLoadModule("/src/CachedReplay.jsx");
 const render = (role) => renderToStaticMarkup(React.createElement(Dashboard, {
   session: { token: "test", user: { role, team_id: "SECTION_DIGITAL_COMMUNICATION", name: "테스트 사용자" } },
   onLogout() {},
@@ -56,6 +56,27 @@ test("regular user sees vehicle status and schedule without requests or request 
   assert.match(html, /차량 목록/);
   assert.doesNotMatch(html, /차량 관리 요청|내 요청 이력|요청 제출|승인 대기/);
   assert.doesNotMatch(html, /실시간 분석|영상 분석 재생|실시간 감지 모드/);
+});
+
+test("gate history remains visible while tracking frames are unavailable and follows backward seeks", () => {
+  const gateLog = { events: [
+    { frame: 30, type: "IN", plate: "111가1111" },
+    { frame: 90, type: "OUT", plate: "111가1111" },
+  ] };
+  // No tracking frame is supplied: this panel follows the displayed video time.
+  const renderGate = time => renderToStaticMarkup(React.createElement(ReplayGateLog, {
+    gateLog, time, fps: 30, frameCount: 300, onSeek() {},
+  }));
+  for (const time of [1, 1.5, 2, 2.5]) {
+    const html = renderGate(time);
+    assert.match(html, /1건/);
+    assert.match(html, /입차.*111 가 1111/);
+    assert.doesNotMatch(html, /출차|기록이 없습니다/);
+  }
+  assert.match(renderGate(3), /2건/);
+  assert.match(renderGate(.5), /0건/);
+  assert.match(renderGate(.5), /기록이 없습니다/);
+  assert.match(renderGate(1), /1건/);
 });
 
 test("account header displays the name and section supplied by the user JSON", () => {

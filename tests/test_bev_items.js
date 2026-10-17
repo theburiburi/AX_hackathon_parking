@@ -1,18 +1,15 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const source = require("node:fs").readFileSync(require("node:path").join(__dirname, "../web/bev_items.js"), "utf8");
-const helpers = import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`);
+const { collapseBevItems, detectionLabel, globalVehicleLabel } = require("../web/bev_items.js");
 
-test("vehicle numbers appear only for assigned Global IDs", async () => {
-    const { globalVehicleLabel } = await helpers;
+test("vehicle numbers appear only for assigned Global IDs", () => {
     assert.equal(globalVehicleLabel(1), "G001");
     assert.equal(globalVehicleLabel(12), "G012");
     assert.equal(globalVehicleLabel(null), null);
     assert.equal(globalVehicleLabel(undefined), null);
 });
 
-test("overlapping cameras draw one marker for a shared Global ID", async () => {
-    const { collapseBevItems } = await helpers;
+test("overlapping cameras draw one marker for a shared Global ID", () => {
     const items = collapseBevItems([
         { camera_id: "cam01", local_id: 1, global_id: 3, state: "ACTIVE", x: 100, y: 50 },
         { camera_id: "cam07", local_id: 8, global_id: 3, state: "ACTIVE", x: 110, y: 54 },
@@ -23,8 +20,7 @@ test("overlapping cameras draw one marker for a shared Global ID", async () => {
     assert.equal(items[1].global_id, 4);
 });
 
-test("confirmed IDs win over provisional candidates, which are marked", async () => {
-    const { detectionLabel } = await helpers;
+test("confirmed IDs win over provisional candidates, which are marked", () => {
     assert.deepEqual(detectionLabel({ global_id: 2, provisional_global_id: 5 }),
         { text: "G002", provisional: false });
     assert.deepEqual(detectionLabel({ global_id: null, provisional_global_id: 2 }),
@@ -32,8 +28,7 @@ test("confirmed IDs win over provisional candidates, which are marked", async ()
     assert.equal(detectionLabel({ global_id: null, provisional_global_id: null }), null);
 });
 
-test("parked cars stay on the BEV map with their Global ID", async () => {
-    const { collapseBevItems } = await helpers;
+test("parked cars stay on the BEV map with their Global ID", () => {
     const items = collapseBevItems([
         { camera_id: "cam08", local_id: 36, global_id: 2, state: "PARKED", x: 370, y: 150 },
         { camera_id: "cam03", local_id: 71, global_id: 2, state: "ACTIVE", x: 380, y: 150 },

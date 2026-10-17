@@ -12,6 +12,7 @@ import seed
 from replay.vehicle_state import _timeline, build_timeline, apply_snapshot
 from . import json_store
 from .views import TOKEN_SALT
+from .parking_state import PARKING_POLICY
 
 
 class ReplayVehicleTests(SimpleTestCase):
@@ -39,6 +40,13 @@ class ReplayVehicleTests(SimpleTestCase):
             {"frame_index": 2, "cameras": {"cam02": [parked]}, "bev": [parked]},
             {"frame_index": 3, "cameras": {}, "bev": []},
             {"frame_index": 4, "cameras": {}, "bev": []}]
+        parked_event = {"type": "PARKED", "frame": 2, "global_id": 7, "zone": "A"}
+        left_event = {"type": "LEFT", "frame": 4, "global_id": 7, "zone": "A"}
+        for frame in self.frames:
+            events = [parked_event] if frame["frame_index"] >= 2 else []
+            if frame["frame_index"] == 4:
+                events = events + [left_event]
+            frame["parking"] = {"events": events}
         offsets = []
         path = root / "frames.jsonl"
         with path.open("wb") as target:
@@ -71,6 +79,15 @@ class ReplayVehicleTests(SimpleTestCase):
         self.assertEqual(response.status_code, 200, response.content)
         return response.json()[0]
 
+    def rewrite_frames(self):
+        offsets = []
+        with self.store.frames_path.open("wb") as target:
+            for frame in self.frames:
+                offsets.append(target.tell())
+                target.write((json.dumps(frame) + "\n").encode())
+        self.store.offsets = offsets
+        _timeline.cache_clear()
+
     def test_zone_totals_follow_parking_exit_retries_and_backward_seek(self):
         for frame, total in ((0, 20), (1, 20), (3, 21), (3, 21), (4, 20), (0, 20), (3, 21)):
             self.assertEqual(self.sync(frame).status_code, 200)
@@ -87,6 +104,39 @@ class ReplayVehicleTests(SimpleTestCase):
         self.assertEqual(self.occupancy()["parked_count"], 21)
         self.assertEqual(self.sync(4).status_code, 200)
         self.assertEqual(self.occupancy()["parked_count"], 20)
+
+    def test_zero_baseline_counts_parking_and_estimate_events_and_ignores_raw_totals(self):
+        json_store.write("initial_parking", [{"zone_id": "A", "parked_count": 0, "capacity": 3}])
+        for frame in self.frames:
+            frame["parking"]["counts"] = {"A": 99}
+            frame["parking"]["events"] = [
+                {"type": "LOST", "frame": 0, "global_id": 8, "zone": "A"},
+                {"type": "LEFT", "frame": 1, "global_id": 8, "zone": "A"},
+            ] + frame["parking"]["events"]
+        self.rewrite_frames()
+        for n, expected in ((0, 1), (1, 0), (3, 1), (3, 1), (4, 0), (0, 1), (3, 1)):
+            self.assertEqual(self.sync(n).status_code, 200)
+            self.assertEqual(self.occupancy()["parked_count"], expected)
+        self.assertEqual(json_store.read("vehicle_replay_state")["parking_policy"], PARKING_POLICY)
+        self.assertEqual(self.occupancy()["capacity"], 3)
+
+    def test_lost_then_confirmed_parking_keeps_api_total_across_retries_and_seeks(self):
+        json_store.write("initial_parking", [{"zone_id": "A", "parked_count": 0}])
+        estimate = {"type": "LOST", "frame": 1, "global_id": 7, "zone": "A"}
+        for frame in self.frames[1:]:
+            frame["parking"]["events"] = [estimate, *frame["parking"]["events"]]
+        self.rewrite_frames()
+        for n, expected in ((0, 0), (1, 1), (2, 1), (3, 1), (3, 1), (4, 0), (0, 0), (2, 1)):
+            self.assertEqual(self.sync(n).status_code, 200)
+            self.assertEqual(self.occupancy()["parked_count"], expected)
+
+    def test_old_parking_snapshot_is_ignored_until_new_event_policy_sync(self):
+        json_store.write("initial_parking", [{"zone_id": "A", "parked_count": 0}])
+        json_store.write("vehicle_replay_state", {"parking_policy": "confirmed_native_events_v1",
+                                                 "parking_deltas": {"A": 99}, "parking_base_deltas": {}})
+        self.assertEqual(self.occupancy()["parked_count"], 0)
+        self.assertEqual(self.sync(3).status_code, 200)
+        self.assertEqual(self.occupancy()["parked_count"], 1)
 
     def test_metadata_edits_and_vehicle_registration_do_not_reset_occupancy(self):
         self.assertEqual(self.sync(3).status_code, 200)

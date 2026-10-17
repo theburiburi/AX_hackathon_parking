@@ -53,6 +53,28 @@ class ReplayApiTests(SimpleTestCase):
         self.manifest_path.unlink()
         self.assertEqual(self.client.get("/api/replay/manifest/").status_code, 503)
 
+    def test_cached_frame_response_still_checks_permissions_and_cache_version(self):
+        url = "/api/replay/frames/?start=0&count=60&cache_id=abc"
+        first = self.client.get(url)
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(self.client.get(url).content, first.content)
+        for user, status in ((None, 401), ({"role": "USER"}, 403)):
+            with patch.object(views, "current_user", return_value=user):
+                self.assertEqual(self.client.get(url).status_code, status)
+        self.assertEqual(self.client.get(url.replace("abc", "old")).status_code, 503)
+
+    def test_cached_frame_response_rereads_changed_data_and_validates_settings(self):
+        url = "/api/replay/frames/?start=0&count=60&cache_id=abc"
+        self.assertEqual(self.client.get(url).status_code, 200)
+        path = self.root / "demo/frames.jsonl"
+        path.write_text('{"frame_index":0,"cameras":{},"bev":[{"global_id":7}]}\n', encoding="utf-8")
+        self.assertEqual(self.client.get(url).json()["frames"][0]["bev"], [{"global_id": 7}])
+        path.write_text('{"frame_index":99}\n', encoding="utf-8")
+        self.assertEqual(self.client.get(url).status_code, 503)
+        (self.root / "config").mkdir()
+        (self.root / "config/tracking.yaml").write_text("changed", encoding="utf-8")
+        self.assertEqual(self.client.get(url).status_code, 503)
+
     def test_video_supports_range_and_head_without_public_media_route(self):
         response = self.client.get("/api/replay/video/", HTTP_RANGE="bytes=2-4")
         try:

@@ -2,6 +2,7 @@
 import hashlib
 import json
 
+PARKING_POLICY = "parking_events_or_manual_scenario_v3"
 
 def plate_key(value):
     return "".join(str(value or "").split())
@@ -58,8 +59,9 @@ def occupancy_deltas(vehicles, snapshot):
     manual = manual_zone_deltas(vehicles)
     deltas = snapshot.get("parking_deltas")
     baseline = snapshot.get("parking_base_deltas")
-    if all(isinstance(rows, dict) and all(type(value) is int for value in rows.values())
-           for rows in (deltas, baseline)):
+    if snapshot.get("parking_policy") == PARKING_POLICY and all(
+            isinstance(rows, dict) and all(type(value) is int for value in rows.values())
+            for rows in (deltas, baseline)):
         # Metadata edits must not reset occupancy. Apply only manual changes
         # since the last explicit replay synchronization, without adding twice.
         return {zone: deltas.get(zone, 0) + manual.get(zone, 0) - baseline.get(zone, 0)

@@ -1,8 +1,9 @@
-import React, { useEffect, useRef, useState } from "react";
-import { ReplayBuffer, frameForTime, replayTracks, replayZoneCounts } from "./replayBuffer";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { ReplayBuffer, gateEventsForTime, replayTracks, replayZoneCountsFromTracks, watchReplayMedia, watchReplayKeyboard } from "./replayBuffer";
 import { drawCameraLabel, drawDetection, drawBevTracking } from "../../viewer-rendering.js";
 import { collapseBevItems } from "../../bev_items.js";
 import { watchReplayVehicles } from "./replayVehicleSync";
+import { createReplayCanvas } from "./replayCanvas";
 import { useParkingOccupancy, ParkingOccupancySummary } from "./ParkingOccupancy";
 import "./cached-replay.css";
 
@@ -14,29 +15,34 @@ const gatePlate = value => {
   return parts ? `${parts[1]} ${parts[2]} ${parts[3]}` : plate || "번호판 미확인";
 };
 
-export function ReplayTrackOverlay({ frame, map, camera, enabled }) {
+export function ReplayGateLog({ gateLog, time, fps, frameCount, onSeek }) {
+  const events = gateEventsForTime(gateLog, time, fps, frameCount);
+  return <section className="ops-panel replay-gate-panel"><div className="panel-heading"><div><h2>차단기 기록</h2><p>현재 재생 시점까지 발생한 기록</p></div><span className="record-count">{events.length}건</span></div>
+    <div className="replay-gate-list">{events.map(event => <button key={`${event.frame}:${event.type}:${event.camera_id || gateLog?.gate?.camera_id || ""}:${event.track_id ?? ""}`} onClick={() => onSeek(event.frame / fps)}><strong>[{event.type === "IN" ? "입차" : event.type === "OUT" ? "출차" : event.label || "통과"}] {gatePlate(event.plate)}</strong></button>)}
+      {!events.length && <p className="form-note">현재 재생 시점까지의 차단기 기록이 없습니다.</p>}</div>
+  </section>;
+}
+
+export function ReplayTrackOverlay({ frame, map, camera, enabled, observations }) {
   const canvasRef = useRef(null);
+  const painterRef = useRef(null);
+  const visible = Boolean(enabled && frame);
+  const tracks = useMemo(() => observations ?? replayTracks(frame, map, camera),
+    [observations, frame, map, camera]);
+  const drawingRef = useRef(null);
+  drawingRef.current = { tracks, mapWidth: map.width };
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !enabled || !frame) return;
-    const ctx = canvas.getContext("2d");
-    const draw = () => {
-      const width = canvas.clientWidth, height = canvas.clientHeight;
-      if (!width || !height) return;
-      const density = window.devicePixelRatio || 1;
-      canvas.width = Math.round(width * density);
-      canvas.height = Math.round(height * density);
-      ctx.setTransform(density, 0, 0, density, 0, 0);
-      ctx.clearRect(0, 0, width, height);
-      drawBevTracking(ctx, { offsetX: 0, offsetY: 0, scale: width / map.width },
-        { bev: replayTracks(frame, map, camera) });
-    };
-    const observer = new ResizeObserver(draw);
-    observer.observe(canvas);
-    draw();
-    return () => { observer.disconnect(); ctx.clearRect(0, 0, canvas.width, canvas.height); };
-  }, [frame, map.width, map.height, camera, enabled]);
-  return enabled && frame ? <canvas ref={canvasRef} className="replay-track-overlay" aria-label="현재 차량 위치" /> : null;
+    if (!canvas || !visible) return;
+    const painter = createReplayCanvas(canvas, (ctx, width) => {
+      const current = drawingRef.current;
+      drawBevTracking(ctx, { offsetX: 0, offsetY: 0, scale: width / current.mapWidth }, { bev: current.tracks });
+    });
+    painterRef.current = painter;
+    return () => { painter.close(); painterRef.current = null; };
+  }, [visible]);
+  useEffect(() => { painterRef.current?.paint(); }, [visible, tracks, map.width, map.height]);
+  return visible ? <canvas ref={canvasRef} className="replay-track-overlay" aria-label="현재 차량 위치" /> : null;
 }
 
 export function ReplayMap({ manifest, frame, imageUrl, camera, tracking = false, occupancy = [] }) {
@@ -44,11 +50,13 @@ export function ReplayMap({ manifest, frame, imageUrl, camera, tracking = false,
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   useEffect(() => { setReady(false); setFailed(false); }, [imageUrl]);
-  const zones = replayZoneCounts(frame, manifest.map, camera).map(zone => {
+  const observations = useMemo(() => replayTracks(frame, manifest.map, camera), [frame, manifest.map, camera]);
+  const movingCounts = useMemo(() => replayZoneCountsFromTracks(observations, manifest.map), [observations, manifest.map]);
+  const zones = useMemo(() => movingCounts.map(zone => {
     const current = occupancy?.find(area => area.id === zone.id);
     return { ...zone, parkingLabel: current ? `${current.parked_count}대 / ${current.capacity ?? "—"}대` : "—대 / —대" };
-  });
-  const tracks = tracking ? collapseBevItems(replayTracks(frame, manifest.map, camera)) : [];
+  }), [movingCounts, occupancy]);
+  const tracks = useMemo(() => tracking ? collapseBevItems(observations) : [], [tracking, observations]);
   const selected = zones.find(zone => zone.id === hover);
   return <section className="ops-panel replay-map"><div className="panel-heading"><div><h2>{tracking ? "차량 위치 추적" : "구역별 차량 현황"}</h2><p>구역별 현재 주차 대수 / 최대 주차 가능 대수</p></div>{tracking && <span className="record-count" role="status">{frame ? `추적 ${tracks.length}대` : "위치 결과 대기"}</span>}</div>
     <div className="replay-map-stage" style={{ aspectRatio: `${manifest.map.width}/${manifest.map.height}` }}>
@@ -65,7 +73,7 @@ export function ReplayMap({ manifest, frame, imageUrl, camera, tracking = false,
             <text x={b.xmin + 5} y={b.ymin + 19}>{zone.id} · {zone.parkingLabel}</text></g>;
         })}
       </svg>}
-      {ready && !failed && <ReplayTrackOverlay frame={frame} map={manifest.map} camera={camera} enabled={tracking} />}
+      {ready && !failed && <ReplayTrackOverlay frame={frame} map={manifest.map} camera={camera} enabled={tracking} observations={observations} />}
       {selected && <output className="replay-zone-tooltip" role="status">{selected.id} 구역 · {selected.parkingLabel}{tracking && frame && ` · 이동 ${selected.count}대`}</output>}
     </div>
     {tracking && <div className="replay-track-legend"><span><i className="active" />이동 차량</span>
@@ -74,6 +82,9 @@ export function ReplayMap({ manifest, frame, imageUrl, camera, tracking = false,
     {failed && <p className="error">지도를 불러오지 못했습니다. 로그인 상태와 파일을 확인하세요.</p>}
   </section>;
 }
+
+const MemoizedReplayMap = React.memo(ReplayMap);
+const ReplayOccupancySummary = React.memo(ParkingOccupancySummary);
 
 export default function CachedReplay({ token, api = "/api" }) {
   const occupancy = useParkingOccupancy(api, token);
@@ -87,6 +98,7 @@ export default function CachedReplay({ token, api = "/api" }) {
   frameRef.current = frame;
   const videoRef = useRef(null), canvasRef = useRef(null), presentRef = useRef(null);
   const options = useRef({ camera, boxes });
+  const keyboardActions = useRef(null);
   options.current = { camera, boxes };
   const mediaUrl = path => `${api}${path}?token=${encodeURIComponent(token)}&cache_id=${manifest.cache_id}`;
 
@@ -105,7 +117,7 @@ export default function CachedReplay({ token, api = "/api" }) {
   useEffect(() => {
     if (!manifest) return;
     const video = videoRef.current, canvas = canvasRef.current, ctx = canvas.getContext("2d");
-    let active = true, callback, desired = -1, lastPainted = null;
+    let active = true, desired = -1, lastPainted = null;
     const buffer = new ReplayBuffer(async (start, count, signal) => {
       const response = await fetch(`${api}/replay/frames/?start=${start}&count=${count}&cache_id=${manifest.cache_id}`, {
         headers: { Authorization: `Bearer ${token}` }, signal });
@@ -132,17 +144,22 @@ export default function CachedReplay({ token, api = "/api" }) {
         }
       }
     };
-    const show = result => { draw(result); setFrame(result); };
+    const show = result => {
+      if (result === lastPainted) return;
+      draw(result); setFrame(result);
+    };
     const present = n => {
       if (!active) return;
-      if (n === desired) { draw(buffer.get(n)); return; }
+      if (n === desired && buffer.get(n)) { show(buffer.get(n)); return; }
       if (Math.abs(n - desired) > 120) buffer.cancelPendingExcept(n);
       desired = n;
       setTime(n / manifest.fps);
       const cached = buffer.get(n);
       show(cached);
       buffer.ensure(n).then(() => {
-        if (active && desired === n) { show(buffer.get(n)); setError(""); }
+        // The playhead can advance within this batch while its request is in
+        // flight. Publish the current frame as soon as that batch is ready.
+        if (active && buffer.get(desired)) { show(buffer.get(desired)); setError(""); }
       }).catch(err => { if (active && err.name !== "AbortError") setError(err.message); });
       if (cached && n % buffer.chunk >= buffer.chunk - 20 && n + buffer.chunk < manifest.frame_count) {
         buffer.ensure(Math.floor(n / buffer.chunk) * buffer.chunk + buffer.chunk).catch(err => {
@@ -151,31 +168,18 @@ export default function CachedReplay({ token, api = "/api" }) {
       }
     };
     presentRef.current = () => draw(lastPainted);
-    const tick = (_, metadata) => {
-      if (!video.seeking) present(frameForTime(metadata.mediaTime, manifest.fps, manifest.frame_count));
-      if (active) callback = video.requestVideoFrameCallback(tick);
-    };
-    const fallback = () => {
-      if (!video.seeking) present(frameForTime(video.currentTime, manifest.fps, manifest.frame_count));
-      if (active) callback = requestAnimationFrame(fallback);
-    };
-    const loaded = () => present(frameForTime(video.currentTime, manifest.fps, manifest.frame_count));
-    const seeking = () => {
+    const seeking = target => {
       desired = -1;
-      buffer.cancelPendingExcept(frameForTime(video.currentTime, manifest.fps, manifest.frame_count));
+      setTime(target / manifest.fps);
+      buffer.cancelPendingExcept(target);
       show(null);
     };
-    video.addEventListener("loadeddata", loaded);
-    video.addEventListener("seeking", seeking);
-    if (video.requestVideoFrameCallback) callback = video.requestVideoFrameCallback(tick);
-    else callback = requestAnimationFrame(fallback);
-    if (video.readyState >= 2) loaded();
+    const stopMedia = watchReplayMedia(video, { fps: manifest.fps, frameCount: manifest.frame_count, present, seeking });
     const hide = () => { if (document.hidden) video.pause(); };
     document.addEventListener("visibilitychange", hide);
     return () => {
       active = false; buffer.close(); video.pause(); presentRef.current = null;
-      if (video.cancelVideoFrameCallback) video.cancelVideoFrameCallback(callback); else cancelAnimationFrame(callback);
-      video.removeEventListener("loadeddata", loaded); video.removeEventListener("seeking", seeking);
+      stopMedia();
       document.removeEventListener("visibilitychange", hide);
     };
   }, [manifest, api, token]);
@@ -213,21 +217,11 @@ export default function CachedReplay({ token, api = "/api" }) {
       catch { setError("영상 재생에 실패했습니다. 재생 버튼을 누르거나 브라우저 코덱 지원을 확인하세요."); }
     }
   };
+  keyboardActions.current = { time, seek, step, toggle };
   useEffect(() => {
     if (!manifest) return;
-    const keyboard = event => {
-      if (event.ctrlKey || event.metaKey || event.altKey || event.target.closest?.("input,select,textarea,button,[contenteditable=true]")) return;
-      if (event.code === "Space") { event.preventDefault(); toggle(); }
-      else if (event.code === "KeyA") seek(time - (event.shiftKey ? 30 : 5));
-      else if (event.code === "KeyD") seek(time + (event.shiftKey ? 30 : 5));
-      else if (event.code === "Comma") step(-1);
-      else if (event.code === "Period") step(1);
-      else if (event.code === "KeyR") seek(0);
-    };
-    window.addEventListener("keydown", keyboard);
-    return () => window.removeEventListener("keydown", keyboard);
-  }, [manifest, time]);
-  const gateEvents = (manifest?.gate_log.events || []).filter(event => frame && event.frame <= frame.frame_index).slice().reverse();
+    return watchReplayKeyboard(window, () => keyboardActions.current);
+  }, [manifest]);
   return <section className="cached-replay" aria-label="실시간 분석">
     <div className="panel-heading replay-heading"><h2>실시간 분석</h2>
       <button type="button" className="replay-tracking-toggle" aria-pressed={tracking} disabled={!manifest} onClick={toggleTracking}>
@@ -257,13 +251,10 @@ export default function CachedReplay({ token, api = "/api" }) {
           <canvas ref={canvasRef} aria-label="프레임별 검출 박스" />
         </div>
       </section><aside className="replay-sidebar" aria-label="차량 지도와 차단기 기록">
-        <ReplayMap manifest={manifest} frame={frame} imageUrl={mediaUrl(manifest.map.url)} camera={camera} tracking={tracking} occupancy={occupancy.zones} />
-        <section className="ops-panel replay-gate-panel"><div className="panel-heading"><div><h2>차단기 기록</h2><p>현재 재생 시점까지 발생한 기록</p></div><span className="record-count">{gateEvents.length}건</span></div>
-          <div className="replay-gate-list">{gateEvents.map((event, index) => <button key={`${event.frame}:${index}`} onClick={() => seek(event.frame / manifest.fps)}><strong>[{event.type === "IN" ? "입차" : event.type === "OUT" ? "출차" : event.label || "통과"}] {gatePlate(event.plate)}</strong></button>)}
-          {!gateEvents.length && <p className="form-note">현재 재생 시점까지의 차단기 기록이 없습니다.</p>}</div>
-        </section>
+        <MemoizedReplayMap manifest={manifest} frame={frame} imageUrl={mediaUrl(manifest.map.url)} camera={camera} tracking={tracking} occupancy={occupancy.zones} />
+        <ReplayGateLog gateLog={manifest.gate_log} time={time} fps={manifest.fps} frameCount={manifest.frame_count} onSeek={seek} />
       </aside></div>
     </>}
-    <ParkingOccupancySummary {...occupancy} />
+    <ReplayOccupancySummary {...occupancy} />
   </section>;
 }
