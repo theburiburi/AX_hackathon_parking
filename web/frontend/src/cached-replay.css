@@ -28,6 +28,8 @@ main.analysis-dashboard { max-width:1920px; }
 .replay-track-legend span { display:inline-flex; align-items:center; gap:5px; }
 .replay-track-legend i { width:9px; height:9px; border-radius:50%; }
 .replay-track-legend .active { background:#22e86f; }
+.replay-track-legend .stopped { background:#ffd740; }
+.replay-track-legend .parked { background:#ff4fdb; }
 .replay-zone-tooltip { position:absolute; left:12px; bottom:12px; max-width:calc(100% - 24px); background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:8px 12px; color:var(--text); font-size:13px; box-shadow:var(--shadow); pointer-events:none; }
 .replay-gate-list { display:flex; flex-direction:column; gap:8px; max-height:260px; overflow:auto; }
 .replay-gate-list button { display:flex; flex-direction:column; align-items:flex-start; text-align:left; gap:5px; color:var(--text); font-size:13px; min-height:44px; overflow-wrap:anywhere; }

@@ -7,6 +7,7 @@ from pathlib import Path
 from native_project import open_native_cache
 from .store import ReplayError, read_gate_log, signature
 from .parking_state import ParkingTimeline, parked_zone
+from .scenario import read_parking_scenario, scenario_timeline
 from tracking.parking_state import plate_key, vehicle_fingerprint
 
 
@@ -67,7 +68,7 @@ def build_timeline(frames, gate_log, layout):
 def _timeline(path, size, mtime_ns, offsets, gate_json, map_json):
     # Use the external project's indexed reader; changes invalidate this cache.
     gate_log, layout = json.loads(gate_json), json.loads(map_json)
-    parking = ParkingTimeline(layout, gate_log)
+    parking = ParkingTimeline(layout)
     with open_native_cache(Path(path), offsets) as source:
         def frames():
             for n in range(len(offsets)):
@@ -82,10 +83,16 @@ def replay_snapshot(store, frame_index, vehicles):
     gate_log, warning = read_gate_log(store.project, store.title, store.manifest["fps"], store.manifest["frame_count"])
     if warning:
         raise ReplayError(warning)
-    stamp = signature(store.frames_path)
-    histories, parking = _timeline(str(store.frames_path), **stamp, offsets=tuple(store.offsets),
-                          gate_json=json.dumps(gate_log, sort_keys=True),
-                          map_json=json.dumps(store.manifest["map"], sort_keys=True))
+    scenario = read_parking_scenario(store)
+    if scenario is not None:
+        histories, parking = scenario_timeline(json.dumps(gate_log, sort_keys=True),
+                                               json.dumps(scenario, sort_keys=True),
+                                               json.dumps(store.manifest["map"], sort_keys=True))
+    else:
+        stamp = signature(store.frames_path)
+        histories, parking = _timeline(str(store.frames_path), **stamp, offsets=tuple(store.offsets),
+                              gate_json=json.dumps(gate_log, sort_keys=True),
+                              map_json=json.dumps(store.manifest["map"], sort_keys=True))
     updates = {}
     for vehicle in vehicles:
         history = histories.get(plate_key(vehicle["plate_number"]))

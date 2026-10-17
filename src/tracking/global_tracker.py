@@ -20,6 +20,7 @@ class GlobalObservation:
     bev_x: float
     bev_y: float
     timestamp: float
+    entry_eligible: bool = False
 
     @property
     def local_key(self) -> LocalTrackKey:
@@ -27,6 +28,82 @@ class GlobalObservation:
             self.camera_id,
             self.local_id,
         )
+
+
+@dataclass
+class _EntryEvidence:
+    history: deque[tuple[float, float, float]] = field(default_factory=deque)
+    inside_frames: int = 0
+    admitted: bool = False
+
+
+class EntryGate:
+    """Remember cam01 vehicles that crossed the configured IN zone."""
+
+    def __init__(self, config: dict, camera_size: tuple[int, int] | None = None):
+        self.camera_id = str(config["camera_id"])
+        reference_width, reference_height = config.get("reference_size", (640, 360))
+        if reference_width <= 0 or reference_height <= 0:
+            raise ValueError("invalid gate reference size")
+        camera_width, camera_height = camera_size or (reference_width, reference_height)
+        if camera_width <= 0 or camera_height <= 0:
+            raise ValueError("invalid gate camera size")
+        scale_x = camera_width / reference_width
+        scale_y = camera_height / reference_height
+        zones = [zone for zone in config["zones"] if zone["type"] == "IN"]
+        if len(zones) != 1:
+            raise ValueError("exactly one IN gate zone is required")
+        zone = zones[0]
+        self.box = tuple(float(value) * scale for value, scale in zip(
+            zone["box"], (scale_x, scale_y, scale_x, scale_y)))
+        dx, dy = (float(value) for value in zone["direction"])
+        reference_length = math.hypot(dx, dy)
+        dx, dy = dx * scale_x, dy * scale_y
+        length = math.hypot(dx, dy)
+        if (len(self.box) != 4 or self.box[0] >= self.box[2]
+                or self.box[1] >= self.box[3] or length <= 0):
+            raise ValueError("invalid IN gate geometry")
+        self.direction = (dx / length, dy / length)
+        self.min_overlap_ratio = float(config.get("min_overlap_ratio", 0.3))
+        self.min_frames = int(config.get("min_frames_in_zone", 3))
+        self.window_sec = float(config.get("direction_window_sec", 0.5))
+        self.min_speed = (float(config.get("min_speed_px_per_sec", 10.0))
+                          * length / reference_length)
+        if (not 0 <= self.min_overlap_ratio <= 1 or self.min_frames < 1
+                or self.window_sec <= 0 or self.min_speed < 0):
+            raise ValueError("invalid IN gate thresholds")
+        self.evidence: dict[int, _EntryEvidence] = {}
+
+    def observe(self, track, timestamp: float) -> bool:
+        if track.camera_id != self.camera_id:
+            return False
+        evidence = self.evidence.setdefault(track.local_id, _EntryEvidence())
+        if evidence.admitted or track.occluded:
+            return evidence.admitted
+        evidence.history.append((timestamp, track.ground_x, track.ground_y))
+        while (len(evidence.history) > 2
+               and evidence.history[1][0] <= timestamp - self.window_sec):
+            evidence.history.popleft()
+
+        x1, y1, x2, y2 = track.bbox
+        bx1, by1, bx2, by2 = self.box
+        overlap = max(0.0, min(x2, bx2) - max(x1, bx1)) * max(
+            0.0, min(y2, by2) - max(y1, by1))
+        zone_area = (bx2 - bx1) * (by2 - by1)
+        if overlap / zone_area <= self.min_overlap_ratio:
+            evidence.inside_frames = 0
+            return False
+        evidence.inside_frames += 1
+        if evidence.inside_frames < self.min_frames or len(evidence.history) < 2:
+            return False
+        first_time, first_x, first_y = evidence.history[0]
+        elapsed = timestamp - first_time
+        if elapsed <= 0:
+            return False
+        speed_along = (((track.ground_x - first_x) * self.direction[0]
+                        + (track.ground_y - first_y) * self.direction[1]) / elapsed)
+        evidence.admitted = speed_along >= self.min_speed
+        return evidence.admitted
 
 
 @dataclass
@@ -46,6 +123,7 @@ class ProbeState:
 
     # 현재 가장 가능성이 높은 기존 Global ID.
     candidate_global_id: int | None = None
+    candidate_first_seen: float | None = None
 
     # 같은 후보가 몇 번 연속 선택됐는지.
     candidate_count: int = 0
@@ -55,6 +133,11 @@ class ProbeState:
 
     # 마지막 probe 시각.
     last_seen: float = 0.0
+
+    # BEV 이동 일치 확인용 기록 (bev_motion_window_sec 동안).
+    motion_history: deque[BevSample] = field(
+        default_factory=deque
+    )
 
 
 @dataclass
@@ -131,6 +214,8 @@ class GlobalTracker:
 
         max_match_distance_px: float = 300.0,
 
+        last_position_match_distance_px: float = 200.0,
+
         max_speed_px_per_sec: float = 180.0,
 
         time_weight: float = 0.10,
@@ -138,8 +223,6 @@ class GlobalTracker:
         class_mismatch_penalty: float = 0.20,
 
         max_match_score: float = 0.95,
-
-        retention_sec: float = 120.0,
 
         print_events: bool = True,
 
@@ -162,6 +245,17 @@ class GlobalTracker:
         min_score_margin: float = 0.15,
 
         probe_retention_sec: float = 3.0,
+        probe_handoff_grace_sec: float = 2.0,
+        overlap_match_distance_px: float = 120.0,
+        overlap_window_sec: float = 0.5,
+        overlap_score_bonus: float = 0.15,
+        handoff_confirmation_frames: int = 3,
+        entry_camera_id: str = "cam01",
+        bev_motion_window_sec: float = 1.0,
+        bev_motion_min_px: float = 30.0,
+        bev_motion_min_straightness: float = 0.8,
+        bev_motion_max_angle_deg: float = 45.0,
+        bev_motion_max_speed_ratio: float = 2.5,
     ):
 
         self.max_reid_gap_sec = float(
@@ -174,6 +268,10 @@ class GlobalTracker:
 
         self.max_match_distance_px = float(
             max_match_distance_px
+        )
+
+        self.last_position_match_distance_px = max(
+            0.0, float(last_position_match_distance_px)
         )
 
         self.max_speed_px_per_sec = float(
@@ -190,10 +288,6 @@ class GlobalTracker:
 
         self.max_match_score = float(
             max_match_score
-        )
-
-        self.retention_sec = float(
-            retention_sec
         )
 
         self.print_events = bool(
@@ -263,6 +357,21 @@ class GlobalTracker:
                 probe_retention_sec
             ),
         )
+        self.probe_handoff_grace_sec = max(0.0, float(probe_handoff_grace_sec))
+
+        self.overlap_match_distance_px = float(overlap_match_distance_px)
+        self.overlap_window_sec = float(overlap_window_sec)
+        self.overlap_score_bonus = float(overlap_score_bonus)
+        self.handoff_confirmation_frames = max(1, int(handoff_confirmation_frames))
+        self.entry_camera_id = entry_camera_id
+        self.bev_motion_window_sec = float(bev_motion_window_sec)
+        self.bev_motion_min_px = float(bev_motion_min_px)
+        self.bev_motion_min_straightness = float(bev_motion_min_straightness)
+        self.bev_motion_max_angle_deg = float(bev_motion_max_angle_deg)
+        self.bev_motion_max_speed_ratio = max(1.0, float(bev_motion_max_speed_ratio))
+        if (self.overlap_match_distance_px < 0 or self.overlap_window_sec < 0
+                or self.overlap_score_bonus < 0):
+            raise ValueError("invalid camera overlap settings")
 
         self.next_global_id = 1
 
@@ -282,6 +391,8 @@ class GlobalTracker:
             LocalTrackKey,
             ProbeState,
         ] = {}
+        self.handoff_candidates: dict[LocalTrackKey, tuple[int, int, float]] = {}
+        self.entry_created_keys: set[LocalTrackKey] = set()
 
     # =====================================================
     # Motion helpers
@@ -526,6 +637,14 @@ class GlobalTracker:
             observation.timestamp,
         )
 
+        probe.motion_history.append(
+            BevSample(observation.timestamp, observation.bev_x, observation.bev_y)
+        )
+        while (len(probe.motion_history) > 2
+               and probe.motion_history[0].timestamp
+               < observation.timestamp - self.bev_motion_window_sec):
+            probe.motion_history.popleft()
+
         probe.last_seen = (
             observation.timestamp
         )
@@ -538,6 +657,9 @@ class GlobalTracker:
         self,
         observation: GlobalObservation,
     ) -> GlobalTrack:
+
+        if not observation.entry_eligible or observation.camera_id != self.entry_camera_id:
+            raise ValueError("Global IDs may only start at the entrance")
 
         global_id = (
             self.next_global_id
@@ -602,6 +724,7 @@ class GlobalTracker:
         self.local_to_global[
             observation.local_key
         ] = global_id
+        self.entry_created_keys.add(observation.local_key)
 
         self.probes.pop(
             observation.local_key,
@@ -627,6 +750,13 @@ class GlobalTracker:
         global_track: GlobalTrack,
         observation: GlobalObservation,
     ) -> None:
+
+        # Two cameras may see the same car in one mosaic frame. Keep both
+        # local bindings, but count their shared timestamp as one motion sample.
+        if observation.timestamp == global_track.last_seen:
+            global_track.local_keys.add(observation.local_key)
+            global_track.observation_count += 1
+            return
 
         self._append_global_history(
             global_track,
@@ -764,6 +894,7 @@ class GlobalTracker:
         ]
         |
         None = None,
+        max_time_gap_sec: float | None = None,
     ) -> tuple[
         float,
         float,
@@ -771,18 +902,25 @@ class GlobalTracker:
         float | None,
     ] | None:
 
+        changing_camera = observation.camera_id != global_track.current_camera_id
+        # A fresh local ID in the current camera should not inherit a car that
+        # just left the same view. Cross-camera matches use BEV and time.
+        if not changing_camera and observation.local_key not in global_track.local_keys:
+            return None
+
         time_gap = (
             observation.timestamp
             -
             global_track.last_seen
         )
 
+        max_gap = self.max_reid_gap_sec if max_time_gap_sec is None else max_time_gap_sec
         if (
             time_gap < 0.0
             or
             time_gap
             >
-            self.max_reid_gap_sec
+            max_gap
         ):
 
             return None
@@ -807,34 +945,47 @@ class GlobalTracker:
             predicted_y,
         )
 
+        last_distance = math.hypot(
+            observation.bev_x - global_track.last_bev_x,
+            observation.bev_y - global_track.last_bev_y,
+        )
+
         allowed_distance = (
             self._allowed_distance(
                 time_gap
             )
         )
 
-        if (
-            predicted_distance
-            >
-            allowed_distance
-        ):
+        overlapping_view = (
+            changing_camera and time_gap <= self.overlap_window_sec
+            and predicted_distance <= self.overlap_match_distance_px
+        )
+        if overlapping_view:
+            allowed_distance = max(allowed_distance, self.overlap_match_distance_px)
 
+        fallback_limit = self.last_position_match_distance_px
+        if max_time_gap_sec is not None and max_time_gap_sec > self.max_reid_gap_sec:
+            fallback_limit = self.max_match_distance_px
+        use_last_position = (
+            changing_camera
+            and last_distance <= min(fallback_limit, allowed_distance)
+            and last_distance / max(allowed_distance, 1.0) + 0.20
+            < predicted_distance / max(allowed_distance, 1.0)
+        )
+        spatial_distance = last_distance if use_last_position else predicted_distance
+        if spatial_distance > allowed_distance:
             return None
 
         position_score = (
-            predicted_distance
-            /
-            max(
-                allowed_distance,
-                1.0,
-            )
+            spatial_distance / max(allowed_distance, 1.0)
+            + (0.20 if use_last_position else 0.0)
         )
 
         time_score = (
             time_gap
             /
             max(
-                self.max_reid_gap_sec,
+                max_gap,
                 0.001,
             )
         )
@@ -997,6 +1148,9 @@ class GlobalTracker:
                 self.class_mismatch_penalty
             )
 
+        if overlapping_view:
+            score = max(0.0, score - self.overlap_score_bonus)
+
         if (
             score
             >
@@ -1007,7 +1161,7 @@ class GlobalTracker:
 
         return (
             score,
-            predicted_distance,
+            spatial_distance,
             time_gap,
             direction_angle,
         )
@@ -1027,6 +1181,7 @@ class GlobalTracker:
         ]
         |
         None = None,
+        max_time_gap_sec: float | None = None,
     ) -> list[
         tuple[
             float,
@@ -1073,6 +1228,7 @@ class GlobalTracker:
                     local_velocity=(
                         local_velocity
                     ),
+                    max_time_gap_sec=max_time_gap_sec,
                 )
             )
 
@@ -1109,10 +1265,12 @@ class GlobalTracker:
             int,
             set[str],
         ],
+        max_time_gap_sec: float | None = None,
     ) -> tuple[
         GlobalTrack | None,
         float,
         float,
+        bool,
     ]:
 
         probe = self.probes.get(
@@ -1145,6 +1303,7 @@ class GlobalTracker:
                 local_velocity=(
                     local_velocity
                 ),
+                max_time_gap_sec=max_time_gap_sec,
             )
         )
 
@@ -1154,7 +1313,12 @@ class GlobalTracker:
                 None,
                 0.0,
                 0.0,
+                False,
             )
+
+        if (len(candidates) > 1
+                and candidates[1][0] - candidates[0][0] < self.min_score_margin):
+            return (None, 0.0, 0.0, True)
 
         (
             _,
@@ -1168,6 +1332,7 @@ class GlobalTracker:
             best_track,
             distance,
             time_gap,
+            False,
         )
 
     # =====================================================
@@ -1181,6 +1346,13 @@ class GlobalTracker:
         distance: float | None = None,
         time_gap: float | None = None,
     ) -> None:
+
+        # One GID may have observations in several cameras, but only one
+        # current Local ID per camera. Retire an older ID before replacing it.
+        for old_key in list(global_track.local_keys):
+            if old_key[0] == observation.camera_id and old_key != observation.local_key:
+                global_track.local_keys.remove(old_key)
+                self.local_to_global.pop(old_key, None)
 
         previous_global_id = (
             self.local_to_global.get(
@@ -1237,6 +1409,15 @@ class GlobalTracker:
     # UNKNOWN early probe
     # =====================================================
 
+    def _probe_max_gap(self, probe: ProbeState, timestamp: float) -> float:
+        if probe.provisional_global_id is None or probe.candidate_first_seen is None:
+            return self.max_reid_gap_sec
+        # The first appearance had to pass the normal gap limit. Allow only
+        # the time spent confirming this same Local ID to extend that limit.
+        confirmation_time = max(0.0, timestamp - probe.candidate_first_seen)
+        return self.max_reid_gap_sec + min(
+            self.probe_handoff_grace_sec, confirmation_time)
+
     def probe_existing(
         self,
         observation: GlobalObservation,
@@ -1283,6 +1464,7 @@ class GlobalTracker:
                 local_velocity=(
                     local_velocity
                 ),
+                max_time_gap_sec=self._probe_max_gap(probe, observation.timestamp),
             )
         )
 
@@ -1292,6 +1474,7 @@ class GlobalTracker:
             probe.candidate_global_id = (
                 None
             )
+            probe.candidate_first_seen = None
 
             probe.candidate_count = 0
 
@@ -1342,6 +1525,7 @@ class GlobalTracker:
             probe.candidate_global_id = (
                 None
             )
+            probe.candidate_first_seen = None
 
             probe.candidate_count = 0
 
@@ -1368,6 +1552,7 @@ class GlobalTracker:
             probe.candidate_global_id = (
                 best_track.global_id
             )
+            probe.candidate_first_seen = observation.timestamp
 
             probe.candidate_count = 1
 
@@ -1394,6 +1579,67 @@ class GlobalTracker:
         return (
             probe.provisional_global_id
         )
+
+    def bev_motion_matches(
+        self,
+        local_key: LocalTrackKey,
+        global_id: int,
+    ) -> bool:
+        """
+        UNKNOWN 차량이 BEV에서 실제로 꾸준히 움직였고, 그 속도 벡터가
+        후보 GID의 마지막 속도 벡터와 비슷한지.
+
+        카메라 쪽으로 다가오는 먼 차량은 이미지에서 거의 움직이지 않아
+        Local 움직임 판정(ACTIVE)이 늦다. BEV 이동으로 대신 확인한다.
+        주차 차량의 박스 흔들림은 BEV 이동이 작거나 경로가 곧지 않다.
+        """
+
+        probe = self.probes.get(local_key)
+        global_track = self.global_tracks.get(global_id)
+
+        if probe is None or global_track is None:
+            return False
+
+        history = probe.motion_history
+
+        if len(history) < 2:
+            return False
+
+        first, last = history[0], history[-1]
+        span = last.timestamp - first.timestamp
+
+        if span < self.bev_motion_window_sec * 0.9:
+            return False
+
+        net = math.hypot(last.x - first.x, last.y - first.y)
+        path = sum(
+            math.hypot(b.x - a.x, b.y - a.y)
+            for a, b in zip(history, list(history)[1:])
+        )
+
+        if (net < self.bev_motion_min_px
+                or net < self.bev_motion_min_straightness * path):
+            return False
+
+        speed = net / span
+        track_speed = global_track.speed_px_per_sec
+
+        if track_speed < self.min_direction_speed_px_per_sec:
+            return False
+
+        cos_angle = (
+            ((last.x - first.x) * global_track.velocity_x
+             + (last.y - first.y) * global_track.velocity_y)
+            / (net * track_speed)
+        )
+
+        if cos_angle < math.cos(math.radians(self.bev_motion_max_angle_deg)):
+            return False
+
+        ratio = speed / track_speed
+
+        return (1.0 / self.bev_motion_max_speed_ratio
+                <= ratio <= self.bev_motion_max_speed_ratio)
 
     def get_provisional_global_id(
         self,
@@ -1452,6 +1698,16 @@ class GlobalTracker:
 
         for observation in observations:
 
+            # An actual IN crossing takes precedence even if this Local ID was
+            # tentatively linked to a different entrance-created vehicle.
+            if (observation.entry_eligible and observation.camera_id == self.entry_camera_id
+                    and observation.local_key not in self.entry_created_keys):
+                previous_id = self.local_to_global.pop(observation.local_key, None)
+                if previous_id in self.global_tracks:
+                    self.global_tracks[previous_id].local_keys.discard(observation.local_key)
+                unbound_observations.append(observation)
+                continue
+
             global_id = (
                 self.local_to_global.get(
                     observation.local_key
@@ -1507,9 +1763,19 @@ class GlobalTracker:
         # 먼저 검사한다.
         # -------------------------------------------------
 
-        for observation in (
-            unbound_observations
+        for observation in sorted(
+            unbound_observations,
+            key=lambda item: not (item.entry_eligible and item.camera_id == self.entry_camera_id),
         ):
+
+            # The entrance is the only place that allocates a new identity.
+            # A newly admitted local car is a new arrival, not a handoff.
+            if observation.entry_eligible and observation.camera_id == self.entry_camera_id:
+                entrant = self._create_global_track(observation)
+                assignments[observation.local_key] = entrant.global_id
+                seen_cameras_by_global.setdefault(entrant.global_id, set()).add(
+                    observation.camera_id)
+                continue
 
             probe = self.probes.get(
                 observation.local_key
@@ -1520,10 +1786,18 @@ class GlobalTracker:
                 if probe is not None
                 else None
             )
+            if (probe is not None and provisional_id is not None
+                    and observation.timestamp - probe.last_seen > self.probe_retention_sec):
+                provisional_id = None
+            provisional_max_gap = (
+                self._probe_max_gap(probe, observation.timestamp)
+                if probe is not None and provisional_id is not None else None
+            )
 
             best_track = None
             distance = None
             time_gap = None
+            ambiguous = False
 
             # ---------------------------------------------
             # 2-1. provisional 후보 우선 재검증
@@ -1576,6 +1850,7 @@ class GlobalTracker:
                             local_velocity=(
                                 local_velocity
                             ),
+                            max_time_gap_sec=provisional_max_gap,
                         )
                     )
 
@@ -1597,12 +1872,27 @@ class GlobalTracker:
             #      → 일반 Global Re-ID
             # ---------------------------------------------
 
+            if best_track is not None:
+                reviewed, reviewed_distance, reviewed_gap, ambiguous = (
+                    self._find_best_global_track(
+                        observation, seen_cameras_by_global,
+                        max_time_gap_sec=provisional_max_gap)
+                )
+                if ambiguous:
+                    self.handoff_candidates.pop(observation.local_key, None)
+                    continue
+                if reviewed is None or reviewed.global_id != best_track.global_id:
+                    best_track = None
+                else:
+                    distance, time_gap = reviewed_distance, reviewed_gap
+
             if best_track is None:
 
                 (
                     best_track,
                     distance_value,
                     time_gap_value,
+                    ambiguous,
                 ) = self._find_best_global_track(
 
                     observation,
@@ -1620,17 +1910,30 @@ class GlobalTracker:
                         time_gap_value
                     )
 
+            if ambiguous:
+                self.handoff_candidates.pop(observation.local_key, None)
+                continue
+
+            if (best_track is not None
+                    and observation.camera_id != best_track.current_camera_id
+                    and provisional_id != best_track.global_id):
+                previous_id, count, last_seen = self.handoff_candidates.get(
+                    observation.local_key, (None, 0, observation.timestamp))
+                count = (count + 1 if previous_id == best_track.global_id
+                         and observation.timestamp - last_seen <= self.probe_retention_sec else 1)
+                self.handoff_candidates[observation.local_key] = (
+                    best_track.global_id, count, observation.timestamp)
+                if count < self.handoff_confirmation_frames:
+                    continue
+
             # ---------------------------------------------
             # 2-3. 기존 GID가 없으면 새 GID
             # ---------------------------------------------
 
             if best_track is None:
-
-                best_track = (
-                    self._create_global_track(
-                        observation
-                    )
-                )
+                # No entrance observation, so keep this Local ID unassigned.
+                self.handoff_candidates.pop(observation.local_key, None)
+                continue
 
             else:
 
@@ -1656,16 +1959,14 @@ class GlobalTracker:
                 best_track.global_id
             )
 
+            self.handoff_candidates.pop(observation.local_key, None)
+
             seen_cameras_by_global.setdefault(
                 best_track.global_id,
                 set(),
             ).add(
                 observation.camera_id
             )
-
-        self._remove_stale_global_tracks(
-            timestamp
-        )
 
         self._remove_stale_probes(
             timestamp
@@ -1676,101 +1977,6 @@ class GlobalTracker:
     # =====================================================
     # Cleanup
     # =====================================================
-
-    def _remove_stale_global_tracks(
-        self,
-        timestamp: float,
-    ) -> None:
-
-        stale_ids = [
-
-            global_id
-
-            for (
-                global_id,
-                global_track,
-            )
-            in self.global_tracks.items()
-
-            if (
-                timestamp
-                -
-                global_track.last_seen
-            )
-            >
-            self.retention_sec
-        ]
-
-        for global_id in stale_ids:
-
-            global_track = (
-                self.global_tracks.pop(
-                    global_id
-                )
-            )
-
-            # 만료된 Global ID binding도 함께 제거.
-            stale_local_keys = [
-
-                local_key
-
-                for (
-                    local_key,
-                    bound_global_id,
-                )
-                in self.local_to_global.items()
-
-                if (
-                    bound_global_id
-                    ==
-                    global_id
-                )
-            ]
-
-            for local_key in (
-                stale_local_keys
-            ):
-
-                self.local_to_global.pop(
-                    local_key,
-                    None,
-                )
-
-            # probe가 만료된 GID를 보고 있다면 제거.
-            for probe in (
-                self.probes.values()
-            ):
-
-                if (
-                    probe.candidate_global_id
-                    ==
-                    global_id
-                ):
-
-                    probe.candidate_global_id = (
-                        None
-                    )
-
-                    probe.candidate_count = 0
-
-                if (
-                    probe.provisional_global_id
-                    ==
-                    global_id
-                ):
-
-                    probe.provisional_global_id = (
-                        None
-                    )
-
-            if self.print_events:
-
-                print(
-                    f"[GLOBAL] "
-                    f"{global_track.label} expired "
-                    f"after "
-                    f"{timestamp - global_track.last_seen:.1f}s"
-                )
 
     def _remove_stale_probes(
         self,
@@ -1804,6 +2010,12 @@ class GlobalTracker:
                 local_key,
                 None,
             )
+
+        self.handoff_candidates = {
+            key: candidate for key, candidate in self.handoff_candidates.items()
+            if timestamp - candidate[2] <= self.probe_retention_sec
+            and candidate[0] in self.global_tracks
+        }
 
     # =====================================================
     # Public API

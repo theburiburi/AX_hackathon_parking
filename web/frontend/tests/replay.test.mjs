@@ -1,6 +1,98 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ReplayBuffer, frameForTime, replayTracks, replayZoneCounts } from "../src/replayBuffer.js";
+import { ReplayBuffer, frameForTime, replayTracks, replayZoneCounts, replayZoneCountsFromTracks, watchReplayMedia, watchReplayKeyboard } from "../src/replayBuffer.js";
+
+test("keyboard subscription uses the latest playhead and controls without re-registering", () => {
+  const target = new EventTarget(), sought = [], stepped = [];
+  let toggled = 0;
+  let current = { time: 10, seek: n => sought.push(n), step: n => stepped.push(n), toggle: () => toggled++ };
+  const stop = watchReplayKeyboard(target, () => current);
+  const key = (code, options = {}) => {
+    const event = new Event("keydown", { cancelable: true });
+    Object.assign(event, { code, ...options });
+    target.dispatchEvent(event);
+    return event;
+  };
+  key("KeyD");
+  current = { ...current, time: 45 };
+  key("KeyA", { shiftKey: true });
+  key("KeyD", { ctrlKey: true });
+  key("Comma"); key("Period"); key("KeyR");
+  assert.equal(key("Space").defaultPrevented, true);
+  assert.deepEqual(sought, [15, 15, 0]);
+  assert.deepEqual(stepped, [-1, 1]);
+  assert.equal(toggled, 1);
+  stop();
+  key("KeyD"); key("Space");
+  assert.deepEqual(sought, [15, 15, 0]);
+  assert.equal(toggled, 1);
+});
+
+test("paused seeks load their destination even when the only video callback fires during seeking", () => {
+  const video = new EventTarget();
+  let callback, cancelled;
+  Object.assign(video, { currentTime: 0, seeking: false, paused: true,
+    requestVideoFrameCallback(fn) { callback = fn; return 7; },
+    cancelVideoFrameCallback(id) { cancelled = id; } });
+  const shown = [], cleared = [];
+  const stop = watchReplayMedia(video, { fps: 30, frameCount: 300,
+    present: n => shown.push(n), seeking: n => cleared.push(n),
+    requestFrame() { throw new Error("Video callbacks should be used"); }, cancelFrame() {} });
+  assert.deepEqual(shown, [0]);
+  video.currentTime = 8;
+  video.seeking = true;
+  video.dispatchEvent(new Event("seeking"));
+  callback(0, { mediaTime: 8 });
+  assert.deepEqual(cleared, [240]);
+  assert.deepEqual(shown, [0]);
+  video.seeking = false;
+  video.dispatchEvent(new Event("seeked"));
+  assert.deepEqual(shown, [0, 240]);
+  stop();
+  video.dispatchEvent(new Event("seeked"));
+  callback(0, { mediaTime: 9 });
+  assert.deepEqual(shown, [0, 240]);
+  assert.equal(cancelled, 7);
+});
+
+test("media time fallback follows playback and stops on cleanup", () => {
+  const video = new EventTarget();
+  Object.assign(video, { currentTime: 1, seeking: false });
+  let callback, cancelled;
+  const shown = [];
+  const stop = watchReplayMedia(video, { fps: 30, frameCount: 100,
+    present: n => shown.push(n), seeking() {},
+    requestFrame(fn) { callback = fn; return 2; }, cancelFrame(id) { cancelled = id; } });
+  video.currentTime = 2;
+  callback();
+  assert.deepEqual(shown, [30, 60]);
+  stop();
+  callback();
+  assert.deepEqual(shown, [30, 60]);
+  assert.equal(cancelled, 2);
+});
+
+test("seeking back to an aborted chunk starts a fresh request without waiting for cancellation", async () => {
+  const requests = [];
+  const buffer = new ReplayBuffer((start, count, signal) => new Promise(resolve => {
+    requests.push({ start, signal, resolve });
+  }));
+  const old = buffer.ensure(0);
+  buffer.cancelPendingExcept(240);
+  const fresh = buffer.ensure(0);
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0].signal.aborted, true);
+  requests[0].resolve([{ frame_index: 0, stale: true }]);
+  await old;
+  assert.equal(buffer.get(0), null);
+  const shared = buffer.ensure(1);
+  assert.equal(requests.length, 2);
+  requests[1].resolve([{ frame_index: 0 }, { frame_index: 1 }]);
+  await Promise.all([fresh, shared]);
+  assert.equal(buffer.get(0).stale, undefined);
+  assert.equal(buffer.get(1).frame_index, 1);
+  buffer.close();
+});
 
 test("displayed media time determines the exact frame, including last frame", () => {
   assert.equal(frameForTime(1 / 30, 30, 100), 1);
@@ -61,6 +153,7 @@ test("zone counts consume native ACTIVE BEV only and never project camera boxes"
   ] };
   assert.deepEqual(replayZoneCounts(frame, map).map(x => x.count), [1, 1]);
   assert.deepEqual(replayZoneCounts(frame, map, "cam01").map(x => x.count), [1, 0]);
+  assert.deepEqual(replayZoneCountsFromTracks(replayTracks(frame, map, "cam01"), map), replayZoneCounts(frame, map, "cam01"));
   assert.deepEqual(replayZoneCounts({ cameras: frame.cameras, bev: [] }, map).map(x => x.count), [0, 0]);
   assert.deepEqual(replayZoneCounts(null, map).map(x => x.count), [0, 0]);
 });
@@ -90,12 +183,13 @@ test("unavailable or invalid map points never become phantom vehicle positions",
   assert.deepEqual(replayTracks({ bev: [] }, map), []);
 });
 
-test("map display matches native ACTIVE policy without changing parked observations in source frames", () => {
+test("map display retains native stopped and parked observations without changing source frames", () => {
   const point = { state: "ACTIVE", x: 10.125, y: 20.75, global_id: 9, local_id: 2, camera_id: "cam01" };
   const frame = { bev: [point, { ...point, state: "STOPPED" }, { ...point, state: "PARKED" }] };
   const before = structuredClone(frame);
   const rows = replayTracks(frame, { width: 100, height: 100 });
-  assert.equal(rows.length, 1);
+  assert.equal(rows.length, 3);
+  assert.deepEqual(rows.map(item => item.state), ["ACTIVE", "STOPPED", "PARKED"]);
   assert.equal(rows[0].x, point.x); assert.equal(rows[0].y, point.y);
   assert.deepEqual(frame, before);
 });

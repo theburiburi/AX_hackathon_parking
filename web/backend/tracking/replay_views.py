@@ -3,12 +3,13 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from replay.store import ReplayError, ReplayStore
+from replay.frame_response import frame_response
 from replay.vehicle_state import replay_snapshot
 from threading import RLock
 from . import json_store
 from .media_stream import media_response
 from .views import login_required
-from .parking_state import vehicle_fingerprint, manual_zone_deltas
+from .parking_state import PARKING_POLICY, vehicle_fingerprint, manual_zone_deltas
 
 _vehicle_lock = RLock()
 
@@ -31,6 +32,7 @@ def vehicle_state(request):
             vehicles = json_store.read("vehicles")
             updates, parking_deltas = replay_snapshot(store, n, vehicles)
             snapshot = {"cache_id": store.manifest["cache_id"], "video": store.title,
+                        "parking_policy": PARKING_POLICY,
                         "frame": n, "vehicles": updates, "parking_deltas": parking_deltas,
                         "parking_base_deltas": manual_zone_deltas(vehicles),
                         "base_states": {vehicle["id"]: vehicle_fingerprint(vehicle) for vehicle in vehicles if vehicle["id"] in updates}}
@@ -75,7 +77,7 @@ def frames(request):
         store = open_store(request)
         if start >= store.manifest["frame_count"]:
             return Response({"detail": "영상 프레임 범위를 벗어났습니다."}, status=400)
-        return Response({"cache_id": store.manifest["cache_id"], "frames": store.frames(start, count)})
+        return frame_response(store, start, count, request)
     except (ReplayError, OSError, ValueError) as exc:
         return Response({"detail": str(exc)}, status=503)
 

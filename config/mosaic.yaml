@@ -36,3 +36,12 @@ cameras:
 
   - id: cam08
     cell: [3, 1]
+
+# 차량이 없을 때 일부 카메라는 화면 전체를 가로로 압축하고 좌우를 검게 채운다 (축소 모드).
+#   축소 모드 x = scale_x * 전체 화면 x + offset_x   (y는 같다)
+# tracking / calibration은 전체 화면 좌표를 쓰므로 축소 모드 검출은 이 식으로 되돌린다.
+# test02의 7개 카메라 모두 두 모드 프레임 정합 결과가 같았다 (0.824~0.826, 113~115).
+# 프레임별 모드는 scripts/detect_view_modes.py 가 data/detections/<title>/view_modes.json 에 기록한다.
+letterbox:
+  scale_x: 0.825
+  offset_x: 113.0
