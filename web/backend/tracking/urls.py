@@ -3,6 +3,7 @@ from . import views, schedules, replay_views
 urlpatterns = [
     path("replay/manifest/", replay_views.manifest),
     path("replay/vehicle-state/", replay_views.vehicle_state),
+    path("replay/demo-state/", replay_views.demo_state),
     path("replay/frames/", replay_views.frames),
     path("replay/video/", replay_views.video),
     path("replay/map/", replay_views.map_image),

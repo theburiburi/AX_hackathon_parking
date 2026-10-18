@@ -20,6 +20,7 @@ if str(PROJECT) not in sys.path:
 from src import mosaic
 
 
+
 class NativeProjectError(ValueError):
     pass
 

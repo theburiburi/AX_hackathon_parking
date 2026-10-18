@@ -4,11 +4,11 @@ from rest_framework.response import Response
 
 from replay.store import ReplayError, ReplayStore
 from replay.frame_response import frame_response
-from replay.vehicle_state import replay_snapshot
+from replay.vehicle_state import apply_snapshot, replay_snapshot
 from threading import RLock
 from . import json_store
 from .media_stream import media_response
-from .views import login_required
+from .views import current_parking_zones, login_required
 from .parking_state import PARKING_POLICY, vehicle_fingerprint, manual_zone_deltas
 
 _vehicle_lock = RLock()
@@ -32,6 +32,7 @@ def vehicle_state(request):
             vehicles = json_store.read("vehicles")
             updates, parking_deltas = replay_snapshot(store, n, vehicles)
             snapshot = {"cache_id": store.manifest["cache_id"], "video": store.title,
+                        "fps": store.manifest["fps"],
                         "parking_policy": PARKING_POLICY,
                         "frame": n, "vehicles": updates, "parking_deltas": parking_deltas,
                         "parking_base_deltas": manual_zone_deltas(vehicles),
@@ -39,6 +40,35 @@ def vehicle_state(request):
             json_store.write("vehicle_replay_state", snapshot)
         return Response({"frame": n, "updated": len(updates)})
     except (ReplayError, OSError, ValueError, KeyError, TypeError) as exc:
+        return Response({"detail": str(exc)}, status=503)
+
+
+@api_view(["GET"])
+@login_required()
+def demo_state(request):
+    """Read one shared playhead snapshot for both inventory and vehicle status.
+
+    User viewers never open the replay store or change the administrator's
+    playhead. Filtering happens after applying departure/team transfers.
+    """
+    try:
+        try:
+            snapshot = json_store.read("vehicle_replay_state")
+        except FileNotFoundError:
+            snapshot = {}
+        original = json_store.read("vehicles")
+        vehicles = apply_snapshot(original, snapshot)
+        if request.auth_user["role"] != "ADMIN":
+            vehicles = [row for row in vehicles if row["team_id"] == request.auth_user["team_id"]]
+        fps, frame = snapshot.get("fps"), snapshot.get("frame")
+        playback = None
+        if type(frame) is int and frame >= 0 and type(fps) in (int, float) and fps > 0:
+            playback = {"video": snapshot.get("video"), "cache_id": snapshot.get("cache_id"),
+                        "frame": frame, "time": frame / fps}
+        return Response({"playback": playback, "vehicles": vehicles,
+                         "zones": current_parking_zones(original, snapshot)},
+                        headers={"Cache-Control": "no-store"})
+    except (OSError, ValueError, KeyError, TypeError) as exc:
         return Response({"detail": str(exc)}, status=503)
 
 

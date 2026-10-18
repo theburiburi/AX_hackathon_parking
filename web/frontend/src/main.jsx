@@ -3,8 +3,10 @@ import { createRoot } from "react-dom/client";
 import "./styles.css";
 import ParkingMap, { zoneName } from "./ParkingMap";
 import CachedReplay from "./CachedReplay";
+import { ParkingOccupancySummary } from "./ParkingOccupancy";
 import VehicleSchedule from "./VehicleSchedule";
 import { watchSessionProfile } from "./sessionProfile";
+import { useDemoState } from "./DemoSync";
 
 const API = import.meta.env.VITE_API_URL || "/api";
 const TEAM_LABELS = {
@@ -53,23 +55,21 @@ function Login({ onLogin }) {
 export function VehicleList({ vehicles, zones = [], teamLabels = TEAM_LABELS }) {
   return <section className="panel"><h2>차량 목록</h2><div className="vehicle-list">{vehicles.map((vehicle) => <article className="vehicle" key={vehicle.id}>
     <div><strong>{vehicle.plate_number}</strong><span>{teamLabels[vehicle.team_id] || vehicle.team_id}</span></div>
-    <div className={`badge ${vehicle.status.toLowerCase()}`}>{vehicle.status === "MOVING" ? "운행중" : vehicle.status === "EXITED" ? "출차" : zoneName(vehicle.current_zone_id, zones)}</div>
+    <div className={`badge ${vehicle.status.toLowerCase()}`}>{vehicle.status === "MOVING" ? "운행중" : vehicle.status === "PARKING" ? "주차중" : vehicle.status === "EXITED" ? "출차" : zoneName(vehicle.current_zone_id, zones)}</div>
   </article>)}{!vehicles.length && <p>표시할 차량이 없습니다.</p>}</div></section>;
 }
 
 export function Dashboard({ session, onLogout }) {
   const { token, user } = session;
-  const [vehicles, setVehicles] = useState([]), [media, setMedia] = useState({ map: null }), [error, setError] = useState("");
+  const [media, setMedia] = useState({ map: null }), [error, setError] = useState("");
   const [page, setPage] = useState("dashboard");
   const isAdmin = user.role === "ADMIN";
+  const demo = useDemoState(API, token, !isAdmin);
+  const vehicles = demo.vehicles;
   const load = async () => {
     try {
       setError("");
-      const [vehicleData, mediaData] = await Promise.all([
-        request("/vehicles/", {}, token),
-        request("/parking-map/", {}, token),
-      ]);
-      setVehicles(vehicleData); setMedia(mediaData);
+      setMedia(await request("/parking-map/", {}, token));
     } catch (err) { if (err.message === "Login required.") onLogout(); else setError(err.message); }
   };
   useEffect(() => { if (!isAdmin) load(); }, [isAdmin, token]);
@@ -77,7 +77,8 @@ export function Dashboard({ session, onLogout }) {
     <div className="account"><span>{isAdmin ? <strong>관리자</strong> : <><strong>{user.team_name || TEAM_LABELS[user.team_id] || user.team_id}</strong> · {user.name || user.id}</>}</span><button onClick={onLogout}>로그아웃</button></div></header>
     {!isAdmin && <nav className="page-nav" aria-label="주차 관리 메뉴"><button className={page === "dashboard" ? "selected" : ""} onClick={() => setPage("dashboard")}>차량 현황</button><button className={page === "schedule" ? "selected" : ""} onClick={() => setPage("schedule")}>차량 운행 스케줄</button></nav>}
     {!isAdmin && <p className="team-notice">조회 범위: {user.team_name || TEAM_LABELS[user.team_id] || user.team_id}</p>}
-    {isAdmin ? <CachedReplay token={token} api={API} /> : page === "schedule" ? <VehicleSchedule token={token} user={user} api={API} /> : error ? <p className="error">{error}</p> : <div className="grid user-location-grid"><ParkingMap parkingMap={media.map} layout={media.layout} vehicles={vehicles} token={token} api={API} onVehiclesUpdated={setVehicles} /><VehicleList vehicles={vehicles} zones={media.layout?.zones || []} teamLabels={{ ...TEAM_LABELS, [user.team_id]: user.team_name || TEAM_LABELS[user.team_id] }} /></div>}
+    {!isAdmin && demo.error && <p className="error" role="alert">차량 현황 갱신 실패: {demo.error}</p>}
+    {isAdmin ? <CachedReplay token={token} api={API} /> : page === "schedule" ? <VehicleSchedule token={token} user={user} api={API} /> : error ? <p className="error">{error}</p> : <div className="grid user-location-grid"><ParkingMap parkingMap={media.map} layout={media.layout} vehicles={vehicles} token={token} api={API} occupancy={demo} showOccupancy={false} /><div className="user-location-summary"><VehicleList vehicles={vehicles} zones={media.layout?.zones || []} teamLabels={{ ...TEAM_LABELS, [user.team_id]: user.team_name || TEAM_LABELS[user.team_id] }} /><section className="panel"><ParkingOccupancySummary {...demo} synchronized /></section></div></div>}
   </main>;
 }
 

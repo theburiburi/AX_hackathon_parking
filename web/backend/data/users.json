@@ -10,7 +10,7 @@
   {
     "id": "digital",
     "password": "test",
-    "name": "권혁돈",
+    "name": "USER1",
     "role": "USER",
     "team_id": "SECTION_DIGITAL_COMMUNICATION",
     "team_name": "광양디지털통신기술섹션"
@@ -18,7 +18,7 @@
   {
     "id": "cold-dx",
     "password": "test",
-    "name": "조의재",
+    "name": "USER1",
     "role": "USER",
     "team_id": "SECTION_COLD_DX",
     "team_name": "냉간 DX 섹션"
@@ -26,7 +26,7 @@
   {
     "id": "steelmaking",
     "password": "test",
-    "name": "한용만",
+    "name": "USER1",
     "role": "USER",
     "team_id": "SECTION_STEELMAKING_CASTING",
     "team_name": "광양제강연주섹션"
@@ -34,7 +34,7 @@
   {
     "id": "digital2",
     "password": "test",
-    "name": "디지털 사용자 2",
+    "name": "USER2",
     "role": "USER",
     "team_id": "SECTION_DIGITAL_COMMUNICATION",
     "team_name": "광양디지털통신기술섹션"
@@ -42,7 +42,7 @@
   {
     "id": "digital3",
     "password": "test",
-    "name": "디지털 사용자 3",
+    "name": "USER3",
     "role": "USER",
     "team_id": "SECTION_DIGITAL_COMMUNICATION",
     "team_name": "광양디지털통신기술섹션"

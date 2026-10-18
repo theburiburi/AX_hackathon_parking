@@ -1,10 +1,17 @@
-// One writer per enabled viewer, at most one request in flight. Frame prefetch
-// never changes shared vehicle state; only the actual displayed frame is sent.
-export function watchReplayVehicles({ readFrame, send, onError, interval = 1000,
+import { frameForTime } from "./replayBuffer.js";
+
+// Only the administrator's video playhead writes state. Seeks/pause wake the
+// publisher immediately; pending writes finish before publishing the latest seek.
+export function watchReplayVehicles({ readFrame, send, onError, interval = 250, subscribe,
   setTimer = setTimeout, clearTimer = clearTimeout }) {
   const controller = new AbortController();
-  let active = true, timer, lastFrame = null;
+  let active = true, timer, lastFrame = null, pending = false, requested = false;
   const sync = async () => {
+    if (!active) return;
+    clearTimer(timer);
+    if (pending) { requested = true; return; }
+    pending = true;
+    requested = false;
     try {
       const frame = readFrame();
       if (Number.isInteger(frame) && frame !== lastFrame) {
@@ -14,9 +21,25 @@ export function watchReplayVehicles({ readFrame, send, onError, interval = 1000,
     } catch (error) {
       if (active && error.name !== "AbortError") onError(error.message);
     } finally {
-      if (active) timer = setTimer(sync, interval);
+      pending = false;
+      if (active) {
+        if (requested) sync();
+        else timer = setTimer(sync, interval);
+      }
     }
   };
+  const unsubscribe = subscribe?.(sync);
   sync();
-  return () => { active = false; controller.abort(); clearTimer(timer); };
+  return () => { active = false; unsubscribe?.(); controller.abort(); clearTimer(timer); };
+}
+export function watchReplayVideoState(video, { fps, frameCount, ...options }) {
+  return watchReplayVehicles({ ...options,
+    readFrame: () => video.readyState > 0 && !video.seeking
+      ? frameForTime(video.currentTime, fps, frameCount) : null,
+    subscribe: sync => {
+      const events = ["loadeddata", "play", "pause", "seeked", "ended", "ratechange"];
+      events.forEach(name => video.addEventListener(name, sync));
+      return () => events.forEach(name => video.removeEventListener(name, sync));
+    },
+  });
 }

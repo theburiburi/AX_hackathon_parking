@@ -54,6 +54,8 @@ test("regular user sees vehicle status and schedule without requests or request 
   assert.match(html, /차량 운행 스케줄/);
   assert.match(html, /주차장 차량 위치/);
   assert.match(html, /차량 목록/);
+  assert.doesNotMatch(html, /관리자 영상 연동|관리자 영상 재생 대기|demo-sync-status/);
+  assert.doesNotMatch(html, /3초마다/);
   assert.doesNotMatch(html, /차량 관리 요청|내 요청 이력|요청 제출|승인 대기/);
   assert.doesNotMatch(html, /실시간 분석|영상 분석 재생|실시간 감지 모드/);
 });
@@ -108,6 +110,9 @@ test("vehicle list shows the zone or driving label without stale zones for movin
   const moving = renderVehicle("MOVING", "A");
   assert.match(moving, /class="badge moving">운행중</);
   assert.doesNotMatch(moving, /A 구역|>MOVING</);
+  const parking = renderVehicle("PARKING", "A");
+  assert.match(parking, /class="badge parking">주차중</);
+  assert.doesNotMatch(parking, /A 구역|>PARKING</);
   const exited = renderVehicle("EXITED", "A");
   assert.match(exited, /class="badge exited">출차</);
   assert.doesNotMatch(exited, /A 구역|>EXITED</);

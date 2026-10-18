@@ -11,7 +11,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from . import json_store
-from .views import login_required
+from .views import current_vehicles, login_required
 
 # Serialize conflict checking and persistence across Django request threads.
 _lock = RLock()
@@ -76,7 +76,7 @@ def present(user, item):
 def validated(data, user, old=None):
     if not isinstance(data, dict):
         raise ValidationError("운행 정보를 JSON 객체로 입력하세요.")
-    vehicle = next((v for v in json_store.read("vehicles") if v["id"] == data.get("vehicle_id")), None)
+    vehicle = next((v for v in current_vehicles() if v["id"] == data.get("vehicle_id")), None)
     if not vehicle or not visible(user, vehicle):
         raise ValidationError("예약 가능한 소속 차량을 선택하세요.")
     driver_id = data.get("driver_id") if user["role"] == "ADMIN" else user["id"]
@@ -150,7 +150,7 @@ def collection(request):
             return visible(user, item) and (not team or item["team_id"] == team)
         with _lock:
             bookings = [present(user, item) for item in records() if selected(item) and date.fromisoformat(day) in occurrence_days(item)]
-        vehicles = [v for v in json_store.read("vehicles") if selected(v)]
+        vehicles = [v for v in current_vehicles() if selected(v)]
         members = [{k: u[k] for k in ("id", "name", "team_id")} for u in json_store.read("users") if u["role"] == "USER" and selected(u)]
         return Response({"date": day, "schedules": sorted(bookings, key=lambda item: (item["start_time"], item["plate_number"])), "vehicles": vehicles, "members": members})
     with _lock:

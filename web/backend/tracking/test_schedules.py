@@ -44,25 +44,25 @@ class ScheduleTests(SimpleTestCase):
 
     def test_section_visibility_includes_colleagues_but_never_other_sections(self):
         self.assertEqual(self.create().status_code, 201)
-        self.assertEqual(self.create("cold-dx", vehicle_id="V002", driver_id="cold-dx").status_code, 201)
-        self.assertEqual(self.create("steelmaking", vehicle_id="V003", driver_id="steelmaking").status_code, 201)
+        self.assertEqual(self.create("cold-dx", vehicle_id="V007", driver_id="cold-dx").status_code, 201)
+        self.assertEqual(self.create("steelmaking", vehicle_id="V004", driver_id="steelmaking").status_code, 201)
         response = self.day("digital2", "date=2026-09-26&team_id=SECTION_COLD_DX")
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual([item["driver_id"] for item in data["schedules"]], ["digital"])
         self.assertFalse(data["schedules"][0]["can_edit"])
-        self.assertEqual([v["id"] for v in data["vehicles"]], ["V001", "V-DIGITAL-002", "V-DIGITAL-003", "V-DIGITAL-004"])
+        self.assertEqual([v["id"] for v in data["vehicles"]], ["V001", "V002", "V003"])
         self.assertEqual({u["id"] for u in data["members"]}, {"digital", "digital2", "digital3"})
         self.assertNotIn("password", json.dumps(data))
         self.assertEqual(len(self.day("admin").json()["schedules"]), 3)
         filtered = self.day("admin", "date=2026-09-26&team_id=SECTION_COLD_DX").json()
-        self.assertEqual([s["vehicle_id"] for s in filtered["schedules"]], ["V002"])
+        self.assertEqual([s["vehicle_id"] for s in filtered["schedules"]], ["V007"])
         self.assertEqual(self.day(query="date=2026-09-27").json()["schedules"], [])
 
     def test_unauthenticated_and_forged_owner_or_vehicle(self):
         self.assertEqual(self.client.get("/api/vehicle-schedules/").status_code, 401)
         self.assertEqual(self.client.post("/api/vehicle-schedules/", self.payload, content_type="application/json").status_code, 401)
-        self.assertEqual(self.create(vehicle_id="V002").status_code, 400)
+        self.assertEqual(self.create(vehicle_id="V007").status_code, 400)
         self.assertEqual(self.create(driver_id="digital2").status_code, 400)
         self.assertEqual(self.create("admin", vehicle_id="V001", driver_id="cold-dx").status_code, 400)
         item = self.create(team_id="SECTION_COLD_DX", created_by="admin").json()
@@ -119,16 +119,16 @@ class ScheduleTests(SimpleTestCase):
 
     def test_driver_cannot_book_two_vehicles_simultaneously(self):
         vehicles = json_store.read("vehicles")
-        vehicles.append({**vehicles[0], "id": "V004", "plate_number": "TEST-04"})
+        vehicles.append({**vehicles[0], "id": "EXTRA-DIGITAL", "plate_number": "TEST-04"})
         json_store.write("vehicles", vehicles)
         self.create()
-        self.assertEqual(self.create(vehicle_id="V004").status_code, 409)
+        self.assertEqual(self.create(vehicle_id="EXTRA-DIGITAL").status_code, 409)
 
     def test_update_cancel_permissions_and_persistence(self):
         item = self.create().json()
         self.assertEqual(self.change(item, "digital2", purpose="변경").status_code, 403)
         self.assertEqual(self.change(item, "cold-dx", purpose="변경").status_code, 404)
-        self.assertEqual(self.change(item, vehicle_id="V002").status_code, 400)
+        self.assertEqual(self.change(item, vehicle_id="V007").status_code, 400)
         response = self.change(item, start_time="11:00", end_time="12:00", purpose="회의")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(json_store.read("vehicle_schedules")[0]["purpose"], "회의")
@@ -139,7 +139,7 @@ class ScheduleTests(SimpleTestCase):
         self.assertEqual(self.create().status_code, 201)
 
     def test_admin_can_assign_and_manage_all_sections(self):
-        item = self.create("admin", vehicle_id="V002", driver_id="cold-dx").json()
+        item = self.create("admin", vehicle_id="V007", driver_id="cold-dx").json()
         self.assertEqual(item["driver_name"], "조의재")
         self.assertEqual(self.change(item, "admin", start_time="12:00", end_time="13:00").status_code, 200)
         self.assertEqual(self.client.delete(f"/api/vehicle-schedules/{item['id']}/", **self.headers("admin")).status_code, 204)
@@ -219,7 +219,7 @@ class ScheduleTests(SimpleTestCase):
         # Vehicle and driver checks apply on every occurrence, including the last.
         for day in ("2026-10-12", "2026-10-23"):
             self.assertEqual(self.create("digital2", driver_id="digital2", date=day).status_code, 409)
-            self.assertEqual(self.create(vehicle_id="V-DIGITAL-002", date=day).status_code, 409)
+            self.assertEqual(self.create(vehicle_id="V002", date=day).status_code, 409)
         self.assertEqual(self.create(date="2026-10-23", start_time="10:00", end_time="11:00").status_code, 201)
         for day in ("2026-10-11", "2026-10-17", "2026-10-18", "2026-10-24"):
             self.assertEqual(self.create(date=day).status_code, 201)
@@ -268,11 +268,11 @@ class ScheduleTests(SimpleTestCase):
         self.assertEqual(sorted(results), [201, 409])
         self.assertEqual(len(json_store.read("vehicle_schedules")), 1)
 
-    def test_initial_demo_has_four_bounded_weekday_series(self):
+    def test_initial_scenario_inventory_has_three_digital_vehicles_and_no_old_bookings(self):
         json_store.write("vehicle_schedules", self.demo_records)
         data = self.day(query="date=2026-10-12").json()
-        self.assertEqual({v["plate_number"] for v in data["vehicles"]}, {"111가 1111", "222가 2222", "111가 1234", "222나 4567"})
-        self.assertEqual(len(data["schedules"]), 4)
-        self.assertTrue(all(item["repeat_weekdays"] and item["repeat_until"] == "2026-11-09" for item in data["schedules"]))
+        self.assertEqual({v["plate_number"] for v in data["vehicles"]}, {"11가1111", "22나2222", "33다3333"})
+        self.assertEqual(data["schedules"], [])
+        self.assertEqual(self.demo_records, [])
         self.assertEqual(self.day(query="date=2026-10-10").json()["schedules"], [])
         self.assertEqual(self.day(query="date=2026-11-10").json()["schedules"], [])

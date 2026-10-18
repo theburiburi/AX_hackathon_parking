@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
 import "./parking-occupancy.css";
 
-export function useParkingOccupancy(api, token) {
+export function useParkingOccupancy(api, token, enabled = true) {
   const [state, setState] = useState({ zones: null, error: false });
   useEffect(() => {
+    if (!enabled) return;
     let active = true, timer;
     const controller = new AbortController();
     setState({ zones: null, error: false });
@@ -24,16 +25,16 @@ export function useParkingOccupancy(api, token) {
     };
     refresh();
     return () => { active = false; clearTimeout(timer); controller.abort(); };
-  }, [api, token]);
+  }, [api, token, enabled]);
   return state;
 }
 
-export function ParkingOccupancySummary({ zones, error = false }) {
+export function ParkingOccupancySummary({ zones, error = false, synchronized = false }) {
   const total = zones?.reduce((sum, zone) => sum + zone.parked_count, 0);
   const capacity = zones?.every(zone => Number.isInteger(zone.capacity) && zone.capacity >= 0)
     ? zones.reduce((sum, zone) => sum + zone.capacity, 0) : "—";
   return <section className="parking-occupancy" aria-label="전체 주차장 구역별 주차 대수">
-    <div className="occupancy-heading"><div><h3>구역별 현재 주차</h3><p>현재 주차 대수 / 최대 주차 가능 대수 · 3초마다 갱신</p></div>
+    <div className="occupancy-heading"><div><h3>구역별 현재 주차</h3><p>현재 주차 대수 / 최대 주차 가능 대수{!synchronized && " · 3초마다 갱신"}</p></div>
       {zones && <strong>총 {total}대 / {capacity}대</strong>}
     </div>
     {error && <p className="error" role="alert">주차 현황 갱신 실패{zones ? " · 마지막 조회 결과입니다." : " · 잠시 후 다시 조회합니다."}</p>}

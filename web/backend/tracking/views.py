@@ -107,32 +107,38 @@ def create_vehicle(request):
 @api_view(["GET"])
 @login_required()
 def parking_zones(request):
+    try:
+        return Response(current_parking_zones())
+    except (OSError, ValueError) as exc:
+        return Response({"detail": f"initial_parking.json: {exc}"}, status=503)
+
+
+def current_parking_zones(vehicles=None, snapshot=None):
     # Geometry belongs to the model project. Keep only web-specific metadata
     # from the demo catalog; do not maintain a second set of zone coordinates.
     catalog = {zone["id"]: zone for zone in read("parking_zones")}
     zones = current_map_layout().get("zones", [])
     try:
-        try:
-            inventory = read("initial_parking")
-        except FileNotFoundError:
-            inventory = []
-        # Validate the baseline before reading any derived state.
-        counts = zone_occupancy(inventory, zones)
+        inventory = read("initial_parking")
+    except FileNotFoundError:
+        inventory = []
+    # Validate the baseline before reading any derived state.
+    zone_occupancy(inventory, zones)
+    if vehicles is None:
         try:
             vehicles = read("vehicles")
         except FileNotFoundError:
             vehicles = []
+    if snapshot is None:
         try:
             snapshot = read("vehicle_replay_state")
         except FileNotFoundError:
             snapshot = {}
-        counts = zone_occupancy(inventory, zones, occupancy_deltas(vehicles, snapshot))
-    except (OSError, ValueError) as exc:
-        return Response({"detail": f"initial_parking.json: {exc}"}, status=503)
-    return Response([{**catalog.get(zone["id"], {}), **counts[zone["id"]], "id": zone["id"],
-                      "name": zone.get("name", zone["id"]),
-                      "x": zone["label"][0], "y": zone["label"][1]}
-                     for zone in zones])
+    counts = zone_occupancy(inventory, zones, occupancy_deltas(vehicles, snapshot))
+    return [{**catalog.get(zone["id"], {}), **counts[zone["id"]], "id": zone["id"],
+             "name": zone.get("name", zone["id"]),
+             "x": zone["label"][0], "y": zone["label"][1]}
+            for zone in zones]
 
 @api_view(["GET"])
 @login_required("ADMIN")
