@@ -94,14 +94,29 @@ def replay_snapshot(store, frame_index, vehicles):
                               gate_json=json.dumps(gate_log, sort_keys=True),
                               map_json=json.dumps(store.manifest["map"], sort_keys=True))
     updates = {}
+    departed_plates = {plate_key(event.get("plate")) for event in gate_log.get("events", [])
+                       if event.get("type") == "OUT" and event["frame"] <= frame_index}
+    gate_types = {plate_key(event.get("plate")): event["type"]
+                  for event in sorted(gate_log.get("events", []), key=lambda event: event["frame"])
+                  if event.get("type") in ("IN", "OUT") and event["frame"] <= frame_index}
     for vehicle in vehicles:
-        history = histories.get(plate_key(vehicle["plate_number"]))
+        plate = plate_key(vehicle["plate_number"])
+        history = histories.get(plate)
         if not history:
             continue
         times, states = history
         index = bisect_right(times, frame_index) - 1
         if index >= 0:
-            updates[vehicle["id"]] = {**states[index], "plate_number": vehicle["plate_number"],
+            state = dict(states[index])
+            # Keep gate OUT in the source timeline. The vehicle list represents
+            # an exited vehicle as driving and transfers its current section.
+            if state["status"] == "EXITED":
+                state.update(status="MOVING", current_zone_id=None, map_position=None)
+            elif gate_types.get(plate) == "IN" and state["status"] in ("MOVING", "UNKNOWN"):
+                state.update(status="PARKING", current_zone_id=None, map_position=None)
+            if plate in departed_plates:
+                state["team_id"] = "SECTION_DIGITAL_COMMUNICATION"
+            updates[vehicle["id"]] = {**state, "plate_number": vehicle["plate_number"],
                                       "parking_type": "UNKNOWN" if states[index]["status"] == "PARKED" else None,
                                       "parking_space_id": None,
                                       "replay_video": store.title, "replay_frame": frame_index}
@@ -115,7 +130,17 @@ def vehicle_snapshot(store, frame_index, vehicles):
 def apply_snapshot(vehicles, snapshot):
     updates = snapshot.get("vehicles", {})
     bases = snapshot.get("base_states", {})
-    return [{**vehicle, **updates[vehicle["id"]]}
+    return [{**vehicle, **_current_state(updates[vehicle["id"]])}
             if vehicle["id"] in updates and bases.get(vehicle["id"]) == vehicle_fingerprint(vehicle)
             and plate_key(updates[vehicle["id"]].get("plate_number")) == plate_key(vehicle["plate_number"])
             else vehicle for vehicle in vehicles]
+
+
+def _current_state(state):
+    # Existing snapshots also adopt the departure display rule on their next
+    # read, without requiring another playback tick or a browser refresh.
+    if state.get("status") == "EXITED":
+        return {**state, "status": "MOVING", "current_zone_id": None, "map_position": None,
+                "parking_type": None, "parking_space_id": None,
+                "team_id": "SECTION_DIGITAL_COMMUNICATION"}
+    return state

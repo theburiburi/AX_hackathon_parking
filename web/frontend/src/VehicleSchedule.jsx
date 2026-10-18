@@ -59,7 +59,7 @@ export function ScheduleBoard({ vehicles, schedules, selectedId, onSelect, date 
       <tbody>{rows.map((vehicle) => {
         const items = schedules.filter((item) => item.vehicle_id === vehicle.id && minuteOfDay(item.end_time) > START_MINUTE && minuteOfDay(item.start_time) < END_MINUTE);
         return <tr key={vehicle.id}>
-          <th scope="row" className="schedule-vehicle"><strong>{vehicle.plate_number}</strong><span>{vehicle.name}</span><small>{TEAMS[vehicle.team_id] || vehicle.team_id}</small></th>
+          <th scope="row" className="schedule-vehicle"><strong>{vehicle.plate_number}</strong><small>{TEAMS[vehicle.team_id] || vehicle.team_id}</small></th>
           <td colSpan={HOURS.length} className="schedule-track-cell"><div className="schedule-track">
             {!items.length && <span className="schedule-free">등록된 운행 없음</span>}
             {items.map((item) => <button key={item.id} type="button" className={`schedule-block ${colorFor(item.team_id)} ${selectedId === item.id ? "active" : ""}`}
@@ -100,7 +100,7 @@ export function ScheduleForm({ initial, date, user, vehicles, members, busy, err
       <fieldset disabled={busy} className="schedule-form-grid">
         <label>{form.repeat_weekdays ? "반복 시작일" : "운행 날짜"}<input ref={firstInput} required type="date" value={form.date} onChange={changeDate} /></label>
         <label>차량<select required value={form.vehicle_id} onChange={(event) => setForm({ ...form, vehicle_id: event.target.value, driver_id: user.role === "ADMIN" ? "" : user.id })}>
-          <option value="">차량 선택</option>{vehicles.map((v) => <option key={v.id} value={v.id}>{v.plate_number} · {v.name}</option>)}
+          <option value="">차량 선택</option>{vehicles.map((v) => <option key={v.id} value={v.id}>{v.plate_number}</option>)}
         </select></label>
         <label>운전자{user.role === "ADMIN" ? <select required value={form.driver_id} onChange={change("driver_id")}><option value="">운전자 선택</option>{drivers.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select> : <input readOnly value={user.name} />}</label>
         <label>시작 시간<input required type="time" min="06:00" max="19:59" step="60" value={form.start_time} onChange={change("start_time")} /></label>
