@@ -131,7 +131,7 @@ class WorkflowTests(SimpleTestCase):
             self.assertEqual(vehicle["team_id"], "SECTION_DIGITAL_COMMUNICATION")
 
     def test_scenario_vehicles_are_grouped_into_sections_without_old_bookings(self):
-        groups = (("digital", [1, 2, 3]), ("steelmaking", [4, 5, 6]), ("cold-dx", [7, 8, 9, 10]))
+        groups = (("digital", [1, 3, 7]), ("steelmaking", [4, 5, 6]), ("cold-dx", [2, 8, 9, 10]))
         expected_plates = ["11가1111", "22나2222", "33다3333", "44라4444", "55마5555",
                            "66바6666", "77사7777", "88아8888", "99자9999", "10차1010"]
         all_vehicles = self.client.get("/api/vehicles/", **self.admin).json()
@@ -146,5 +146,5 @@ class WorkflowTests(SimpleTestCase):
                 self.assertEqual(schedules["schedules"], [])
         parked = [row for row in all_vehicles if row["status"] == "PARKED"]
         self.assertEqual([(row["scenario_vehicle_id"], row["current_zone_id"]) for row in parked], [(7, "L")])
-        self.assertTrue(all(row["status"] == "UNKNOWN" for row in all_vehicles if row["scenario_vehicle_id"] != 7))
+        self.assertTrue(all(row["status"] == "MOVING" and row["current_zone_id"] is None for row in all_vehicles if row["scenario_vehicle_id"] != 7))
         self.assertEqual(json_store.read("vehicle_schedules"), [])

@@ -20,8 +20,6 @@ export default function ParkingMap({ parkingMap, layout, vehicles, token, api, o
   const [records, setRecords] = useState(vehicles);
   const [zone, setZone] = useState(null);
   const [showZones, setShowZones] = useState(true);
-  const [expanded, setExpanded] = useState(false);
-  const [zoom, setZoom] = useState(1);
   const [imageReady, setImageReady] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [syncError, setSyncError] = useState(false);
@@ -43,12 +41,6 @@ export default function ParkingMap({ parkingMap, layout, vehicles, token, api, o
     timer = setTimeout(refresh, 3000);
     return () => { active = false; clearTimeout(timer); controller.abort(); };
   }, [api, token, onVehiclesUpdated, Boolean(sharedOccupancy)]);
-  useEffect(() => {
-    if (!expanded) return;
-    const close = event => { if (event.key === "Escape") setExpanded(false); };
-    window.addEventListener("keydown", close);
-    return () => window.removeEventListener("keydown", close);
-  }, [expanded]);
 
   const matchingLayout = Boolean(parkingMap?.filename && layout?.map_id) && parkingMap.filename === layout.map_id;
   const zones = matchingLayout && Array.isArray(layout.zones) ? layout.zones.filter(item => layout.source === "native" || /^[A-N]$/.test(item.id)) : [];
@@ -56,25 +48,19 @@ export default function ParkingMap({ parkingMap, layout, vehicles, token, api, o
   const located = mapped.filter(vehicle => vehicle.display_position);
   const unlocated = mapped.filter(vehicle => !vehicle.display_position);
 
-  return <section className={`ops-panel parking-panel ${expanded ? "parking-expanded" : ""}`} aria-label="주차장 차량 위치">
-    <div className="panel-heading"><div><h2>주차장 차량 위치</h2><p>{syncError || occupancy.error ? "갱신 실패 · 마지막 조회 결과" : sharedOccupancy ? "관리자 영상 시점에 맞춰 위치 갱신" : "3초마다 위치 갱신"}{layout?.draft && " · 구역 경계 초안"}</p></div>
-      <button onClick={() => setExpanded(!expanded)}>{expanded ? "닫기" : "크게 보기"}</button></div>
+  return <section className="ops-panel parking-panel" aria-label="주차장 차량 위치">
+    <div className="panel-heading"><div><h2>주차장 차량 위치</h2>{(syncError || occupancy.error || !sharedOccupancy || layout?.draft) && <p>{syncError || occupancy.error ? "갱신 실패 · 마지막 조회 결과" : !sharedOccupancy ? "3초마다 위치 갱신" : ""}{layout?.draft && `${syncError || occupancy.error || !sharedOccupancy ? " · " : ""}구역 경계 초안`}</p>}</div>
+    </div>
     <div className="parking-toolbar"><div className="position-summary"><strong>{located.length}</strong> 위치 확인 <span>·</span> {unlocated.length} 위치 미확인</div>
-      <div className="map-controls"><label><input type="checkbox" checked={showZones} onChange={event => setShowZones(event.target.checked)} />구역</label>
-        <button aria-label="지도 축소" disabled={zoom === 1} onClick={() => setZoom(value => Math.max(1, value - .5))}>−</button>
-        <button aria-label="지도 배율 초기화" onClick={() => setZoom(1)}>{Math.round(zoom * 100)}%</button>
-        <button aria-label="지도 확대" disabled={zoom === 3} onClick={() => setZoom(value => Math.min(3, value + .5))}>＋</button></div></div>
+      <div className="map-controls"><label><input type="checkbox" checked={showZones} onChange={event => setShowZones(event.target.checked)} />구역</label></div></div>
     <div className="parking-viewport">
-      {!parkingMap || imageError ? <p className="map-empty">주차장 이미지를 불러올 수 없습니다.</p> : <div className="parking-canvas" style={{ width: `${zoom * 100}%` }}>
+      {!parkingMap || imageError ? <p className="map-empty">주차장 이미지를 불러올 수 없습니다.</p> : <div className="parking-canvas">
         <img src={`${api}${parkingMap.url}?token=${encodeURIComponent(token)}`} alt="주차장 항공사진" onLoad={() => setImageReady(true)} onError={() => setImageError(true)} />
         {imageReady && <>
           {showZones && <svg className="parking-boundaries" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
             {zones.map(item => <polygon key={item.id} points={item.polygon.map(point => point.join(",")).join(" ")} fill={item.color} stroke={item.color} fillOpacity={zone === item.id ? .3 : .08} strokeWidth={zone === item.id ? 3 : 1.5} vectorEffect="non-scaling-stroke" />)}
           </svg>}
-          {showZones && zones.map(item => {
-            const area = occupancy.zones?.find(area => area.id === item.id);
-            return <button key={item.id} className={`parking-zone-label ${zone === item.id ? "active" : ""}`} style={{ left: `${item.label[0]}%`, top: `${item.label[1]}%`, "--zone-color": item.color }} aria-pressed={zone === item.id} onClick={() => { setZone(zone === item.id ? null : item.id); }}>{item.name}{area && ` · ${area.parked_count}대 / ${area.capacity ?? "—"}대`}</button>;
-          })}
+          {showZones && zones.map(item => <button key={item.id} className={`parking-zone-label ${zone === item.id ? "active" : ""}`} style={{ left: `${item.label[0]}%`, top: `${item.label[1]}%`, "--zone-color": item.color }} aria-pressed={zone === item.id} onClick={() => { setZone(zone === item.id ? null : item.id); }}>{item.name}</button>)}
         </>}
       </div>}
     </div>

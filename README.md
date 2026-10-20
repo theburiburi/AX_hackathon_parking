@@ -1,437 +1,143 @@
 # AX Parking
 
-주차장 CCTV 모자이크 영상에서 차량을 검출하고, 카메라별로 추적한 뒤,
-실제 주차장 지도(BEV) 위에 차량 위치를 표시하는 시스템이다.
+주차장 CCTV 모자이크 영상의 차량 검출·추적 결과를 지도에 표시하고, 섹션별 차량 현황과 운행 일정을 관리하는 프로젝트입니다.
 
-- 원본: 녹화 장비가 만든 **3x3 모자이크 영상** 1개 (칸 7개 = 카메라 7대)
-- 검출: YOLO (ultralytics), 미리 계산해 캐시로 저장
-- 추적: 카메라별 Local Tracking + 카메라 간 Global Tracking (Re-ID)
-- 지도 투영: 카메라별 calibration (Homography + TPS 비선형 보정)
-- 뷰어: 웹 브라우저에서 모자이크 영상 + bbox + BEV 지도 + 차단기 입출차 기록을 프레임 단위로 동기화해 재생
+현재 통합 웹의 실행 진입점은 **`web/run.py`**, 접속 주소는 **http://127.0.0.1:8080/** 입니다.
+설치, 데모 촬영, JSON 작성, API와 장애 처리에 대한 상세 설명은 [통합 웹 운용 문서](web/README.md)를 참고하세요.
 
----
+## 현재 제공 기능
 
-## 1. 전체 흐름
+- 관리자: 녹화 영상, 기존 모델의 검출 박스·Global ID·지도 추적, 차단기 입출차 기록, 구역별 주차 현황.
+- 사용자: 소속 섹션의 차량번호·주차 상태, 지도 구역별 대수, 운행 일정 등록·수정·취소.
+- 관리자 영상 시점에 따른 사용자 차량 상태·구역별 주차 대수 동기화.
+- 같은 섹션의 일정 공유와 약 1초 간격 자동 갱신, 차량·운전자 중복 예약 방지.
+- `현재 주차 대수 / 최대 주차 가능 대수` 표시. 초기 대수·정원은 JSON으로 설정.
 
-```
-data/videos/raw/<title>.mp4  (모자이크 원본)
-        │
-        │  scripts/preprocess.py <title>
-        │    - config/mosaic.yaml 의 칸 배치대로 프레임을 잘라
-        │    - 카메라 영상 7개 저장 + 같은 이미지에 YOLO 실행
-        ▼
-data/videos/<title>/camXX.mp4          (분리 영상)
-data/detections/<title>/detections.jsonl  (프레임별 bbox)
-        │
-        │  scripts/calibrate_camera.py --camera camXX   (카메라마다 1회)
-        ▼
-config/calibration/camXX.json          (칸 좌표 → BEV 좌표 변환)
-        │
-        │  python server.py
-        │    - 캐시에서 프레임별 bbox를 읽어 Local / Global Tracking
-        │    - bbox 바닥 중앙점을 calibration으로 BEV 좌표로 변환
-        ▼
-웹 뷰어 (http://127.0.0.1:8000)
-    모자이크 영상 재생 + 칸별 bbox + BEV 지도
+사용자 지도에는 개별 차량 아이콘·번호판을 그리지 않습니다. 지도 옆 차량 목록에서 차량별 상태를 확인합니다.
+관리자 지도 추적 표시는 별도로 제공하며, 재생 조작 바는 관리자 화면 맨 아래에 있습니다.
+
+## 빠른 실행
+
+아래 명령은 **AX_Parking 루트의 PowerShell** 기준입니다.
+가상환경·의존성·업무 데이터·React 빌드·재생 캐시가 준비됐다면 서버만 실행합니다.
+
+```powershell
+.\.venv\Scripts\python.exe -B web/run.py
 ```
 
-핵심 원칙: **모든 카메라가 같은 모자이크 프레임에서 잘리므로
-분리 영상, YOLO 결과, tracking, 웹 표시가 하나의 프레임 번호로 일치한다.**
+종료는 서버 터미널에서 `Ctrl+C`입니다. 통합 웹 실행에 루트 `server.py`를 함께 실행할 필요는 없습니다.
 
----
+처음 설치하는 경우:
 
-## 2. 폴더 구조
+```powershell
+# .venv가 없을 때만 생성
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+
+Push-Location web/frontend
+npm.cmd ci
+npm.cmd run build
+Pop-Location
+
+# 없는 업무 JSON만 생성하며 기존 파일은 보존
+.\.venv\Scripts\python.exe -B web/backend/seed.py
+```
+
+영상 자료를 준비한 뒤 재생 캐시를 생성하고 실행합니다.
+현재 `config/detection.yaml`의 기본 영상 제목은 `video`입니다.
+
+```powershell
+.\.venv\Scripts\python.exe -B web/build_replay.py --video video
+.\.venv\Scripts\python.exe -B web/run.py
+```
+
+기존 캐시를 다시 생성해야 할 때만 생성 명령에 `--overwrite`를 붙입니다.
+필요한 원본 영상·검출 결과·지도·보정 파일은 [입력 자료와 캐시 관리](web/README.md#입력-자료와-재생-캐시)에 정리했습니다.
+
+## 동작 절차
 
 ```text
-AX_Parking2/
+모자이크 원본 영상
+  → 전처리: 카메라별 분리 + YOLO 검출 + 화면 모드 기록
+  → 보정·Local/Global Tracking을 사용해 웹 재생 캐시 생성
+  → 통합 서버가 원본 영상과 프레임별 결과 제공
+  → 관리자 영상 시점 저장
+  → 같은 시점의 차량 상태·구역별 주차 현황을 사용자에게 제공
+```
+
+검출과 추적은 분리되어 있습니다. `scripts/preprocess.py`는 YOLO 검출 결과를 만들고,
+`web/build_replay.py`는 기존 검출 결과로 추적·지도 결과를 사전 계산합니다.
+통합 웹에서 영상을 재생할 때는 YOLO 추론을 실행하지 않습니다.
+수동 주차 시나리오가 선택 영상과 일치하면 웹의 주차 집계·등록 차량 상태에는 해당 시나리오를 우선 사용합니다.
+운행 일정의 날짜·시간은 영상 타임라인과 독립적인 업무 데이터입니다.
+
+## 파일 구조
+
+```text
+AX_Parking/
 ├── config/
-│   ├── mosaic.yaml            # 모자이크 칸 ↔ 카메라 배치 (모든 원본 영상 공통)
-│   ├── detection.yaml         # 기본 영상 제목, YOLO 모델/추론 설정
-│   ├── tracking.yaml          # Local Tracking 파라미터
-│   ├── global_tracking.yaml   # Global Tracking 파라미터
-│   ├── gate.yaml              # 차단기 입출차 자동 감지 구역 (cam01)
-│   └── calibration/
-│       └── camXX.json         # 카메라별 calibration (모든 원본 영상 공통)
+│   ├── detection.yaml          # 기본 영상 제목·YOLO 설정
+│   ├── mosaic.yaml             # 모자이크 칸과 카메라 배치
+│   ├── tracking.yaml           # 카메라별 추적 설정
+│   ├── global_tracking.yaml    # 카메라 간 ID 연결·주차 판정 설정
+│   ├── gate.yaml               # 차단기 자동 감지 설정
+│   └── calibration/            # 카메라별 영상→지도 보정
 ├── data/
-│   ├── videos/
-│   │   ├── raw/<title>.mp4    # 모자이크 원본 (Git 제외)
-│   │   └── <title>/camXX.mp4  # 분리 영상 (Git 제외)
-│   ├── detections/<title>/    # YOLO 결과 (detections.jsonl은 Git 제외, metadata.json)
-│   ├── gate_logs/<title>.json # 차단기 입출차 기록 (선택, 현재 test00은 가상 기록)
-│   └── maps/
-│       ├── map.png            # BEV 지도 (1624 x 968)
-│       ├── zones.json         # 주차 구역 정의
-│       └── zones.png          # 주차 구역 참고 이미지 (코드에서 사용하지 않음)
-├── scripts/
-│   ├── preprocess.py          # 원본 분리 + YOLO 검출
-│   ├── calibrate_camera.py    # 카메라 calibration 도구
-│   ├── detect_gate_events.py  # cam01 입차/출차 자동 감지 → GATE LOG 생성
-│   └── play_mosaic.py         # (확인용) 서버 없이 bbox 재생 / 영상 저장
-├── src/
-│   ├── mosaic.py              # 칸 배치, 영상 제목 → 경로 규칙
-│   ├── detection/detector.py  # YOLO 래퍼 (VehicleDetector)
-│   ├── calibration/
-│   │   ├── projector.py       # CameraProjector: 칸 좌표 → BEV
-│   │   └── mapping.py         # Homography + TPS, coverage 계산
-│   └── tracking/
-│       ├── local_tracker.py   # 카메라별 추적, 상태 판정
-│       └── global_tracker.py  # 카메라 간 Global ID 연결
-├── web/                       # 웹 뷰어 (index.html, app.js, style.css)
-├── server.py                  # tracking 엔진 + API + 정적 파일 서버
-└── requirements.txt
+│   ├── videos/raw/             # 모자이크 원본 영상
+│   ├── videos/<title>/         # 분리 영상
+│   ├── detections/<title>/     # detections.jsonl·metadata.json·view_modes.json
+│   ├── maps/                   # 지도와 zones.json
+│   ├── gate_logs/              # 차단기 입출차 로그
+│   └── parking_logs/           # 수동 주차 시나리오
+├── scripts/                    # 전처리·보정·화면 모드·차단기 분석 도구
+├── src/                        # 기존 검출·보정·Local/Global Tracking 구현
+├── web/
+│   ├── README.md               # 상세 운용 문서
+│   ├── run.py                  # 통합 웹 서버, 기본 8080
+│   ├── build_replay.py         # 웹 재생 캐시 생성
+│   ├── initialize_parking.py   # 초기 주차 JSON 검증·가져오기
+│   ├── backend/                # Django API·업무 JSON·재생 캐시
+│   ├── frontend/               # React 화면·프론트엔드 테스트
+│   ├── tests/                  # 웹 캐시·기존 모델 연동 테스트
+│   └── index.html·app.js 등     # 루트 server.py용 기본 분석 뷰어
+├── server.py                   # 기존 분석 서버, 기본 8000
+├── tests/                      # 기존 모델·기본 뷰어 테스트
+└── requirements.txt            # Python 의존성
 ```
 
-`outputs/`는 `play_mosaic.py --save` 결과를 저장할 때 쓰는 위치이며 Git에서 제외된다.
+## 분석 자료 준비와 기존 뷰어
 
----
+검출 결과를 전달받았다면 전처리는 생략합니다. 새 영상은 다음 순서로 준비합니다.
+`video`는 `data/videos/raw/video.mp4`의 파일 제목이며 다른 영상을 사용하면 제목을 바꿉니다.
 
-## 3. 설치
+```powershell
+# 원본 분리·YOLO 검출. 가중치·추론 장치 설정은 config/detection.yaml 확인
+.\.venv\Scripts\python.exe -B scripts/preprocess.py video
 
-```bash
-python -m venv .venv
-.venv\Scripts\activate          # Windows
-pip install -r requirements.txt
+# 화면 모드 파일이 없는 기존 검출 자료에 대해 실행
+.\.venv\Scripts\python.exe -B scripts/detect_view_modes.py video
+
+# 보정이 필요한 카메라에 대해 실행
+.\.venv\Scripts\python.exe -B scripts/calibrate_camera.py --camera cam01 --video video --frame 100
 ```
 
-- GPU(CUDA) 환경을 기준으로 한다 (`config/detection.yaml`의 `device: 0`).
-- YOLO 가중치(`yolo26x.pt`)는 프로젝트 루트에 둔다.
-- Windows에서 여러 Python이 설치돼 있으면 반드시 `.venv`의 Python으로 실행한다.
-  (예: `.venv\Scripts\python.exe scripts\preprocess.py test00`)
+보정 도구에서는 영상 점과 지도 점을 순서대로 선택해 대응점을 추가합니다.
+보정 파일은 `config/calibration/camXX.json`에 저장됩니다.
+지도·카메라 배치·보정·추적 설정을 변경했다면 통합 웹 재생 캐시도 다시 생성합니다.
 
----
+기존 모델을 직접 확인하는 기본 분석 뷰어는 별도로 실행할 수 있습니다.
 
-## 4. 실행 방법
-
-### 4.1 전처리: 원본 분리 + YOLO 검출
-
-```bash
-python scripts/preprocess.py test00
+```powershell
+.\.venv\Scripts\python.exe -B server.py
 ```
 
-`data/videos/raw/test00.mp4`를 한 번 읽으면서
-
-1. `config/mosaic.yaml`의 칸 배치대로 프레임을 잘라 `data/videos/test00/camXX.mp4` 7개로 저장하고
-2. 잘라낸 같은 이미지(재압축 전)에 YOLO를 돌려 `data/detections/test00/`에 저장한다.
-
-| 옵션 | 설명 |
-|---|---|
-| `--overwrite` | 기존 결과를 덮어쓴다 (없으면 기존 파일이 있을 때 중단) |
-| `--max-frames N` | 앞 N프레임만 처리 (빠른 확인용) |
-| `--no-split` | 분리 영상을 저장하지 않고 YOLO만 실행 |
-| `--no-detect` | YOLO 없이 분리 영상만 저장 |
-| `--fourcc` | 분리 영상 코덱 (기본 `mp4v`) |
-
-참고: RTX 5070 기준 11초(330프레임) 영상이 약 40초 걸린다 (초당 약 8.5프레임 × 카메라 7대).
-
-### 4.2 카메라 캘리브레이션 (카메라마다, 필요할 때만)
-
-```bash
-python scripts/calibrate_camera.py --camera cam01 --frame 100
-```
-
-- 원본 모자이크에서 해당 카메라 칸을 잘라 왼쪽 창에, BEV 지도를 오른쪽 창에 띄운다.
-- 결과는 `config/calibration/cam01.json`에 저장된다. (점을 추가 / 삭제할 때마다 자동 저장)
-- 배경 프레임을 다른 영상에서 가져오려면 `--video <title>`.
-
-| 조작 | 동작 |
-|---|---|
-| 왼쪽 클릭 | 영상 점 → BEV 점 순서로 클릭해 보정점 1쌍 추가 |
-| 마우스 휠 / 오른쪽 드래그 | 확대·축소 / 화면 이동 |
-| `+`·`=` / `-` / `0` | 마우스 커서 위치 확대 / 축소 / 원래 크기 (macOS에서 휠이 안 될 때) |
-| `I` / `J` / `K` / `L` | 화면 위 / 왼쪽 / 아래 / 오른쪽 이동 |
-| C | coverage 히트맵 켜기/끄기 (빨강 = 보정점이 부족한 영역) |
-| P | 보정점(빨간 점) 표시 켜기/끄기 |
-| U | 마지막 점 취소 (대기 중인 영상 점이 있으면 그것을 취소) |
-| S | 저장 |
-| Q / ESC | 종료 (변경이 없으면 파일을 덮어쓰지 않음) |
-
-영상 점을 찍으면 BEV 창에 현재 calibration으로 예측한 위치가 **초록색 PRED**로 표시된다.
-BEV에서 실제 위치를 클릭하면 콘솔에 예측 오차(px)가 출력되므로,
-점을 추가하면서 동시에 정확도를 확인할 수 있다.
-
-### 4.3 서버 실행
-
-```bash
-python server.py
-```
-
-- `config/detection.yaml`의 `video` 값(영상 제목)을 대상으로 실행한다.
-- 브라우저에서 `http://127.0.0.1:8000` 접속.
-- calibration 파일이 없거나 깨진 카메라는 시작할 때 `[WARN]`을 출력하고 BEV 투영에서 제외된다.
-
-웹 뷰어 조작:
-
-| 조작 | 동작 |
-|---|---|
-| Space | 재생 / 일시정지 |
-| A / D | 5초 뒤로 / 앞으로 |
-| Shift + A / D | 30초 뒤로 / 앞으로 |
-| `,` / `.` | 1프레임 뒤로 / 앞으로 |
-| R | 처음으로 (tracking 초기화) |
-| GATE LOG 항목 클릭 | 그 기록이 발생한 프레임으로 이동 |
-| "트래킹 설정 재로드" 버튼 | tracking 설정과 calibration을 다시 읽음 (서버 재시작 불필요) |
-
-### 4.4 차단기 입출차 자동 감지
-
-```bash
-python scripts/detect_gate_events.py test01
-python scripts/detect_gate_events.py test01 --start-time "2026-10-01 07:31:44"   # 실제 시각으로 기록
-python scripts/detect_gate_events.py test01 --preview                            # 구역 확인 이미지
-```
-
-- 전처리 결과(`data/detections/<title>/`)의 cam01 bbox를 서버와 같은 Local Tracker로 추적한다.
-- 차량 위치(bbox 바닥 중앙점)가 `config/gate.yaml`의 **입차 구역 / 출차 구역**에 들어오고,
-  그때 **진행 방향**이 구역에 정한 방향과 맞으면 입차(IN) / 출차(OUT)로 기록한다.
-  (입차 구역 = 왼쪽 차로 안쪽, 출차 구역 = 오른쪽 차로 바깥쪽. 차량이 반대쪽 구역을 지나가도 방향이 반대라 잡히지 않는다. 같은 차량은 구역마다 한 번만 기록)
-- 결과는 `data/gate_logs/<title>.json`에 저장되어 웹 GATE LOG에 그대로 표시된다.
-  기존 기록이 있으면 멈추며, 덮어쓰려면 `--overwrite`, 다른 곳에 저장하려면 `--output <경로>`.
-- `--start-time`이 없으면 시각은 영상 경과 시간(`00:00:06.167`)으로 기록된다.
-- `--preview`: 구역, 방향 화살표, 감지된 차량의 이동 경로를 그린 이미지를 `outputs/gate_zones_<title>.jpg`로 저장한다.
-  구역 위치를 조정할 때 이 이미지를 보며 `config/gate.yaml`의 `polygon`(칸 기준 픽셀)을 고친다.
-
-| `config/gate.yaml` 항목 | 설명 |
-|---|---|
-| `zones[].polygon` | 구역 꼭짓점 (cam01 칸 기준 640x360 픽셀) |
-| `zones[].direction` | 인정할 진행 방향 벡터 (x 오른쪽 +, y 아래 +) |
-| `min_frames_in_zone` | 구역 안에 연속으로 있어야 하는 프레임 수 (흔들림 방지) |
-| `direction_window_sec` | 진행 방향을 계산하는 시간 구간 |
-| `min_speed_px_per_sec` | 방향으로 이 속도 이상 움직여야 인정 (정지 차량 제외) |
-
-### 4.5 확인용 도구
-
-```bash
-# 서버 없이 모자이크 + YOLO bbox 재생 (Space, A/D: 1프레임, J/L: 30프레임, Q)
-python scripts/play_mosaic.py test00
-
-# bbox가 그려진 영상으로 저장
-python scripts/play_mosaic.py test00 --save outputs/test00_bbox.mp4 --no-show
-```
-
-### 4.6 새 원본 영상 추가
-
-1. `data/videos/raw/<새 제목>.mp4`에 넣는다. (칸 배치가 `config/mosaic.yaml`과 같아야 함)
-2. `python scripts/preprocess.py <새 제목>`
-3. `config/detection.yaml`의 `video`를 `<새 제목>`으로 바꾸고 서버를 실행한다.
-
-calibration은 카메라 위치에만 의존하므로 다시 할 필요가 없다.
-(카메라 각도가 바뀌었거나 칸 배치가 달라졌을 때만 다시 한다)
-
----
-
-## 5. 설정 파일
-
-### `config/mosaic.yaml`
-모자이크 격자와 칸 ↔ 카메라 대응. 왼쪽 위부터 오른쪽, 아래 순서로 cam01, 02, 03, 05, 06, 07, 08.
-
-```yaml
-grid: {rows: 3, cols: 3}
-cameras:
-  - id: cam01
-    cell: [1, 1]          # [행, 열], 1부터
-  - id: cam03
-    cell: [1, 3]
-    # roi: [56, 0, 528, 360]   # (선택) 칸 안의 실제 화면 영역 [x, y, w, h]
-```
-
-`roi`를 지정하면 칸 안에서 그 영역만 카메라 화면으로 쓴다 (4:3 카메라의 좌우 검은 여백 제외용).
-roi를 바꾸면 카메라 좌표가 달라지므로 **전처리와 calibration을 모두 다시** 해야 한다.
-현재는 roi 없이 칸 전체(640x360)를 사용한다.
-
-### `config/detection.yaml`
-| 키 | 설명 |
-|---|---|
-| `video` | 서버 / calibration / 재생 도구의 기본 영상 제목 |
-| `model.weights`, `model.device` | YOLO 가중치, GPU 번호 |
-| `inference.imgsz / conf / iou / quantize / batch_size` | 추론 크기, 신뢰도·IoU 기준, FP16, 배치(카메라 수) |
-| `classes.names` | 검출 대상 클래스 (car, motorcycle, bus, truck) |
-
-### `config/tracking.yaml` (Local Tracking)
-- 픽셀 단위 값은 **카메라 칸(640x360) 기준**이다. (1080p 기준으로 맞췄던 값의 1/3)
-  - `match_distance_px: 18`, `min_motion_px: 9`, `stop_anchor_min_px: 5`, `parked_exit_min_px: 9`
-- `*_bbox_ratio` 값은 bbox 크기에 비례하므로 해상도와 무관하다.
-- 상태 전환 시간: `unknown_to_active_sec`, `active_to_stopped_sec`, `parked_after_sec` 등.
-
-### `config/global_tracking.yaml` (Global Tracking)
-- BEV 지도 픽셀 기준의 거리 / 속도 / 방향 / 시간 점수로 카메라 간 같은 차량을 연결한다.
-- `base_match_distance_px`, `max_speed_px_per_sec`, `prediction_weight` 등.
-- 새 GID는 `config/gate.yaml`의 cam01 `IN` 구역을 지정된 방향으로 통과한 Local 차량이 실제 이동 확정될 때만 만든다. 입구에서 아직 GID가 없으면 다른 카메라의 차량은 GID 없이 대기한다.
-- 다른 카메라의 움직이는 차량은 BEV 위치·방향·시각이 맞을 때만 기존 GID를 이어받는다. 애매하면 연결을 보류한다.
-- 입구에서 만든 GID는 현재 재생 세션 동안 유지된다. 재생바로 이동하면 앞선 프레임을 체크포인트부터 다시 계산해 입구 통과 기록과 번호를 복원한다.
-- 카메라 연결 목록 없이 모든 카메라 쌍을 BEV 위치·시간·움직임으로 비교한다. 두 Local ID가 하나의 GID를 공유할 때 같은 시각의 관측은 이동 이력에 한 번만 기록하고 BEV 화면에는 점 하나로 표시한다.
-- 새 카메라에서 차량이 돌아서 나오면 직선 속도 예측 위치와 마지막 실제 BEV 위치를 함께 비교한다. 첫 이동 후보를 일찍 잡아 둔 경우에는 ACTIVE 확정까지 제한된 시간을 추가로 허용한다.
-- `overlap_match_distance_px`, `overlap_window_sec`는 가까운 동시 관측의 BEV 거리·시각 범위다. 조기 후보가 없는 전환은 `handoff_confirmation_frames`회 연속 확인 후 연결한다. 같은 카메라의 새 Local ID는 기존 GID를 바로 이어받지 않는다.
-- 앞차에 가린 정지 차량의 흔들린 bbox는 Local 이동 판정에 사용하지 않는다. 가림이 풀린 뒤 실제 이동을 다시 확인한다.
-- UNKNOWN 차량은 짧은 검출 누락 뒤에도 같은 Local ID와 누적된 실제 이동 증거를 유지한다. 검출되지 않은 시간은 ACTIVE 판정 시간에 포함하지 않는다.
-
----
-
-## 6. 데이터 형식
-
-### `data/detections/<title>/detections.jsonl`
-한 줄이 모자이크의 한 프레임이다.
-
-```json
-{"frame_index": 0, "timestamp": 0.0,
- "cameras": {
-   "cam01": [],
-   "cam02": [{"x1": 148.6, "y1": 60.1, "x2": 277.3, "y2": 116.1,
-              "class_name": "car", "confidence": 0.893}]
- }}
-```
-
-- bbox 좌표는 **잘라낸 칸 기준 픽셀** (칸 왼쪽 위 = 0, 0)
-- `confidence` 0.2 이상만 저장
-- tracking 결과(ID, 상태)는 저장하지 않으며, 서버가 실행 중에 계산한다.
-
-### `data/detections/<title>/metadata.json`
-생성 시각, 원본 경로·해상도·fps, 프레임 수, 카메라 목록, 검출 수,
-YOLO 설정, 칸 배치(`layout.crop_rects`), 분리 영상 경로.
-캐시가 어떤 조건으로 만들어졌는지 확인하는 용도이며 서버는 읽지 않는다.
-
-**다시 만들어야 하는 경우:** 원본 영상, `config/mosaic.yaml`(칸 배치 / roi), YOLO 설정이 바뀌었을 때.
-tracking 설정이나 calibration만 바뀌었다면 다시 만들 필요 없이 웹에서 재로드만 하면 된다.
-
-### `data/gate_logs/<title>.json` (차단기 입출차 기록)
-
-```json
-{
-  "video": "test00",
-  "start_time": "2026-10-01 07:31:44.000",
-  "fps": 30.0,
-  "gate": {"id": "GATE-01", "name": "정문 차단기", "camera_id": "cam01"},
-  "events": [
-    {"frame": 140, "time": "2026-10-01 07:31:48.667", "type": "OUT",
-     "label": "출차 인식", "plate": "38나 4172", "detail": "입차 06:58:12 · 주차 33분 · 정기권 (요금 0원)"}
-  ]
-}
-```
-
-- `frame`: 영상 프레임 번호. **웹 동기화는 이 값으로만** 한다 (`time`은 표시용).
-- `type`: `IN`, `IN_DONE`, `OUT`, `OUT_DONE`, `GATE_OPEN`, `GATE_CLOSE` (배지 색 구분용)
-- `start_time`은 영상에 찍힌 녹화 시각 기준 0번 프레임의 시각이다. (test00: 07:31:44, `time = start_time + frame / fps`)
-- 파일이 없으면 웹에 "기록 없음"으로 표시된다. 수정 후 웹의 재로드 버튼을 누르면 다시 읽는다.
-- 현재 `test00.json`은 **가상 기록**이다. cam01 차단기에서 흰색 SUV가 출차하는 실제 장면
-  (차단기 앞 정차 f140 → 열림 f150 → 통과 f205 → 닫힘 f275)에 맞춰 시각을 정했고,
-  번호판·입차 시각·요금은 임의 값이다.
-
-### `config/calibration/camXX.json`
-| 필드 | 설명 |
-|---|---|
-| `points[]` | 사용자가 찍은 보정점 (`image`: 칸 좌표, `bev`: 지도 좌표) |
-| `homography` | 모든 점으로 계산한 3x3 Homography |
-| `mapping` | Homography + TPS 잔차 보정 계수 (없으면 homography만 사용) |
-| `reprojection` | Homography 단독 오차와 최종 mapping 오차 |
-| `crop_rect` | 모자이크에서 잘라낸 칸 영역 |
-| `converted_from` | (변환된 파일만) 원본 1080p calibration에서 변환한 정보 |
-
-현재 calibration 7개는 이전 1080p 카메라 영상 기준 calibration을 칸 좌표로 변환한 것이다.
-(16:9 칸은 x, y를 1/3로, 4:3 카메라(cam03, 06, 07)는 칸 안의 실제 화면 528x360 영역에 맞춰 변환)
-
----
-
-## 7. 동작 방식
-
-### 7.1 칸 좌표 → BEV 변환 (calibration)
-
-```
-BEV(p) = Homography(p) + w(p) · TPS_residual(p)
-```
-
-- **Homography**: 모든 보정점으로 최소자승 계산. 전체적인 원근 변환을 담당한다.
-  RANSAC을 쓰지 않으며, 사용자가 찍은 점은 모두 정답으로 간주한다.
-- **TPS (Thin Plate Spline)**: Homography로 설명되지 않는 잔차(렌즈 왜곡 등 위치별 비선형 오차)를
-  정확 보간한다. 보정점에서는 지정한 BEV 위치를 그대로 통과한다. 점이 5개 이상일 때 사용한다.
-- **w(p)**: 보정점들이 감싸는 영역(convex hull) 안에서는 1, 밖에서는 거리에 따라 연속적으로 0에 가까워진다.
-  점이 없는 먼 영역에서 TPS가 발산하지 않고 Homography로 자연스럽게 돌아간다.
-- **coverage**: 영상 각 위치에서 가장 가까운 보정점까지의 거리로 신뢰도를 계산해
-  calibration 도구에 빨간 히트맵으로 표시한다. 빨간 곳에 점을 더 찍으면 된다.
-
-구현: `src/calibration/mapping.py` (`CalibrationMapping`, `coverage_grid`),
-`src/calibration/projector.py` (`CameraProjector.project(x, y)`). numpy와 OpenCV만 사용한다.
-
-### 7.2 차량 위치
-
-- bbox의 **바닥 중앙점** `((x1 + x2) / 2, y2)`을 차량 위치로 사용한다.
-- 최근 몇 프레임의 median으로 흔들림을 줄인 뒤 BEV로 변환한다.
-
-### 7.3 Local Tracking (카메라별)
-
-- 프레임 간 bbox 위치와 IoU로 같은 차량을 연결해 Local ID를 부여한다.
-- 상태:
-
-| 상태 | 의미 |
-|---|---|
-| UNKNOWN | 처음부터 있던 차량, 아직 움직임이 확인되지 않음 |
-| ACTIVE | 움직이는 중 |
-| STOPPED | 움직이다 멈춤 |
-| PARKED | 같은 위치에 일정 시간 이상 정지 |
-
-- 움직임이 확인된 차량(`has_moved`)만 BEV로 투영한다.
-  (처음부터 주차돼 있던 차량은 BEV에 올리지 않음)
-
-### 7.4 Global Tracking (카메라 간)
-
-- cam01 입구에서 새 차량의 입차가 확인될 때마다 G001, G002 순서로 새 ID를 발급한다.
-- 다른 카메라의 움직이는 차량은 기존 ID와 위치·시간·이동 경로가 맞을 때만 연결한다.
-  연결 근거가 부족하면 Global ID 없이 표시한다.
-- BEV 좌표 기준으로 위치, 예상 이동 위치, 진행 방향, 속도, 시간 차를 점수화해
-  다른 카메라에 나타난 같은 차량에 같은 Global ID(G001 …)를 부여한다.
-- UNKNOWN 차량이 움직이기 시작하면 ACTIVE 확정 전부터 기존 Global ID 후보를 미리 탐색한다.
-- 새 카메라에서 일찍 찾은 후보는 첫 후보 시각을 기억한다. ACTIVE 판정을 기다리는 동안에도
-  예상 BEV 위치와 방향이 계속 맞으면 제한된 추가 시간 안에서 같은 ID로 확정할 수 있다.
-
-### 7.5 웹 뷰어
-
-- 모자이크 원본을 `<video>` 1개로 재생한다.
-- 브라우저가 실제로 화면에 표시한 프레임 번호(`requestVideoFrameCallback`)로
-  `/api/tracking/frame/{번호}`를 요청하므로 bbox / BEV가 영상과 같은 프레임을 가리킨다.
-- bbox는 상태별 색으로 칸 위치에 그리며, 확정된 Global ID는 주차 후에도 표시한다. 확정 전 후보는 `G002?`처럼 흐리게 표시한다.
-- BEV 지도에는 ACTIVE/STOPPED/PARKED 관측을 카메라별 색으로 표시하며, 여러 카메라에서 관측된 같은 Global ID는 한 점으로 합친다.
-- BEV 지도 아래 **GATE LOG**에는 화면에 표시된 프레임까지 발생한 차단기 기록만 최신순으로 보여 준다.
-  방금 발생한 기록(2초 이내)은 강조되고, 뒤로 이동하면 그 이후 기록은 사라진다.
-- 영상에 표시된 프레임의 결과만 그리며, 재생 중에는 앞 프레임(15개)을 미리 받아 둔다.
-  아직 결과가 없는 프레임에서는 다른 프레임의 bbox를 그리지 않고 비워 둔다.
-- 서버는 재생 중과 앞으로 탐색할 때 빠진 프레임을 순서대로 계산한다. 뒤로 탐색하면 이전 체크포인트부터 다시 계산하므로 입구에서 발급한 GID와 차량 상태가 재현된다.
-- 재생바를 여러 번 옮기면 처리 중인 요청은 중단되고 마지막 위치만 계산한다.
-
-### 7.6 서버 API
-
-| 메서드 | 경로 | 설명 |
-|---|---|---|
-| GET | `/` | 웹 뷰어 |
-| GET | `/api/health` | 상태 확인 |
-| GET | `/api/tracking/info` | 카메라 목록, fps, 프레임 수, 모자이크 정보(영상 URL, 칸 위치) |
-| GET | `/api/tracking/frame/{n}` | n번 프레임의 카메라별 bbox·상태·ID와 BEV 위치 |
-| POST | `/api/tracking/reset` | tracking 초기화 |
-| POST | `/api/tracking/reload` | tracking 설정과 calibration 다시 읽기 |
-| GET | `/api/gate-log` | 차단기 입출차 기록 (`data/gate_logs/<title>.json`, 없으면 빈 목록) |
-
-정적 파일: `/web/*` (웹), `/media/*` (`data/videos/`), `/map/*` (`data/maps/`).
-
----
-
-## 8. 알려진 제약
-
-- **브라우저 코덱**: 웹은 원본 모자이크를 그대로 재생한다. `test00`은 HEVC(H.265)라
-  Windows의 Chrome / Edge + GPU 하드웨어 디코딩 환경에서 재생된다.
-  재생되지 않으면 H.264로 변환한 파일이 필요하다 (ffmpeg 필요).
-- **분리 영상 코덱**: `mp4v`라 OpenCV로는 읽히지만 브라우저 / VS Code 미리보기에서는 재생되지 않는다.
-  확인할 때는 VLC 등을 사용한다.
-- **칸 해상도**: 카메라 화면이 640x360(4:3 카메라는 실제 528x360)이라
-  멀리 있는 작은 차량은 검출이 약할 수 있다.
-- **차량 위치 편향**: bbox 바닥 중앙점은 차량 중심이 아니라 카메라 쪽 범퍼/바퀴 위치에 가까워
-  화각에 따라 BEV 위치가 일정하게 치우칠 수 있다.
-- **calibration 출처**: 현재 calibration은 이전 1080p 영상 기준 점을 변환한 것이다.
-  녹화 시점이 달라 카메라 각도가 미세하게 바뀌었을 수 있으므로,
-  calibration 도구의 PRED 표시로 확인하고 필요하면 점을 추가한다.
-- **주차 구역 점유 대수**: 웹 BEV에 구역별 `점유/수용` 표시가 있지만 점유 계산은 아직 구현되지 않아 항상 0이다.
-- **타임라인 이동 후 상태**: 이동한 위치에서 tracking을 새로 시작하므로 ID가 바뀌고,
-  시간이 쌓여야 정해지는 상태(예: PARKED는 5초 정지 후)는 이동 직후에는 바로 표시되지 않는다.
-
-## 9. Git 관리
-
-- 제외: `data/videos/`(원본·분리 영상), `*.pt`(YOLO 가중치),
-  `data/detections/*/detections.jsonl`(YOLO bbox), `outputs/`, `*.zip`, 캐시 파일
-- 커밋: `data/detections/*/metadata.json`, `config/calibration/`, `data/maps/`, 코드와 설정
-- `detections.jsonl`은 영상 1분에 약 20MB라 GitHub 100MB 제한을 넘기 쉬워 커밋하지 않는다.
-  저장소를 받은 뒤 `python scripts/preprocess.py <title>`로 다시 만든다 (원본 영상 필요).
+주소는 **http://127.0.0.1:8000/** 입니다.
+이 서버는 기존 추적 엔진을 요청에 따라 실행하며, 통합 웹의 로그인·일정·공유 재생 시점 기능은 제공하지 않습니다.
+두 서버의 API와 캐시 운용 방식은 다르므로 통합 웹 작업은 [web/README.md](web/README.md)를 기준으로 진행합니다.
+
+## 검증과 배포 자료
+
+웹 검증 명령과 개발 서버 실행법은 [개발과 검증](web/README.md#개발과-검증)에 있습니다.
+원본·분리 영상, YOLO 가중치, 대용량 검출 JSONL, `.venv`, `node_modules`, React `dist`,
+웹 재생 캐시는 Git에서 제외됩니다. 새 컴퓨터에서는 해당 자료를 별도로 준비하거나 생성해야 합니다.
+업무 JSON은 `web/backend/data/`, 초기 템플릿은 `web/backend/fixtures/`에서 관리합니다.

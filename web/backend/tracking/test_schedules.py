@@ -44,25 +44,25 @@ class ScheduleTests(SimpleTestCase):
 
     def test_section_visibility_includes_colleagues_but_never_other_sections(self):
         self.assertEqual(self.create().status_code, 201)
-        self.assertEqual(self.create("cold-dx", vehicle_id="V007", driver_id="cold-dx").status_code, 201)
+        self.assertEqual(self.create("cold-dx", vehicle_id="V008", driver_id="cold-dx").status_code, 201)
         self.assertEqual(self.create("steelmaking", vehicle_id="V004", driver_id="steelmaking").status_code, 201)
         response = self.day("digital2", "date=2026-09-26&team_id=SECTION_COLD_DX")
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual([item["driver_id"] for item in data["schedules"]], ["digital"])
         self.assertFalse(data["schedules"][0]["can_edit"])
-        self.assertEqual([v["id"] for v in data["vehicles"]], ["V001", "V002", "V003"])
+        self.assertEqual([v["id"] for v in data["vehicles"]], ["V001", "V003", "V007"])
         self.assertEqual({u["id"] for u in data["members"]}, {"digital", "digital2", "digital3"})
         self.assertNotIn("password", json.dumps(data))
         self.assertEqual(len(self.day("admin").json()["schedules"]), 3)
         filtered = self.day("admin", "date=2026-09-26&team_id=SECTION_COLD_DX").json()
-        self.assertEqual([s["vehicle_id"] for s in filtered["schedules"]], ["V007"])
+        self.assertEqual([s["vehicle_id"] for s in filtered["schedules"]], ["V008"])
         self.assertEqual(self.day(query="date=2026-09-27").json()["schedules"], [])
 
     def test_unauthenticated_and_forged_owner_or_vehicle(self):
         self.assertEqual(self.client.get("/api/vehicle-schedules/").status_code, 401)
         self.assertEqual(self.client.post("/api/vehicle-schedules/", self.payload, content_type="application/json").status_code, 401)
-        self.assertEqual(self.create(vehicle_id="V007").status_code, 400)
+        self.assertEqual(self.create(vehicle_id="V008").status_code, 400)
         self.assertEqual(self.create(driver_id="digital2").status_code, 400)
         self.assertEqual(self.create("admin", vehicle_id="V001", driver_id="cold-dx").status_code, 400)
         item = self.create(team_id="SECTION_COLD_DX", created_by="admin").json()
@@ -87,7 +87,7 @@ class ScheduleTests(SimpleTestCase):
     def test_operating_time_boundaries_for_users_and_admins(self):
         day = 11
         for user in ("digital", "admin"):
-            for start, end in (("06:00", "06:01"), ("19:59", "20:00"), ("06:00", "20:00")):
+            for start, end in (("06:00", "06:30"), ("19:30", "20:00"), ("06:00", "20:00")):
                 with self.subTest(user=user, start=start, end=end):
                     self.assertEqual(self.create(user, date=f"2026-10-{day}", start_time=start, end_time=end).status_code, 201)
                     day += 1
@@ -99,6 +99,27 @@ class ScheduleTests(SimpleTestCase):
                     self.assertEqual(response.status_code, 400)
                     self.assertIn("06:00~20:00", str(response.json()))
         self.assertEqual(json_store.read("vehicle_schedules"), before)
+
+    def test_half_hour_rule_rejects_creates_and_updates_without_changing_records(self):
+        item = self.create().json()
+        before = json_store.read("vehicle_schedules")
+        for user in ("digital", "admin"):
+            for changes in ({"start_time": "09:15"}, {"end_time": "10:01"},
+                            {"start_time": "09:10", "end_time": "10:10"},
+                            {"repeat_weekdays": True, "repeat_until": "2026-10-02", "start_time": "09:05"}):
+                with self.subTest(user=user, changes=changes):
+                    for response in (self.create(user, **changes), self.change(item, user, **changes)):
+                        self.assertEqual(response.status_code, 400)
+                        self.assertIn("30분 단위", str(response.json()))
+                    self.assertEqual(json_store.read("vehicle_schedules"), before)
+        self.assertEqual(self.change(item, start_time="09:30", end_time="10:30").status_code, 200)
+
+    def test_historical_off_grid_booking_remains_readable(self):
+        item = self.create().json()
+        item.update(start_time="09:10", end_time="10:15")
+        json_store.write("vehicle_schedules", [item])
+        self.assertEqual(self.day().json()["schedules"][0]["start_time"], "09:10")
+        self.assertEqual(self.day().json()["schedules"][0]["end_time"], "10:15")
 
     def test_updates_cannot_move_existing_bookings_outside_operating_hours(self):
         item = self.create().json()
@@ -124,11 +145,23 @@ class ScheduleTests(SimpleTestCase):
         self.create()
         self.assertEqual(self.create(vehicle_id="EXTRA-DIGITAL").status_code, 409)
 
+    def test_empty_vehicle_with_busy_driver_reports_existing_booking_and_allows_its_end(self):
+        self.assertEqual(self.create(vehicle_id="V007", date="2026-10-19", start_time="08:00", end_time="11:30").status_code, 201)
+        before = json_store.read("vehicle_schedules")
+        response = self.create(vehicle_id="V001", date="2026-10-19", start_time="08:00", end_time="12:00")
+        self.assertEqual(response.status_code, 409)
+        detail = response.json()["detail"]
+        self.assertIn("운전자의 다른 운행 일정", detail)
+        self.assertIn("77사7777", detail)
+        self.assertIn("2026-10-19 08:00~11:30", detail)
+        self.assertEqual(json_store.read("vehicle_schedules"), before)
+        self.assertEqual(self.create(vehicle_id="V001", date="2026-10-19", start_time="11:30", end_time="12:00").status_code, 201)
+
     def test_update_cancel_permissions_and_persistence(self):
         item = self.create().json()
         self.assertEqual(self.change(item, "digital2", purpose="변경").status_code, 403)
         self.assertEqual(self.change(item, "cold-dx", purpose="변경").status_code, 404)
-        self.assertEqual(self.change(item, vehicle_id="V007").status_code, 400)
+        self.assertEqual(self.change(item, vehicle_id="V008").status_code, 400)
         response = self.change(item, start_time="11:00", end_time="12:00", purpose="회의")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(json_store.read("vehicle_schedules")[0]["purpose"], "회의")
@@ -139,7 +172,7 @@ class ScheduleTests(SimpleTestCase):
         self.assertEqual(self.create().status_code, 201)
 
     def test_admin_can_assign_and_manage_all_sections(self):
-        item = self.create("admin", vehicle_id="V007", driver_id="cold-dx").json()
+        item = self.create("admin", vehicle_id="V008", driver_id="cold-dx").json()
         self.assertEqual(item["driver_name"], "조의재")
         self.assertEqual(self.change(item, "admin", start_time="12:00", end_time="13:00").status_code, 200)
         self.assertEqual(self.client.delete(f"/api/vehicle-schedules/{item['id']}/", **self.headers("admin")).status_code, 204)
@@ -219,7 +252,7 @@ class ScheduleTests(SimpleTestCase):
         # Vehicle and driver checks apply on every occurrence, including the last.
         for day in ("2026-10-12", "2026-10-23"):
             self.assertEqual(self.create("digital2", driver_id="digital2", date=day).status_code, 409)
-            self.assertEqual(self.create(vehicle_id="V002", date=day).status_code, 409)
+            self.assertEqual(self.create(vehicle_id="V003", date=day).status_code, 409)
         self.assertEqual(self.create(date="2026-10-23", start_time="10:00", end_time="11:00").status_code, 201)
         for day in ("2026-10-11", "2026-10-17", "2026-10-18", "2026-10-24"):
             self.assertEqual(self.create(date=day).status_code, 201)
@@ -268,11 +301,33 @@ class ScheduleTests(SimpleTestCase):
         self.assertEqual(sorted(results), [201, 409])
         self.assertEqual(len(json_store.read("vehicle_schedules")), 1)
 
-    def test_initial_scenario_inventory_has_three_digital_vehicles_and_no_old_bookings(self):
+    def test_initial_scenario_inventory_reflects_vehicle_section_transfer_and_no_old_bookings(self):
         json_store.write("vehicle_schedules", self.demo_records)
         data = self.day(query="date=2026-10-12").json()
-        self.assertEqual({v["plate_number"] for v in data["vehicles"]}, {"11가1111", "22나2222", "33다3333"})
+        self.assertEqual({v["plate_number"] for v in data["vehicles"]}, {"11가1111", "33다3333", "77사7777"})
+        self.assertIn("22나2222", {v["plate_number"] for v in self.day("cold-dx").json()["vehicles"]})
         self.assertEqual(data["schedules"], [])
         self.assertEqual(self.demo_records, [])
         self.assertEqual(self.day(query="date=2026-10-10").json()["schedules"], [])
         self.assertEqual(self.day(query="date=2026-11-10").json()["schedules"], [])
+
+
+    def test_weekend_series_for_transferred_vehicle_is_shared_on_first_weekday_and_crud_is_visible(self):
+        original = json_store.read("vehicles")
+        response = self.create(vehicle_id="V007", date="2026-10-18", repeat_weekdays=True, repeat_until="2026-11-17")
+        self.assertEqual(response.status_code, 201, response.content)
+        item = response.json()
+        peer = Client()
+        def peer_day(day):
+            return peer.get(f"/api/vehicle-schedules/?date={day}", **self.headers("digital2"))
+        self.assertEqual(peer_day("2026-10-18").json()["schedules"], [])
+        shared = peer_day("2026-10-19")
+        self.assertEqual(shared.headers["Cache-Control"], "no-store")
+        self.assertEqual([s["id"] for s in shared.json()["schedules"]], [item["id"]])
+        self.assertFalse(shared.json()["schedules"][0]["can_edit"])
+        self.assertEqual(self.day("cold-dx", "date=2026-10-19").json()["schedules"], [])
+        self.assertEqual(self.change(item, purpose="Updated inspection").status_code, 200)
+        self.assertEqual(peer_day("2026-10-19").json()["schedules"][0]["purpose"], "Updated inspection")
+        self.assertEqual(self.client.delete(f"/api/vehicle-schedules/{item['id']}/", **self.headers("digital")).status_code, 204)
+        self.assertEqual(peer_day("2026-10-19").json()["schedules"], [])
+        self.assertEqual(json_store.read("vehicles"), original)

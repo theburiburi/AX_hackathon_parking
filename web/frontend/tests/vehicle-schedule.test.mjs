@@ -16,21 +16,25 @@ test("day navigation crosses month, year, and leap day boundaries", () => {
   assert.equal(moveDay("2024-03-01", -1), "2024-02-29");
   assert.equal(minuteOfDay("24:00"), 1440);
 });
-test("empty day keeps vehicles and only the 06 to 20 operating window visible", () => {
+test("empty day keeps vehicles and only the 07:30 to 18:00 display window visible", () => {
   const html = render();
-  assert.match(html, /등록된 운행 없음/);
+  assert.match(html, /표시 시간 내 운행 없음/);
   assert.match(html, /TEST-01/);
-  for (let hour = 0; hour < 24; hour++) assert.equal(html.includes(`>${String(hour).padStart(2, "0")}</th>`), hour >= 6 && hour < 20);
-  assert.match(html, /06:00~20:00/);
-  assert.match(html, /colspan="14"/i);
-  assert.match(html, /colspan="6" scope="colgroup">오전<\/th>/i);
-  assert.match(html, /colspan="8" scope="colgroup">오후<\/th>/i);
-  assert.doesNotMatch(html, /저녁|오전 ·|오후 ·/);
+  for (let hour = 0; hour < 24; hour++) {
+    assert.equal(html.includes(`>${String(hour).padStart(2, "0")}:00</span>`), hour >= 8 && hour <= 18);
+    assert.equal(html.includes(`>${String(hour).padStart(2, "0")}:30</span>`), hour >= 7 && hour < 18);
+  }
+  assert.match(html, /07:30~18:00/);
+  assert.match(html, /--schedule-slots:21/);
+  assert.match(html, /scope="row" class="schedule-vehicle"><strong>TEST-01/);
+  assert.match(html, /시간은 왼쪽에서 오른쪽으로/);
+  assert.match(html, /가로로 스크롤/);
+  assert.doesNotMatch(html, /세로로 스크롤/);
 });
 test("minute precision positions blocks without rounding to hours", () => {
   const html = render({ schedules: [booking], selectedId: "S1" });
-  assert.match(html, /left:25%/);
-  assert.match(html, /width:3\.5714/);
+  assert.match(html, /left:19\.0476/);
+  assert.match(html, /width:4\.7619/);
   assert.match(html, /aria-pressed="true"/);
   assert.match(html, /운전자 · 공장 · 점검/);
 });
@@ -46,13 +50,30 @@ test("historical out-of-hours bookings are clipped without overflowing the time 
   assert.doesNotMatch(html, /23:00–24:00/);
   assert.match(html, /05:00–21:00/);
 });
-test("booking form constrains both time fields to the operating window", () => {
+
+test("display clips crossing bookings and excludes bookings touching the outside boundaries", () => {
+  const html = render({ schedules: [
+    { ...booking, id: "early", start_time: "06:00", end_time: "07:30" },
+    { ...booking, id: "morning", start_time: "07:00", end_time: "08:00" },
+    { ...booking, id: "evening", start_time: "17:30", end_time: "19:00" },
+    { ...booking, id: "late", start_time: "18:00", end_time: "20:00" },
+  ] });
+  assert.equal((html.match(/<button/g) || []).length, 2);
+  assert.match(html, /left:0%;width:4\.7619/);
+  assert.match(html, /left:95\.2380[^;]*;width:4\.7619/);
+  assert.doesNotMatch(html, /06:00–07:30|18:00–20:00/);
+});
+test("booking form offers only half-hour times within the operating window", () => {
   const html = renderToStaticMarkup(React.createElement(ScheduleForm, {
     date: "2026-10-10", user: { id: "digital", name: "권혁돈", role: "USER" }, vehicles: [vehicle], members: [], busy: false,
     onSave() {}, onClose() {},
   }));
-  assert.match(html, /type="time" min="06:00" max="19:59"/);
-  assert.match(html, /type="time" min="06:01" max="20:00"/);
+  const options = label => [...html.match(new RegExp(`<label>${label}<select[^>]*>(.*?)</select>`, "s"))[1].matchAll(/<option value="([^"]+)"/g)].map(match => match[1]);
+  const slots = Array.from({ length: 29 }, (_, i) => `${String(6 + Math.floor(i / 2)).padStart(2, "0")}:${i % 2 ? "30" : "00"}`);
+  assert.deepEqual(options("시작 시간"), slots.slice(0, -1));
+  assert.deepEqual(options("종료 시간"), slots.slice(1));
+  assert.doesNotMatch(html, /type="time"/);
+  assert.match(html, /30분 단위/);
   assert.doesNotMatch(html, /24:00/);
   assert.doesNotMatch(html, /type="checkbox" checked/);
   assert.match(html, /평일 반복 \(월~금\)/);

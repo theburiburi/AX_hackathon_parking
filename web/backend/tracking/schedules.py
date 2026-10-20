@@ -104,6 +104,8 @@ def validated(data, user, old=None):
         raise ValidationError("종료 시간은 시작 시간보다 늦어야 합니다.")
     if start < 6 * 60 or end > 20 * 60:
         raise ValidationError("운행 신청은 06:00~20:00 사이에만 가능합니다.")
+    if start % 30 or end % 30:
+        raise ValidationError("시작 시간과 종료 시간은 30분 단위(00분 또는 30분)로 선택하세요.")
     text = {}
     for key, label, maximum in (("destination", "목적지", 120), ("purpose", "운행 목적", 200)):
         value = data.get(key)
@@ -129,13 +131,15 @@ def conflict(candidate, bookings):
     for item in bookings:
         if item["id"] == candidate["id"]:
             continue
-        if not days.intersection(occurrence_days(item)):
+        common_days = days.intersection(occurrence_days(item))
+        if not common_days:
             continue
         if start < minutes(item["end_time"], end=True) and minutes(item["start_time"]) < end:
+            existing = f"{item.get('plate_number', item['vehicle_id'])} · {min(common_days).isoformat()} {item['start_time']}~{item['end_time']}"
             if item["vehicle_id"] == candidate["vehicle_id"]:
-                return "해당 시간에 차량 운행 일정이 이미 있습니다. 다른 시간을 선택하세요."
+                return f"해당 시간에 차량 운행 일정이 이미 있습니다: {existing}. 다른 시간을 선택하세요."
             if item["driver_id"] == candidate["driver_id"]:
-                return "해당 시간에 운전자의 다른 운행 일정이 있습니다."
+                return f"해당 시간에 운전자의 다른 운행 일정이 있습니다: {existing}."
     return None
 
 
@@ -152,7 +156,7 @@ def collection(request):
             bookings = [present(user, item) for item in records() if selected(item) and date.fromisoformat(day) in occurrence_days(item)]
         vehicles = [v for v in current_vehicles() if selected(v)]
         members = [{k: u[k] for k in ("id", "name", "team_id")} for u in json_store.read("users") if u["role"] == "USER" and selected(u)]
-        return Response({"date": day, "schedules": sorted(bookings, key=lambda item: (item["start_time"], item["plate_number"])), "vehicles": vehicles, "members": members})
+        return Response({"date": day, "schedules": sorted(bookings, key=lambda item: (item["start_time"], item["plate_number"])), "vehicles": vehicles, "members": members}, headers={"Cache-Control": "no-store"})
     with _lock:
         candidate = validated(request.data, user)
         bookings = records()
