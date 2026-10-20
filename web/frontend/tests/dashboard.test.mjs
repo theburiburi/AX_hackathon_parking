@@ -27,9 +27,12 @@ const render = (role) => renderToStaticMarkup(React.createElement(Dashboard, {
 
 test("administrator opens analysis directly without navigation or overview switches", () => {
   const html = render("ADMIN");
+  assert.match(html, /<main class="analysis-dashboard">/);
+  assert.doesNotMatch(html, /user-dashboard/);
   assert.doesNotMatch(html, /<nav|운영 화면 전환|운영 현황|차량 운행 스케줄|차량 입출차 내역/);
   assert.match(html, /aria-label="실시간 분석"/);
   assert.match(html, /<h2>실시간 분석<\/h2>/);
+  assert.doesNotMatch(html, /구역별 현재 주차/);
   assert.doesNotMatch(html, /실시간 감지 모드|YOLO로 차량/);
   assert.doesNotMatch(html, /관리 요청|반려 사유|승인 시/);
   assert.match(html, /실시간 추적 모드/);
@@ -50,6 +53,8 @@ test("map tracking ON mounts the shared renderer canvas; OFF and absent frames h
 
 test("regular user sees vehicle status and schedule without requests or request history", () => {
   const html = render("USER");
+  assert.match(html, /<main class="user-dashboard">/);
+  assert.doesNotMatch(html, /analysis-dashboard/);
   assert.match(html, /차량 현황/);
   assert.match(html, /차량 운행 스케줄/);
   assert.match(html, /주차장 차량 위치/);
@@ -71,14 +76,16 @@ test("gate history remains visible while tracking frames are unavailable and fol
   }));
   for (const time of [1, 1.5, 2, 2.5]) {
     const html = renderGate(time);
-    assert.match(html, /1건/);
+    assert.equal((html.match(/<button/g) || []).length, 1);
     assert.match(html, /입차.*111 가 1111/);
     assert.doesNotMatch(html, /출차|기록이 없습니다/);
   }
-  assert.match(renderGate(3), /2건/);
-  assert.match(renderGate(.5), /0건/);
-  assert.match(renderGate(.5), /기록이 없습니다/);
-  assert.match(renderGate(1), /1건/);
+  assert.equal((renderGate(3).match(/<button/g) || []).length, 2);
+  assert.match(renderGate(.5), /차단기 기록/);
+  assert.equal((renderGate(.5).match(/<button/g) || []).length, 0);
+  assert.doesNotMatch(renderGate(.5), /0건|기록이 없습니다/);
+  assert.doesNotMatch(renderGate(3), /현재 재생 시점까지|[0-9]+건/);
+  assert.equal((renderGate(1).match(/<button/g) || []).length, 1);
 });
 
 test("account header displays the name and section supplied by the user JSON", () => {

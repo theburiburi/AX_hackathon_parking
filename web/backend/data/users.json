@@ -2,10 +2,10 @@
   {
     "id": "admin",
     "password": "test",
-    "name": "관리자",
+    "name": "admin",
     "role": "ADMIN",
     "team_id": null,
-    "team_name": "관리자"
+    "team_name": "admin"
   },
   {
     "id": "digital",
@@ -43,6 +43,22 @@
     "id": "digital3",
     "password": "test",
     "name": "USER3",
+    "role": "USER",
+    "team_id": "SECTION_DIGITAL_COMMUNICATION",
+    "team_name": "광양디지털통신기술섹션"
+  },
+    {
+    "id": "digital4",
+    "password": "test",
+    "name": "USER4",
+    "role": "USER",
+    "team_id": "SECTION_DIGITAL_COMMUNICATION",
+    "team_name": "광양디지털통신기술섹션"
+  },
+    {
+    "id": "digital5",
+    "password": "test",
+    "name": "USER5",
     "role": "USER",
     "team_id": "SECTION_DIGITAL_COMMUNICATION",
     "team_name": "광양디지털통신기술섹션"

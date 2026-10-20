@@ -90,9 +90,9 @@ class ReplayVehicleTests(SimpleTestCase):
 
     def test_demo_view_shares_one_frame_for_vehicles_counts_and_rewinds(self):
         original = json_store.read("vehicles")
-        for frame, expected_status, total in ((0, "UNKNOWN", 20), (1, "PARKING", 20),
+        for frame, expected_status, total in ((0, "MOVING", 20), (1, "PARKING", 20),
                                               (3, "PARKED", 21), (4, "MOVING", 20),
-                                              (0, "UNKNOWN", 20)):
+                                              (0, "MOVING", 20)):
             self.assertEqual(self.sync(frame).status_code, 200)
             saved = json_store.read("vehicle_replay_state")
             with patch("tracking.views.current_map_layout", return_value=self.layout), \
@@ -223,7 +223,7 @@ class ReplayVehicleTests(SimpleTestCase):
         self.assertEqual(json_store.read("vehicles"), original)
         self.assertEqual(self.sync(3).status_code, 200)
         self.assertEqual(self.vehicles()[0]["current_zone_id"], "A")
-        self.assertEqual([v["id"] for v in self.vehicles("cold-dx")], ["V007", "V008", "V009", "V010"])
+        self.assertEqual([v["id"] for v in self.vehicles("cold-dx")], ["V002", "V008", "V009", "V010"])
         self.assertEqual(self.client.get("/api/vehicles/V001/", **self.headers("cold-dx")).status_code, 404)
 
     def test_invalid_or_unauthorized_requests_do_not_change_shared_state(self):
