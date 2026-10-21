@@ -44,6 +44,11 @@ global_tracking:
   #   - 경로가 곧음 (직선 거리 / 이동 경로 >= bev_motion_min_straightness)
   #   - 진행 방향이 GID의 마지막 방향과 bev_motion_max_angle_deg 이내
   #   - 속력이 GID 마지막 속력의 1/ratio ~ ratio 배
+  #   (주행 중(ACTIVE)이던 GID가 min_direction_speed_px_per_sec보다 느리게 서행하다
+  #    사라졌다면 (교차로에서 감속 후 회전 등) 마지막 방향·속력을 믿을 수 없으므로
+  #    위 두 비교는 생략한다. 정차·주차 중 사라진 GID는 이 방식으로 이어받지 않는다)
+  # 주행 중 사라진 GID가 max_reid_gap_sec 안에 있는 동안, 그 사이 새로 나타난
+  # 트랙은 이미지 움직임이 작아도 미리 probe해서 BEV 이동 기록을 모은다.
   bev_motion_window_sec: 1.0
   bev_motion_min_px: 30.0
   bev_motion_min_straightness: 0.8

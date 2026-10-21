@@ -164,6 +164,64 @@ class GlobalCameraHandoffTest(unittest.TestCase):
         self.assertEqual(assignments[("cam07", 2)], 1)
         self.assertEqual(len(self.tracker.global_tracks), 1)
 
+    def test_bev_motion_ignores_direction_of_an_id_that_vanished_almost_stopped(self):
+        tracker = GlobalTracker(print_events=False)
+        tracker.update([self.observation("cam01", 1, 0, 0, entry=True)], 0)
+        tracker.update([self.observation("cam01", 1, 0, .5, y=103)], .5)
+        self.assertLess(tracker.global_tracks[1].speed_px_per_sec,
+                        tracker.min_direction_speed_px_per_sec)
+
+        # The car turns 90 degrees and drives off at normal speed.
+        for index in range(6, 18):
+            timestamp = index / 10
+            tracker.probe_existing(self.observation(
+                "cam06", 2, -80 * (timestamp - .6), timestamp, y=110))
+        self.assertEqual(tracker.get_provisional_global_id("cam06", 2), 1)
+        self.assertTrue(tracker.bev_motion_matches(("cam06", 2), 1))
+
+        # A car that only jitters in place still does not inherit the ID.
+        for index in range(6, 18):
+            timestamp = index / 10
+            tracker.probe_existing(self.observation(
+                "cam05", 3, 5 * (index % 2), timestamp, y=110))
+        self.assertFalse(tracker.bev_motion_matches(("cam05", 3), 1))
+
+        # An ID that vanished while STOPPED is not handed to a moving probe.
+        tracker.global_tracks[1].state = TrackState.STOPPED
+        self.assertFalse(tracker.bev_motion_matches(("cam06", 2), 1))
+
+    def test_unbound_standing_car_does_not_take_a_passing_id(self):
+        self.tracker.update([self.observation("cam03", 1, 100, 0, entry=True)], 0)
+        for local_id, state in ((4, TrackState.PARKED), (5, TrackState.STOPPED)):
+            standing = GlobalObservation("cam08", local_id, state, "car", .9,
+                                         105, 100, .1)
+            self.assertNotIn(("cam08", local_id), self.tracker.update([
+                self.observation("cam03", 1, 104, .1), standing], .1))
+
+    def test_late_active_car_matches_where_it_started_moving(self):
+        tracker = GlobalTracker(print_events=False)
+        tracker.update([self.observation("cam01", 1, 700, 0, entry=True, y=800)], 0)
+        tracker.update([self.observation("cam01", 1, 700, .5, y=820)], .5)
+
+        # A far car rests near the vanished ID, then creeps away for 5 s
+        # before its image motion is strong enough to become ACTIVE.
+        for index in range(0, 13):
+            tracker.record_trail(("cam06", 7), index / 6, 680, 890)
+        for index in range(13, 50):
+            timestamp = index / 6
+            tracker.record_trail(("cam06", 7), timestamp, 680 - 40 * (timestamp - 2), 890)
+        # A car parked far from where the ID vanished never matches.
+        for index in range(0, 50):
+            tracker.record_trail(("cam06", 8), index / 6, 200, 300)
+
+        assignments = {}
+        for timestamp in (8.2, 8.3, 8.4):
+            moving = self.observation("cam06", 7, 680 - 40 * (timestamp - 2), timestamp, y=890)
+            parked_then_moving = self.observation("cam06", 8, 200, timestamp, y=310)
+            assignments = tracker.update([moving, parked_then_moving], timestamp)
+        self.assertEqual(assignments.get(("cam06", 7)), 1)
+        self.assertNotIn(("cam06", 8), assignments)
+
     def test_late_or_distant_reappearance_does_not_take_an_id(self):
         self.tracker.update([self.observation("cam01", 1, 100, 0, entry=True)], 0)
         self.assertEqual(self.tracker.update([

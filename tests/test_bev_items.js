@@ -1,6 +1,12 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { collapseBevItems, detectionLabel, globalVehicleLabel } = require("../web/bev_items.js");
+const { collapseBevItems, detectionLabel, globalVehicleLabel, isExpiredParked } = require("../web/bev_items.js");
+
+test("parked cars disappear 15 s after becoming PARKED", () => {
+    assert.equal(isExpiredParked({ state: "PARKED", stopped_seconds: 19.9 }), false);
+    assert.equal(isExpiredParked({ state: "PARKED", stopped_seconds: 20 }), true);
+    assert.equal(isExpiredParked({ state: "STOPPED", stopped_seconds: 60 }), false);
+});
 
 test("vehicle numbers appear only for assigned Global IDs", () => {
     assert.equal(globalVehicleLabel(1), "G001");
@@ -26,6 +32,10 @@ test("confirmed IDs win over provisional candidates, which are marked", () => {
     assert.deepEqual(detectionLabel({ global_id: null, provisional_global_id: 2 }),
         { text: "G002?", provisional: true });
     assert.equal(detectionLabel({ global_id: null, provisional_global_id: null }), null);
+    assert.deepEqual(detectionLabel({ global_id: null, provisional_global_id: 4, candidate_global_id: 7 }),
+        { text: "G004?", provisional: true });
+    assert.deepEqual(detectionLabel({ global_id: null, provisional_global_id: null, candidate_global_id: 7 }),
+        { text: "G007?", provisional: true });
 });
 
 test("parked cars stay on the BEV map with their Global ID", () => {

@@ -1,6 +1,6 @@
 // Drawing code from the repository viewer, shared without a second renderer.
 // Tracking, state classification and BEV projection remain in server.py/src.
-import { collapseBevItems, detectionLabel, globalVehicleLabel } from "./bev_items.js";
+import { collapseBevItems, detectionLabel, globalVehicleLabel, isExpiredParked } from "./bev_items.js";
 export const STATE_COLORS = {
     UNKNOWN: "#8b929c",
     ACTIVE: "#22e86f",
@@ -81,6 +81,10 @@ export function drawDetection(
     detection
 ) {
 
+    if (isExpiredParked(detection)) {
+        return;
+    }
+
     const color =
         STATE_COLORS[
             detection.state
@@ -133,7 +137,7 @@ export function drawDetection(
         color;
 
     overlayContext.lineWidth =
-        1;
+        3;
 
     overlayContext.strokeRect(
         x,
@@ -206,7 +210,9 @@ export function drawBevTracking(
 
     for (
         const item
-        of collapseBevItems(latestTracking.bev)
+        of collapseBevItems(
+            latestTracking.bev.filter(item => !isExpiredParked(item))
+        )
     ) {
 
         // Retain parked observations and draw one marker per shared GID.

@@ -131,6 +131,10 @@ class ProbeState:
     # 충분히 반복 검증되어 provisional 상태가 된 Global ID.
     provisional_global_id: int | None = None
 
+    # 화면 표시 전용 1등 후보 GID. 연속 횟수·점수 차 조건을 보지 않으며
+    # 확정·추적 판단에는 쓰지 않는다.
+    display_global_id: int | None = None
+
     # 마지막 probe 시각.
     last_seen: float = 0.0
 
@@ -392,6 +396,8 @@ class GlobalTracker:
             ProbeState,
         ] = {}
         self.handoff_candidates: dict[LocalTrackKey, tuple[int, int, float]] = {}
+        # GID 없는 Local 트랙의 최근 BEV 위치 기록 (움직이기 시작한 지점 되짚기용).
+        self.trails: dict[LocalTrackKey, deque[BevSample]] = {}
         self.entry_created_keys: set[LocalTrackKey] = set()
 
     # =====================================================
@@ -1374,6 +1380,7 @@ class GlobalTracker:
             observation.local_key,
             None,
         )
+        self.trails.pop(observation.local_key, None)
 
         if (
             self.print_events
@@ -1482,6 +1489,8 @@ class GlobalTracker:
                 None
             )
 
+            probe.display_global_id = None
+
             self._remove_stale_probes(
                 observation.timestamp
             )
@@ -1495,6 +1504,10 @@ class GlobalTracker:
             _,
             _,
         ) = candidates[0]
+
+        probe.display_global_id = (
+            best_track.global_id
+        )
 
         if len(candidates) > 1:
 
@@ -1625,7 +1638,11 @@ class GlobalTracker:
         track_speed = global_track.speed_px_per_sec
 
         if track_speed < self.min_direction_speed_px_per_sec:
-            return False
+            # 주행 중(ACTIVE)이던 GID가 서행하다 사라졌으면 (예: 교차로에서 서행 후 회전)
+            # 마지막 방향·속력을 믿을 수 없으므로 BEV 이동 자체만으로 판단한다.
+            # 정차·주차 중 사라진 GID는 이어받지 않는다 (멀리 있는 주차 차량의
+            # 박스 흔들림이 이동처럼 보일 수 있다).
+            return global_track.state == TrackState.ACTIVE
 
         cos_angle = (
             ((last.x - first.x) * global_track.velocity_x
@@ -1640,6 +1657,123 @@ class GlobalTracker:
 
         return (1.0 / self.bev_motion_max_speed_ratio
                 <= ratio <= self.bev_motion_max_speed_ratio)
+
+    # 움직이기 시작한 지점 되짚기 설정.
+    TRAIL_SEC = 12.0
+    # 이 시간 동안 이 반경 안에 머물렀으면 서 있던 것으로 본다.
+    TRAIL_REST_SEC = 1.0
+    TRAIL_REST_RADIUS_PX = 12.0
+
+    def record_trail(
+        self,
+        local_key: LocalTrackKey,
+        timestamp: float,
+        bev_x: float,
+        bev_y: float,
+    ) -> None:
+
+        trail = self.trails.setdefault(local_key, deque())
+        trail.append(BevSample(timestamp, bev_x, bev_y))
+        while trail and trail[0].timestamp < timestamp - self.TRAIL_SEC:
+            trail.popleft()
+
+    def _motion_starts(
+        self,
+        local_key: LocalTrackKey,
+    ) -> list[BevSample]:
+        """
+        기록상 서 있다가 움직이기 시작한 지점들 (중간에 잠깐 멈춘 곳 포함).
+        서 있던 구간이 없으면 (움직이며 나타났으면) 첫 기록.
+        """
+
+        trail = list(self.trails.get(local_key, ()))
+
+        if len(trail) < 2:
+            return []
+
+        starts = [trail[0]]
+
+        for index, sample in enumerate(trail):
+            window = [
+                other for other in trail[index:]
+                if other.timestamp - sample.timestamp <= self.TRAIL_REST_SEC
+            ]
+            if (window[-1].timestamp - sample.timestamp >= self.TRAIL_REST_SEC * 0.9
+                    and all(math.hypot(other.x - sample.x, other.y - sample.y)
+                            <= self.TRAIL_REST_RADIUS_PX for other in window)):
+                if starts[-1] is not trail[0] and starts[-1].timestamp >= sample.timestamp:
+                    # 같은 정지 구간이 이어지면 끝 지점만 남긴다.
+                    starts[-1] = window[-1]
+                else:
+                    starts.append(window[-1])
+
+        return starts
+
+    def _motion_start_match(
+        self,
+        observation: GlobalObservation,
+        seen_cameras_by_global: dict[int, set[str]],
+    ) -> tuple[GlobalTrack | None, float | None, float | None]:
+        """
+        늦게 ACTIVE가 된 차량을 움직이기 시작한 시각·지점으로 Re-ID.
+
+        카메라 쪽으로 다가오는 먼 차량은 이미지 움직임이 작아 ACTIVE가 몇 초
+        늦는다. 그 사이 사라진 GID의 이어받기 시간이 지나므로, 지금 위치 대신
+        움직이기 시작한 시각·지점들을 주행 중 사라진 GID의 마지막 관측과 비교한다.
+        후보가 정확히 하나일 때만 연결한다.
+        """
+
+        starts = self._motion_starts(observation.local_key)
+        matches = []
+
+        for global_track in self.global_tracks.values():
+
+            if global_track.state != TrackState.ACTIVE:
+                continue
+
+            if observation.camera_id in seen_cameras_by_global.get(
+                    global_track.global_id, set()):
+                continue
+
+            # 지금도 다른 곳에서 보이는 GID는 제외.
+            if observation.timestamp - global_track.last_seen <= self.overlap_window_sec:
+                continue
+
+            for start in starts:
+                time_gap = start.timestamp - global_track.last_seen
+
+                if not -self.overlap_window_sec <= time_gap <= self.max_reid_gap_sec:
+                    continue
+
+                distance = math.hypot(
+                    start.x - global_track.last_bev_x,
+                    start.y - global_track.last_bev_y,
+                )
+
+                if distance <= self.last_position_match_distance_px:
+                    matches.append((global_track, distance, time_gap))
+                    break
+
+        if len(matches) != 1:
+            return None, None, None
+
+        return matches[0]
+
+    def has_recently_lost_active(
+        self,
+        timestamp: float,
+    ) -> bool:
+        """
+        주행 중(ACTIVE)에 사라진 GID가 아직 이어받기 시간 안에 있는지.
+        """
+
+        return any(
+            track.state == TrackState.ACTIVE
+            and self.overlap_window_sec
+            < timestamp - track.last_seen
+            <= self.max_reid_gap_sec
+            for track in self.global_tracks.values()
+        )
 
     def get_provisional_global_id(
         self,
@@ -1659,6 +1793,26 @@ class GlobalTracker:
 
         return (
             probe.provisional_global_id
+        )
+
+    def get_display_global_id(
+        self,
+        camera_id: str,
+        local_id: int,
+    ) -> int | None:
+
+        probe = self.probes.get(
+            (
+                camera_id,
+                local_id,
+            )
+        )
+
+        if probe is None:
+            return None
+
+        return (
+            probe.display_global_id
         )
 
     # =====================================================
@@ -1775,6 +1929,12 @@ class GlobalTracker:
                 assignments[observation.local_key] = entrant.global_id
                 seen_cameras_by_global.setdefault(entrant.global_id, set()).add(
                     observation.camera_id)
+                continue
+
+            # GID 없이 서 있는(정차·주차) 차량은 지나가는 차량의 GID를 이어받지 않는다.
+            # 서 있으면 같은 Local 트랙으로 계속 인식되므로 GID가 필요 없다.
+            # 다시 움직여 ACTIVE가 되면 정상 매칭한다.
+            if observation.state in (TrackState.STOPPED, TrackState.PARKED):
                 continue
 
             probe = self.probes.get(
@@ -1910,6 +2070,11 @@ class GlobalTracker:
                         time_gap_value
                     )
 
+            if (best_track is None and not ambiguous
+                    and observation.state == TrackState.ACTIVE):
+                best_track, distance, time_gap = self._motion_start_match(
+                    observation, seen_cameras_by_global)
+
             if ambiguous:
                 self.handoff_candidates.pop(observation.local_key, None)
                 continue
@@ -2010,6 +2175,11 @@ class GlobalTracker:
                 local_key,
                 None,
             )
+
+        self.trails = {
+            key: trail for key, trail in self.trails.items()
+            if trail and timestamp - trail[-1].timestamp <= self.TRAIL_SEC
+        }
 
         self.handoff_candidates = {
             key: candidate for key, candidate in self.handoff_candidates.items()

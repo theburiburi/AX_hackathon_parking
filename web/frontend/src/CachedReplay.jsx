@@ -65,16 +65,17 @@ export function ReplayMap({ manifest, frame, imageUrl, camera, tracking = false,
       {ready && !failed && showZones && <svg viewBox={`0 0 ${manifest.map.width} ${manifest.map.height}`} aria-label="구역별 주차 대수">
         {zones.map((zone, index) => {
           const b = zone.bndbox;
-          // L and M share a top edge; place L's label left of both boxes.
-          const labelOnLeft = zone.id === "L";
-          const labelX = labelOnLeft ? Math.min(b.xmin, zones.find(area => area.id === "M")?.bndbox.xmin ?? b.xmin) - 12 : b.xmin + 5;
+          // L and M share a top edge and M is too narrow for its label, so M's
+          // label drops below L's box instead of overlapping L's label.
+          const below = zone.id === "M" ? zones.find(area => area.id === "L")?.bndbox : null;
+          const labelY = (below ? Math.max(b.ymin, below.ymax) : b.ymin) + 19;
           return <g key={zone.id}><rect x={b.xmin} y={b.ymin} width={b.xmax - b.xmin} height={b.ymax - b.ymin}
             fill={hover === zone.id ? COLORS[index % COLORS.length] : "transparent"} fillOpacity={.18} stroke={COLORS[index % COLORS.length]}
             tabIndex={0} role="button" aria-pressed={hover === zone.id} aria-label={`${zone.id} 구역: ${zone.parkingLabel}`}
             onClick={() => setHover(zone.id)} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setHover(zone.id); } }}
             onMouseEnter={() => setHover(zone.id)} onMouseLeave={() => setHover(null)} onFocus={() => setHover(zone.id)} onBlur={() => setHover(null)}>
             <title>{zone.id} 구역: {zone.parkingLabel}</title></rect>
-            <text x={labelX} y={b.ymin + 19} textAnchor={labelOnLeft ? "end" : "start"}>{zone.id} · {zone.parkingLabel}</text></g>;
+            <text x={b.xmin + 5} y={labelY}>{zone.id} · {zone.parkingLabel}</text></g>;
         })}
       </svg>}
       {ready && !failed && <ReplayTrackOverlay frame={frame} map={manifest.map} camera={camera} enabled={tracking} observations={observations} />}

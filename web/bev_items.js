@@ -4,15 +4,27 @@ export function globalVehicleLabel(globalId) {
 }
 
 // A confirmed Global ID is shown in every state (a parked car keeps its
-// number). Before confirmation, a provisional candidate is shown with "?".
+// number). Before confirmation, a provisional candidate is shown with "?",
+// falling back to the unverified best candidate (display only).
 export function detectionLabel(detection) {
     const label = globalVehicleLabel(detection.global_id);
     if (label !== null) return { text: label, provisional: false };
-    const candidate = globalVehicleLabel(detection.provisional_global_id);
+    const candidate = globalVehicleLabel(
+        detection.provisional_global_id ?? detection.candidate_global_id);
     return candidate === null ? null : { text: `${candidate}?`, provisional: true };
 }
 
-const BEV_STATE_PRIORITY = { ACTIVE: 3, STOPPED: 2, PARKED: 1 };
+// PARKED boxes and markers disappear 15 s after parking. The tracker turns a
+// STOPPED car PARKED after parked_after_sec (config/tracking.yaml, 5 s) and
+// stopped_seconds keeps counting from the stop, so the cut-off is 5 + 15 s.
+export const PARKED_HIDE_AFTER_STOPPED_SEC = 5 + 15;
+
+export function isExpiredParked(item) {
+    return item.state === "PARKED"
+        && Number(item.stopped_seconds) >= PARKED_HIDE_AFTER_STOPPED_SEC;
+}
+
+const BEV_STATE_PRIORITY ={ ACTIVE: 3, STOPPED: 2, PARKED: 1 };
 
 export function collapseBevItems(items) {
     const grouped = new Map();

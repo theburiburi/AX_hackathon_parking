@@ -49,6 +49,9 @@ WEB_DIR = (
 )
 
 # 웹 재생 영상: data/<title>/mosaic.mp4 (scripts/00_prepare_video.py)
+# GID 없는 차량의 BEV 위치 기록 간격 (프레임).
+TRAIL_FRAME_STEP = 5
+
 VIDEO_DIR = (
     ROOT
     /
@@ -1260,7 +1263,16 @@ class TrackingEngine:
             is None
         ):
 
-            return False
+            # 카메라 쪽으로 다가오는 먼 차량은 이미지 움직임이 작아 probe가 늦다.
+            # 주행 중 사라진 GID가 있으면, 그 뒤 새로 나타난 트랙만 미리 probe해서
+            # BEV 이동 기록을 모은다. 오래 서 있던 차량은 제외한다.
+            # (확정은 지금처럼 움직임 후보일 때만 한다)
+            return (
+                self.global_tracker is not None
+                and timestamp - track.first_seen
+                <= self.global_tracker.max_reid_gap_sec
+                and self.global_tracker.has_recently_lost_active(timestamp)
+            )
 
         moving_candidate_duration = (
             timestamp
@@ -1403,10 +1415,24 @@ class TrackingEngine:
                     )
                 )
 
+                # GID 없는 차량의 BEV 위치를 띄엄띄엄 기록한다.
+                # 늦게 ACTIVE가 된 차량이 언제 어디서 움직이기 시작했는지 되짚는 데 쓴다.
+                record_trail = (
+                    self.global_tracker is not None
+                    and frame_index % TRAIL_FRAME_STEP == 0
+                    and not track.occluded
+                    and self.global_tracker.get_global_id(
+                        camera_id,
+                        track.local_id,
+                    ) is None
+                )
+
                 if (
                     not track.has_moved
                     and
                     not should_probe
+                    and
+                    not record_trail
                 ):
 
                     continue
@@ -1434,6 +1460,22 @@ class TrackingEngine:
                     not math.isfinite(
                         bev_y
                     )
+                ):
+
+                    continue
+
+                if record_trail:
+                    self.global_tracker.record_trail(
+                        (camera_id, track.local_id),
+                        timestamp,
+                        bev_x,
+                        bev_y,
+                    )
+
+                if (
+                    not track.has_moved
+                    and
+                    not should_probe
                 ):
 
                     continue
@@ -1649,6 +1691,8 @@ class TrackingEngine:
 
                 provisional_global_id = None
 
+                candidate_global_id = None
+
                 if (
                     self.global_tracker
                     is not None
@@ -1671,6 +1715,25 @@ class TrackingEngine:
                             track.local_id,
                         )
                     )
+
+                    candidate_global_id = (
+                        self.global_tracker.get_display_global_id(
+
+                            camera_id,
+
+                            track.local_id,
+                        )
+                    )
+
+                    # 움직이지 않는 차량에는 후보 번호(G00N?)를 표시하지 않는다.
+                    # 서 있으면 같은 Local 트랙으로 계속 인식되므로 번호가 필요 없다.
+                    if (
+                        global_id is None
+                        and track.state != TrackState.ACTIVE
+                        and track.moving_candidate_since is None
+                    ):
+                        provisional_global_id = None
+                        candidate_global_id = None
 
                 camera_result.append(
                     {
@@ -1716,6 +1779,16 @@ class TrackingEngine:
                                     provisional_global_id
                                 )
                                 if provisional_global_id
+                                is not None
+                                else None
+                            ),
+
+                        "candidate_global_id":
+                            (
+                                int(
+                                    candidate_global_id
+                                )
+                                if candidate_global_id
                                 is not None
                                 else None
                             ),
