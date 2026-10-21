@@ -4,6 +4,7 @@ from rest_framework.response import Response
 
 from replay.store import ReplayError, ReplayStore
 from replay.frame_response import frame_response
+from replay.paths import vehicle_paths
 from replay.vehicle_state import apply_snapshot, replay_snapshot
 from threading import RLock
 from . import json_store
@@ -109,6 +110,15 @@ def frames(request):
             return Response({"detail": "영상 프레임 범위를 벗어났습니다."}, status=400)
         return frame_response(store, start, count, request)
     except (ReplayError, OSError, ValueError) as exc:
+        return Response({"detail": str(exc)}, status=503)
+
+
+@api_view(["GET"])
+@login_required("ADMIN")
+def paths(request):
+    try:
+        return Response(vehicle_paths(open_store(request)))
+    except (ReplayError, OSError, ValueError, KeyError) as exc:
         return Response({"detail": str(exc)}, status=503)
 
 

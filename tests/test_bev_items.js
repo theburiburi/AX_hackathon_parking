@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { collapseBevItems, detectionLabel, globalVehicleLabel, isExpiredParked } = require("../web/bev_items.js");
+const { collapseBevItems, detectionLabel, globalVehicleLabel, isExpiredParked, pathUntil } = require("../web/bev_items.js");
 
 test("parked cars disappear 15 s after becoming PARKED", () => {
     assert.equal(isExpiredParked({ state: "PARKED", stopped_seconds: 19.9 }), false);
@@ -62,4 +62,18 @@ test("parked cars stay on the BEV map with their Global ID", () => {
     assert.equal(items.length, 2);
     assert.equal(items[0].state, "ACTIVE");
     assert.equal(items[1].state, "STOPPED");
+});
+
+test("path mode draws up to the current frame and links camera gaps", () => {
+    const points = [[0, 0, 0], [3, 10, 0], [6, 20, 0], [90, 80, 40], [93, 90, 40], [96, 99, 40]];
+    const early = pathUntil(points, 4, 30);
+    assert.deepEqual(early.runs, [[[0, 0], [10, 0]]]);
+    assert.deepEqual(early.gaps, []);
+    assert.deepEqual(early.last, [10, 0]);
+
+    const late = pathUntil(points, 93, 30);
+    assert.deepEqual(late.runs, [[[0, 0], [10, 0], [20, 0]], [[80, 40], [90, 40]]]);
+    assert.deepEqual(late.gaps, [[[20, 0], [80, 40]]]);
+    assert.deepEqual(late.last, [90, 40]);
+    assert.equal(pathUntil(points, -1, 30).last, null);
 });

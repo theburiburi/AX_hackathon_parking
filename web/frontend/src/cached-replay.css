@@ -2,6 +2,7 @@
 /* Give the side-by-side analysis layout more room on desktop screens. */
 main.analysis-dashboard { max-width:none; }
 .replay-heading { flex-wrap:wrap; }
+.replay-mode-toggles { display:flex; flex-wrap:wrap; gap:8px; }
 .replay-tracking-toggle { display:inline-flex; align-items:center; gap:8px; color:var(--muted); font-size:20px; }
 .replay-tracking-toggle[aria-pressed="true"] { color:var(--success); border-color:#31765d; background:var(--success-soft); }
 .tracking-indicator { width:8px; height:8px; border-radius:50%; background:#94a3b8; }
@@ -29,6 +30,10 @@ main.analysis-dashboard { max-width:none; }
 .replay-map-stage rect:focus { stroke-width:5; outline:none; }
 .replay-map-stage text { font-size:26px; font-weight:800; fill:#fff; stroke:#172033; paint-order:stroke; stroke-width:3; pointer-events:none; }
 .replay-track-overlay { pointer-events:none; }
+.replay-path-layer { pointer-events:none; }
+.replay-path-layer polyline { stroke-width:5; stroke-linejoin:round; stroke-linecap:round; opacity:.9; }
+.replay-path-layer polyline.gap { stroke-width:3; stroke-dasharray:10 9; opacity:.75; }
+.replay-path-layer text { stroke:#101722; }
 .replay-track-legend { display:flex; flex-wrap:wrap; align-items:center; gap:12px; margin-top:10px; font-size:19px; color:var(--muted); }
 .replay-track-legend span { display:inline-flex; align-items:center; gap:5px; }
 .replay-track-legend i { width:9px; height:9px; border-radius:50%; }

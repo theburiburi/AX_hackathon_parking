@@ -74,3 +74,24 @@ export function collapseBevItems(items) {
     }
     return [...grouped.values()].map(group => group.item);
 }
+
+// Path mode: points are [frame, x, y] in frame order (server replay/paths.py).
+// Up to the current frame, observed stretches become solid runs and stretches
+// where the car was out of every camera for more than gapFrames become
+// straight gap links between the last and next visible points.
+export function pathUntil(points, frameIndex, gapFrames) {
+    const runs = [], gaps = [];
+    let run = [], previous = null;
+    for (const [frame, x, y] of points) {
+        if (frame > frameIndex) break;
+        if (previous && frame - previous[0] > gapFrames) {
+            if (run.length > 1) runs.push(run);
+            gaps.push([[previous[1], previous[2]], [x, y]]);
+            run = [];
+        }
+        run.push([x, y]);
+        previous = [frame, x, y];
+    }
+    if (run.length > 1) runs.push(run);
+    return { runs, gaps, last: previous && [previous[1], previous[2]] };
+}

@@ -1,13 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ReplayBuffer, gateEventsForTime, replayTracks, replayZoneCountsFromTracks, watchReplayMedia, watchReplayKeyboard } from "./replayBuffer";
 import { drawCameraLabel, drawDetection, drawBevTracking } from "../../viewer-rendering.js";
-import { collapseBevItems } from "../../bev_items.js";
+import { collapseBevItems, globalVehicleLabel, pathUntil } from "../../bev_items.js";
 import { watchReplayVideoState } from "./replayVehicleSync";
 import { createReplayCanvas } from "./replayCanvas";
 import { useDemoState } from "./DemoSync";
 import "./cached-replay.css";
 
 const COLORS = ["#2563eb", "#0891b2", "#7c3aed", "#ea580c", "#059669", "#db2777", "#4f46e5"];
+const PATH_COLORS = ["#ff5d5d", "#38bdf8", "#facc15", "#a78bfa", "#34d399", "#fb923c", "#f472b6", "#22d3ee", "#a3e635", "#e879f9"];
 const clock = n => `${Math.floor(n / 60).toString().padStart(2, "0")}:${Math.floor(n % 60).toString().padStart(2, "0")}`;
 const gatePlate = value => {
   const plate = typeof value === "string" ? value.trim() : "";
@@ -45,7 +46,27 @@ export function ReplayTrackOverlay({ frame, map, camera, enabled, observations }
   return visible ? <canvas ref={canvasRef} className="replay-track-overlay" aria-label="현재 차량 위치" /> : null;
 }
 
-export function ReplayMap({ manifest, frame, imageUrl, camera, tracking = false, occupancy = [], showZones = true }) {
+// Path mode: each Global ID's BEV route up to the current frame. Solid where a
+// camera saw the car, dashed straight links across stretches no camera saw.
+export function ReplayPathLayer({ map, paths, frameIndex }) {
+  const drawn = useMemo(() => Object.entries(paths?.paths || {})
+    .map(([id, points]) => ({ id: Number(id), ...pathUntil(points, frameIndex, paths.gap_frames) }))
+    .filter(path => path.last), [paths, frameIndex]);
+  const line = points => points.map(([x, y]) => `${x},${y}`).join(" ");
+  return <svg className="replay-path-layer" viewBox={`0 0 ${map.width} ${map.height}`} aria-label="차량별 이동 경로">
+    {drawn.map(path => {
+      const color = PATH_COLORS[(path.id - 1) % PATH_COLORS.length];
+      return <g key={path.id} stroke={color} fill="none">
+        {path.gaps.map((gap, index) => <polyline key={`gap${index}`} points={line(gap)} className="gap" />)}
+        {path.runs.map((run, index) => <polyline key={`run${index}`} points={line(run)} />)}
+        <circle cx={path.last[0]} cy={path.last[1]} r={7} fill={color} />
+        <text x={path.last[0] + 10} y={path.last[1] - 10} fill={color}>{globalVehicleLabel(path.id)}</text>
+      </g>;
+    })}
+  </svg>;
+}
+
+export function ReplayMap({ manifest, frame, imageUrl, camera, tracking = false, occupancy = [], showZones = true, paths = null, pathStatus = "", frameIndex = 0 }) {
   const [hover, setHover] = useState(null);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -78,12 +99,14 @@ export function ReplayMap({ manifest, frame, imageUrl, camera, tracking = false,
             <text x={b.xmin + 5} y={labelY}>{zone.id} · {zone.parkingLabel}</text></g>;
         })}
       </svg>}
+      {ready && !failed && paths && <ReplayPathLayer map={manifest.map} paths={paths} frameIndex={frameIndex} />}
       {ready && !failed && <ReplayTrackOverlay frame={frame} map={manifest.map} camera={camera} enabled={tracking} observations={observations} />}
       {showZones && selected && <output className="replay-zone-tooltip" role="status">{selected.id} 구역 · {selected.parkingLabel}{tracking && frame && ` · 이동 ${selected.count}대`}</output>}
     </div>
     {tracking && <div className="replay-track-legend"><span><i className="active" />이동 차량</span>
       <span><i className="stopped" />정차 차량</span><span><i className="parked" />주차 차량</span>
       <span>{!frame ? "현재 프레임의 위치를 불러오는 중입니다." : !tracks.length ? "현재 프레임에서 추적 중인 차량이 없습니다." : ""}</span></div>}
+    {pathStatus && <p className={pathStatus.startsWith("이동 경로를 불러오지") ? "error" : "form-note"}>{pathStatus}</p>}
     {failed && <p className="error">지도를 불러오지 못했습니다. 로그인 상태와 파일을 확인하세요.</p>}
   </section>;
 }
@@ -98,6 +121,8 @@ export default function CachedReplay({ token, api = "/api" }) {
   const [camera, setCamera] = useState(""), [boxes, setBoxes] = useState(true), [loop, setLoop] = useState(true), [rate, setRate] = useState(1);
   const [tracking, setTracking] = useState(false);
   const [showZones, setShowZones] = useState(true);
+  const [showPaths, setShowPaths] = useState(false);
+  const [paths, setPaths] = useState(null), [pathStatus, setPathStatus] = useState("");
   const [syncError, setSyncError] = useState("");
   const videoRef = useRef(null), canvasRef = useRef(null), presentRef = useRef(null);
   const options = useRef({ camera, boxes });
@@ -202,6 +227,20 @@ export default function CachedReplay({ token, api = "/api" }) {
     });
   }, [manifest, api, token]);
 
+  useEffect(() => {
+    if (!manifest || !showPaths || paths?.cache_id === manifest.cache_id) return;
+    const controller = new AbortController();
+    setPathStatus("이동 경로를 계산하는 중입니다.");
+    (async () => {
+      const response = await fetch(`${api}/replay/paths/?cache_id=${manifest.cache_id}`, {
+        headers: { Authorization: `Bearer ${token}` }, signal: controller.signal });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "응답 오류");
+      if (!controller.signal.aborted) { setPaths(data); setPathStatus(""); }
+    })().catch(err => { if (err.name !== "AbortError" && !controller.signal.aborted) setPathStatus(`이동 경로를 불러오지 못했습니다: ${err.message}`); });
+    return () => controller.abort();
+  }, [manifest, showPaths, paths, api, token]);
+
   const seek = value => { if (videoRef.current && manifest) videoRef.current.currentTime = Math.max(0, Math.min(value, manifest.duration - 1 / manifest.fps)); };
   const step = delta => { videoRef.current?.pause(); seek(time + delta / manifest.fps); };
   const toggle = async () => {
@@ -225,9 +264,14 @@ export default function CachedReplay({ token, api = "/api" }) {
   }, [manifest]);
   return <section className="cached-replay" aria-label="실시간 분석">
     <div className="panel-heading replay-heading"><h2>실시간 분석</h2>
-      <button type="button" className="replay-tracking-toggle" aria-pressed={tracking} disabled={!manifest} onClick={toggleTracking}>
-        <span className="tracking-indicator" aria-hidden="true" />실시간 추적 모드 <strong>{tracking ? "ON" : "OFF"}</strong>
-      </button>
+      <div className="replay-mode-toggles">
+        <button type="button" className="replay-tracking-toggle" aria-pressed={tracking} disabled={!manifest} onClick={toggleTracking}>
+          <span className="tracking-indicator" aria-hidden="true" />실시간 추적 모드 <strong>{tracking ? "ON" : "OFF"}</strong>
+        </button>
+        <button type="button" className="replay-tracking-toggle" aria-pressed={showPaths} disabled={!manifest} onClick={() => setShowPaths(value => !value)}>
+          <span className="tracking-indicator" aria-hidden="true" />이동 경로 모드 <strong>{showPaths ? "ON" : "OFF"}</strong>
+        </button>
+      </div>
     </div>
     {syncError && <p className="error" role="alert">주차 현황·차량 목록 연동 실패: {syncError}</p>}
     {error && <div className="panel" role="alert"><p className="error">{error}</p><button onClick={() => setAttempt(n => n + 1)}>다시 불러오기</button></div>}
@@ -241,7 +285,9 @@ export default function CachedReplay({ token, api = "/api" }) {
           <canvas ref={canvasRef} aria-label="프레임별 검출 박스" />
         </div>
       </section><aside className="replay-sidebar" aria-label="차량 지도와 차단기 기록">
-        <MemoizedReplayMap manifest={manifest} frame={frame} imageUrl={mediaUrl(manifest.map.url)} camera={camera} tracking={tracking} occupancy={occupancy.zones} showZones={showZones} />
+        <MemoizedReplayMap manifest={manifest} frame={frame} imageUrl={mediaUrl(manifest.map.url)} camera={camera} tracking={tracking} occupancy={occupancy.zones} showZones={showZones}
+          paths={showPaths && paths?.cache_id === manifest.cache_id ? paths : null} pathStatus={showPaths ? pathStatus : ""}
+          frameIndex={frame?.frame_index ?? Math.round(time * manifest.fps)} />
         <ReplayGateLog gateLog={manifest.gate_log} time={time} fps={manifest.fps} frameCount={manifest.frame_count} onSeek={seek} />
       </aside></div>
     </>}
