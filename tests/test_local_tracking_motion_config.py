@@ -149,5 +149,39 @@ class LocalTrackingMotionConfigTest(unittest.TestCase):
         self.assertNotEqual(new.local_id, old.local_id)
 
 
+    def test_duplicate_box_on_stopped_car_does_not_steal_its_id(self):
+        def detection(x1, x2):
+            return SimpleNamespace(x1=x1, y1=100, x2=x2, y2=200,
+                                   class_name="car", confidence=.9)
+
+        stopped = self.tracker.update([detection(475, 525)], 0)[0].track
+        stopped.has_moved = True
+        stopped.state = TrackState.STOPPED
+        both = self.tracker.update([detection(475, 525), detection(482, 540)], .1)
+        duplicate_id = both[1].track.local_id
+        self.assertNotEqual(duplicate_id, stopped.local_id)
+
+        # Only the second box remains, closer to the new track's box.
+        track = None
+        for frame in range(2, 60):
+            track = self.tracker.update([detection(483, 541)], frame / 30)[0].track
+        self.assertEqual(track.local_id, stopped.local_id)
+        self.assertEqual(track.state, TrackState.STOPPED)
+        self.assertNotIn(duplicate_id, self.tracker.tracks)
+
+    def test_car_arriving_over_stopped_car_keeps_its_own_id(self):
+        def detection(x1, x2):
+            return SimpleNamespace(x1=x1, y1=100, x2=x2, y2=200,
+                                   class_name="car", confidence=.9)
+
+        stopped = self.tracker.update([detection(475, 525)], 0)[0].track
+        stopped.has_moved = True
+        stopped.state = TrackState.STOPPED
+        arriving = self.tracker.update([detection(475, 525), detection(300, 350)], .1)[1].track
+        duplicate = self.tracker.update([detection(475, 525), detection(482, 540)], .2)[1].track
+        # Only a box born on top of the stopped car is treated as its duplicate.
+        self.assertIsNone(arriving.duplicate_of)
+        self.assertEqual(duplicate.duplicate_of, stopped.local_id)
+
 if __name__ == "__main__":
     unittest.main()

@@ -15,6 +15,14 @@ import numpy as np
 OCCLUDED_REAPPEAR_IOU = 0.8
 OCCLUDED_REAPPEAR_SEC = 0.5
 
+# 정차·주차한 차량에 박스가 하나 더 잡혀 새 track이 생기면, 둘이 검출을
+# 번갈아 가져가다 원래 track이 사라지며 Local ID·상태(GID)를 잃는다.
+# 원래 track과 같은 프레임에 IoU 이 값 이상 겹쳐 생긴 새 track이 아직
+# 움직인 적 없고 이 시간 이내면, 검출을 원래 track에 돌려주고 새 track은 지운다.
+# (다른 곳에서 와서 앞을 지나가는 차량은 겹쳐서 생기지 않으므로 해당하지 않는다)
+DUPLICATE_TRACK_IOU = 0.5
+DUPLICATE_TRACK_MAX_AGE_SEC = 5.0
+
 
 class TrackState(str, Enum):
     UNKNOWN = "UNKNOWN"
@@ -89,6 +97,9 @@ class LocalTrack:
     # 그 정지 차량의 Local ID.
     covered_dwell_since: float | None = None
     covered_dwell_track_id: int | None = None
+
+    # 정차·주차 차량에 겹쳐 같은 프레임에 생긴 중복 track이면 그 원래 Local ID.
+    duplicate_of: int | None = None
 
     @property
     def label(
@@ -1814,6 +1825,33 @@ class LocalTracker:
             del self.tracks[track_id]
         return result
 
+    def _absorb_duplicate_tracks(
+        self,
+        matches: list[tuple[int, int]],
+        candidates: list[DetectionCandidate],
+        timestamp: float,
+    ) -> list[tuple[int, int]]:
+        matched_track_ids = {track_id for track_id, _ in matches}
+        result = []
+        for track_id, detection_index in matches:
+            track = self.tracks[track_id]
+            bbox = candidates[detection_index].bbox
+            if (track.state == TrackState.UNKNOWN and not track.has_moved
+                    and timestamp - track.first_seen <= DUPLICATE_TRACK_MAX_AGE_SEC):
+                owner = self.tracks.get(track.duplicate_of)
+                if (owner is not None
+                        and track.duplicate_of not in matched_track_ids
+                        and owner.state in (TrackState.STOPPED, TrackState.PARKED)
+                        and timestamp - owner.last_seen <= self.max_missing_sec
+                        and self._iou(owner.bbox, bbox) >= DUPLICATE_TRACK_IOU):
+                    matched_track_ids.discard(track_id)
+                    matched_track_ids.add(track.duplicate_of)
+                    del self.tracks[track_id]
+                    result.append((track.duplicate_of, detection_index))
+                    continue
+            result.append((track_id, detection_index))
+        return result
+
     @staticmethod
     def _covered_fraction(rear_bbox, front_bbox) -> float:
         x1 = max(rear_bbox[0], front_bbox[0])
@@ -1939,6 +1977,8 @@ class LocalTracker:
 
         matches = self._return_covered_detections(
             matches, candidates, timestamp)
+        matches = self._absorb_duplicate_tracks(
+            matches, candidates, timestamp)
 
         matched_detection_indices = set()
 
@@ -2017,6 +2057,16 @@ class LocalTracker:
                     timestamp,
                 )
             )
+            owners = [
+                other_id for other_id in matched_track_ids
+                if other_id in self.tracks
+                and self.tracks[other_id].has_moved
+                and self.tracks[other_id].state in (TrackState.STOPPED, TrackState.PARKED)
+                and self._iou(self.tracks[other_id].bbox, candidate.bbox)
+                >= DUPLICATE_TRACK_IOU
+            ]
+            if len(owners) == 1:
+                track.duplicate_of = owners[0]
 
             result_by_detection[
                 candidate.index

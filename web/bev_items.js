@@ -26,23 +26,50 @@ export function isExpiredParked(item) {
 
 const BEV_STATE_PRIORITY ={ ACTIVE: 3, STOPPED: 2, PARKED: 1 };
 
+// When cameras overlap, the key camera's BEV position replaces the listed
+// ones for a shared Global ID: cam07 wins over cam02 while both see the car,
+// so the marker does not jump between the two projections. Other overlapping
+// cameras are averaged.
+export const BEV_CAMERA_OVERRIDES = { cam07: ["cam02"] };
+
+function groupKey(item) {
+    return item.global_id == null
+        ? `local:${item.camera_id}:${item.local_id}`
+        : `global:${item.global_id}`;
+}
+
 export function collapseBevItems(items) {
+    const cameras = new Map();
+    for (const item of items) {
+        const key = groupKey(item);
+        if (!cameras.has(key)) cameras.set(key, new Set());
+        cameras.get(key).add(item.camera_id);
+    }
+
     const grouped = new Map();
     for (const item of items) {
-        const key = item.global_id == null
-            ? `local:${item.camera_id}:${item.local_id}`
-            : `global:${item.global_id}`;
+        const key = groupKey(item);
+        const overridden = [...cameras.get(key)].some(camera =>
+            (BEV_CAMERA_OVERRIDES[camera] || []).includes(item.camera_id));
         const existing = grouped.get(key);
-        if (existing) {
+        if (!existing) {
+            grouped.set(key, { item: { ...item }, count: overridden ? 0 : 1 });
+            continue;
+        }
+        if (!overridden) {
             existing.count += 1;
-            existing.item.x += (item.x - existing.item.x) / existing.count;
-            existing.item.y += (item.y - existing.item.y) / existing.count;
-            if ((BEV_STATE_PRIORITY[item.state] || 0)
-                    > (BEV_STATE_PRIORITY[existing.item.state] || 0)) {
-                existing.item.state = item.state;
+            if (existing.count === 1) {
+                existing.item.camera_id = item.camera_id;
+                existing.item.x = item.x;
+                existing.item.y = item.y;
+            } else {
+                existing.item.x += (item.x - existing.item.x) / existing.count;
+                existing.item.y += (item.y - existing.item.y) / existing.count;
             }
-        } else {
-            grouped.set(key, { item: { ...item }, count: 1 });
+        }
+        if ((BEV_STATE_PRIORITY[item.state] || 0)
+                > (BEV_STATE_PRIORITY[existing.item.state] || 0)) {
+            existing.item.state = item.state;
         }
     }
     return [...grouped.values()].map(group => group.item);
