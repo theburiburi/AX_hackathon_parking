@@ -1,0 +1,32 @@
+{
+  "video": "test00",
+  "description": "scripts/detect_gate_events.py 가 자동 감지한 입출차 기록. 구역 설정: config/gate.yaml",
+  "start_time": null,
+  "fps": 30.0,
+  "gate": {
+    "id": "GATE-01",
+    "name": "정문 차단기",
+    "camera_id": "cam01"
+  },
+  "events": [
+    {
+      "frame": 129,
+      "time": "00:00:04.300",
+      "type": "IN",
+      "label": "입차",
+      "plate": null,
+      "detail": "cam01 L006 · car · 58px/s",
+      "track_id": 6,
+      "position": [
+        269.0,
+        146.0
+      ],
+      "bbox": [
+        197.0,
+        73.2,
+        327.7,
+        148.8
+      ]
+    }
+  ]
+}

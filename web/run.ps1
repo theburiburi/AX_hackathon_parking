@@ -1,28 +1,28 @@
 param(
-    [ValidateSet('parking', 'vision', 'frontend', 'init', 'test')]
-    [string]$Service = 'parking'
+    [ValidateSet('app', 'prepare', 'build', 'init', 'test')]
+    [string]$Service = 'app'
 )
 $ErrorActionPreference = 'Stop'
 $env:PYTHONDONTWRITEBYTECODE = '1'
 $webPython = Join-Path $PSScriptRoot '../.venv/Scripts/python.exe'
 Push-Location $PSScriptRoot
 try {
-    if ($Service -ne 'frontend' -and -not (Test-Path -LiteralPath $webPython)) {
-        throw 'Create AX_Parking/.venv and install web/requirements.txt in that environment first.'
+    if ($Service -ne 'build' -and -not (Test-Path -LiteralPath $webPython)) {
+        throw 'Create AX_Parking/.venv and install the root requirements.txt in that environment first.'
     }
     switch ($Service) {
-        'init' { & $webPython backend/seed.py }
-        'parking' { & $webPython backend/manage.py runserver 127.0.0.1:8000 }
-        'vision' { & $webPython -m uvicorn vision.main:app --app-dir backend --host 127.0.0.1 --port 8001 --reload --reload-dir backend/vision }
-        'frontend' {
+        'app' { & $webPython -B run.py }
+        'prepare' { & $webPython -B build_replay.py }
+        'build' {
             Push-Location frontend
-            try { & npm.cmd run dev } finally { Pop-Location }
+            try { & npm.cmd run build } finally { Pop-Location }
         }
+        'init' { & $webPython backend/seed.py }
         'test' {
             & $webPython backend/manage.py test tracking
             if ($LASTEXITCODE -ne 0) { throw 'Parking tests failed.' }
-            & $webPython -m unittest discover -s tests -v
-            if ($LASTEXITCODE -ne 0) { throw 'Vision tests failed.' }
+            & $webPython -B -m unittest discover -s tests -v
+            if ($LASTEXITCODE -ne 0) { throw 'Replay tests failed.' }
             Push-Location frontend
             try { & npm.cmd test } finally { Pop-Location }
         }

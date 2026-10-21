@@ -1,2 +1,3 @@
 from django.urls import include, path
-urlpatterns = [path("api/", include("tracking.urls"))]
+from .frontend import frontend
+urlpatterns = [path("api/", include("tracking.urls")), path("", frontend), path("assets/<path:asset>", frontend)]

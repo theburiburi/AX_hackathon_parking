@@ -1,0 +1,722 @@
+* {
+    box-sizing: border-box;
+}
+
+
+html,
+body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+}
+
+
+body {
+    overflow: hidden;
+
+    background:
+        #0f1115;
+
+    color:
+        #f3f5f7;
+
+    font-family:
+        Arial,
+        "Noto Sans KR",
+        sans-serif;
+}
+
+
+button,
+input,
+select {
+    font: inherit;
+}
+
+
+.app {
+    width: 100vw;
+    height: 100vh;
+
+    display: grid;
+
+    grid-template-rows:
+        auto
+        minmax(0, 1fr)
+        auto;
+}
+
+
+/* =========================================================
+ * HEADER
+ * =========================================================
+ */
+
+
+.header {
+    min-height: 68px;
+
+    padding:
+        10px
+        20px;
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content:
+        space-between;
+
+    background:
+        #181b20;
+
+    border-bottom:
+        1px solid #30343b;
+}
+
+
+.header h1 {
+    margin: 0;
+
+    font-size: 22px;
+}
+
+
+.header p {
+    margin:
+        4px 0 0;
+
+    color:
+        #9299a3;
+
+    font-size:
+        12px;
+}
+
+
+.status-group {
+    display: flex;
+
+    flex-direction: column;
+
+    align-items: flex-end;
+
+    gap: 4px;
+}
+
+
+.camera-status,
+.tracking-status {
+    font-size:
+        12px;
+
+    font-weight:
+        bold;
+}
+
+
+.camera-status.loading {
+    color:
+        #e8bd63;
+}
+
+
+.camera-status.ready {
+    color:
+        #67d789;
+}
+
+
+.tracking-status {
+    color:
+        #77bdfb;
+}
+
+
+.tracking-status.busy {
+    color:
+        #e8bd63;
+}
+
+
+.tracking-status.error {
+    color:
+        #ff6b6b;
+}
+
+
+/* =========================================================
+ * CONTENT
+ * =========================================================
+ */
+
+
+.content {
+    min-height: 0;
+
+    padding: 8px;
+
+    overflow: hidden;
+}
+
+
+.video-grid {
+    width: 100%;
+    height: 100%;
+
+    display: grid;
+
+    /* 모자이크 영상 1개 + BEV 지도 */
+    grid-template-columns:
+        minmax(0, 1.65fr)
+        minmax(0, 1fr);
+
+    grid-template-rows:
+        minmax(0, 1fr);
+
+    gap: 7px;
+}
+
+
+/* =========================================================
+ * CARD
+ * =========================================================
+ */
+
+
+.camera-card {
+    min-width: 0;
+    min-height: 0;
+
+    overflow: hidden;
+
+    display: grid;
+
+    grid-template-rows:
+        30px
+        minmax(0, 1fr);
+
+    background:
+        #060708;
+
+    border:
+        1px solid #30343b;
+
+    border-radius:
+        6px;
+}
+
+
+.camera-header {
+    padding:
+        0
+        9px;
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content:
+        space-between;
+
+    background:
+        #1b1f25;
+
+    font-size:
+        12px;
+
+    font-weight:
+        bold;
+}
+
+
+.camera-time {
+    color:
+        #9299a3;
+
+    font-family:
+        Consolas,
+        monospace;
+
+    font-weight:
+        normal;
+}
+
+
+/* =========================================================
+ * VIDEO + OVERLAY
+ * =========================================================
+ */
+
+
+.video-stage {
+    position: relative;
+
+    width: 100%;
+    height: 100%;
+
+    min-width: 0;
+    min-height: 0;
+
+    overflow: hidden;
+
+    background:
+        black;
+}
+
+
+.video-stage video {
+    position: absolute;
+
+    inset: 0;
+
+    width: 100%;
+    height: 100%;
+
+    display: block;
+
+    object-fit: contain;
+
+    background:
+        black;
+}
+
+
+.video-overlay {
+    position: absolute;
+
+    inset: 0;
+
+    width: 100%;
+    height: 100%;
+
+    display: block;
+
+    pointer-events: none;
+}
+
+
+/* =========================================================
+ * BEV
+ * =========================================================
+ */
+
+
+.bev-card {
+    background:
+        #08090b;
+}
+
+
+#bev-status {
+    color:
+        #9299a3;
+
+    font-size:
+        11px;
+
+    font-weight:
+        normal;
+}
+
+
+.bev-container {
+    position: relative;
+
+    width: 100%;
+    height: 100%;
+
+    min-width: 0;
+    min-height: 0;
+
+    overflow: hidden;
+
+    background:
+        black;
+}
+
+
+#bev-canvas {
+    position: absolute;
+
+    inset: 0;
+
+    width: 100%;
+    height: 100%;
+
+    display: block;
+}
+
+
+/* =========================================================
+ * CONTROLS
+ * =========================================================
+ */
+
+
+.controls {
+    padding:
+        9px
+        18px;
+
+    display: grid;
+
+    gap: 8px;
+
+    background:
+        #181b20;
+
+    border-top:
+        1px solid #30343b;
+}
+
+
+.button-row {
+    display: flex;
+
+    justify-content:
+        center;
+
+    align-items: center;
+
+    flex-wrap: wrap;
+
+    gap: 7px;
+}
+
+
+button,
+select {
+    min-width:
+        68px;
+
+    padding:
+        6px
+        11px;
+
+    background:
+        #282d35;
+
+    color:
+        white;
+
+    border:
+        1px solid #3b414a;
+
+    border-radius:
+        5px;
+
+    cursor:
+        pointer;
+}
+
+
+button:hover,
+select:hover {
+    background:
+        #343a44;
+}
+
+
+button:disabled {
+    opacity:
+        0.4;
+
+    cursor:
+        default;
+}
+
+
+.primary-button {
+    min-width:
+        100px;
+
+    background:
+        #f1f3f5;
+
+    color:
+        #111318;
+
+    border-color:
+        #f1f3f5;
+
+    font-weight:
+        bold;
+}
+
+
+.primary-button:hover {
+    background:
+        white;
+}
+
+
+
+
+/* =========================================================
+ * TIMELINE
+ * =========================================================
+ */
+
+
+.timeline-row {
+    display: grid;
+
+    grid-template-columns:
+        80px
+        minmax(0, 1fr)
+        80px;
+
+    align-items:
+        center;
+
+    gap:
+        10px;
+
+    font-family:
+        Consolas,
+        monospace;
+
+    font-size:
+        13px;
+}
+
+
+.timeline-row span:last-child {
+    text-align:
+        right;
+}
+
+
+.timeline-row input {
+    width:
+        100%;
+}
+
+
+.help {
+    text-align:
+        center;
+
+    color:
+        #858d98;
+
+    font-size:
+        11px;
+}
+
+/* =========================================================
+ * GATE LOG (BEV 지도 아래)
+ * =========================================================
+ */
+
+
+.bev-card {
+    grid-template-rows:
+        30px
+        minmax(0, 1fr)
+        minmax(0, 0.4fr)
+        minmax(0, 0.4fr);
+}
+
+
+.gate-log {
+    min-height: 0;
+
+    display: grid;
+
+    grid-template-rows:
+        28px
+        minmax(0, 1fr);
+
+    border-top:
+        1px solid #30343b;
+}
+
+
+.gate-log-header {
+    font-size:
+        11px;
+}
+
+
+#gate-log-status {
+    color:
+        #9299a3;
+
+    font-weight:
+        normal;
+}
+
+
+.gate-log-list {
+    margin: 0;
+
+    padding:
+        4px
+        6px;
+
+    overflow-y: auto;
+
+    list-style: none;
+
+    font-size:
+        12px;
+}
+
+
+.gate-log-empty {
+    padding:
+        10px
+        4px;
+
+    color:
+        #6b727c;
+}
+
+
+.gate-log-item {
+    padding:
+        5px
+        6px;
+
+    display: grid;
+
+    grid-template-columns:
+        92px
+        78px
+        minmax(0, 1fr);
+
+    gap: 6px;
+
+    align-items: baseline;
+
+    border-bottom:
+        1px solid #1f232a;
+
+    border-radius:
+        4px;
+
+    cursor: pointer;
+}
+
+
+.gate-log-item:hover {
+    background:
+        #1b1f25;
+}
+
+
+/* 방금 발생한 기록 강조 (약 2초) */
+.gate-log-item.recent {
+    background:
+        rgba(119, 189, 251, 0.14);
+}
+
+
+.gate-log-time {
+    color:
+        #9299a3;
+
+    font-family:
+        Consolas,
+        monospace;
+}
+
+
+.gate-log-type {
+    padding:
+        1px
+        6px;
+
+    border-radius:
+        3px;
+
+    text-align: center;
+
+    font-size:
+        11px;
+
+    font-weight:
+        bold;
+
+    color:
+        #111318;
+
+    background:
+        #8b929c;
+}
+
+
+.gate-log-type.in {
+    background:
+        #22e86f;
+}
+
+
+.gate-log-type.out {
+    background:
+        #ff9800;
+}
+
+
+.gate-log-type.gate {
+    background:
+        #77bdfb;
+}
+
+
+.gate-log-text {
+    min-width: 0;
+
+    overflow: hidden;
+
+    white-space: nowrap;
+
+    text-overflow: ellipsis;
+}
+
+
+.gate-log-plate {
+    font-weight:
+        bold;
+}
+
+
+.gate-log-detail {
+    color:
+        #9299a3;
+}
+
+
+/* =========================================================
+ * PARKING LOG (GATE LOG 아래)
+ * =========================================================
+ */
+
+
+#parking-log-status {
+    color:
+        #9299a3;
+
+    font-weight:
+        normal;
+}
+
+
+.gate-log-type.parked {
+    background:
+        #ff4fdb;
+}
+
+
+.gate-log-type.lost {
+    background:
+        #c7a6ff;
+}
+
+
+.gate-log-type.left {
+    background:
+        #ffd740;
+}

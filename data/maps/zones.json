@@ -1,0 +1,148 @@
+{
+  "map": {
+    "width": 1624,
+    "height": 968
+  },
+  "zones": [
+    {
+      "id": "A",
+      "capacity": 14,
+      "bndbox": {
+        "xmin": 800,
+        "ymin": 189,
+        "xmax": 965,
+        "ymax": 400
+      }
+    },
+    {
+      "id": "B",
+      "capacity": 4,
+      "bndbox": {
+        "xmin": 650,
+        "ymin": 245,
+        "xmax": 790,
+        "ymax": 470
+      }
+    },
+    {
+      "id": "C",
+      "capacity": 3,
+      "bndbox": {
+        "xmin": 650,
+        "ymin": 538,
+        "xmax": 790,
+        "ymax": 800
+      }
+    },
+    {
+      "id": "D",
+      "capacity": 6,
+      "bndbox": {
+        "xmin": 838,
+        "ymin": 595,
+        "xmax": 1010,
+        "ymax": 690
+      }
+    },
+    {
+      "id": "E",
+      "capacity": 6,
+      "bndbox": {
+        "xmin": 800,
+        "ymin": 740,
+        "xmax": 1010,
+        "ymax": 810
+      }
+    },
+    {
+      "id": "F",
+      "capacity": 7,
+      "bndbox": {
+        "xmin": 170,
+        "ymin": 850,
+        "xmax": 820,
+        "ymax": 910
+      }
+    },
+    {
+      "id": "G",
+      "capacity": 10,
+      "bndbox": {
+        "xmin": 10,
+        "ymin": 725,
+        "xmax": 160,
+        "ymax": 915
+      }
+    },
+    {
+      "id": "H",
+      "capacity": 8,
+      "bndbox": {
+        "xmin": 170,
+        "ymin": 175,
+        "xmax": 233,
+        "ymax": 840
+      }
+    },
+    {
+      "id": "I",
+      "capacity": 7,
+      "bndbox": {
+        "xmin": 170,
+        "ymin": 130,
+        "xmax": 655,
+        "ymax": 170
+      }
+    },
+    {
+      "id": "J",
+      "capacity": 15,
+      "bndbox": {
+        "xmin": 1020,
+        "ymin": 440,
+        "xmax": 1550,
+        "ymax": 544
+      }
+    },
+    {
+      "id": "K",
+      "capacity": 16,
+      "bndbox": {
+        "xmin": 1020,
+        "ymin": 564,
+        "xmax": 1550,
+        "ymax": 650
+      }
+    },
+    {
+      "id": "L",
+      "capacity": 13,
+      "bndbox": {
+        "xmin": 1120,
+        "ymin": 660,
+        "xmax": 1520,
+        "ymax": 743
+      }
+    },
+    {
+      "id": "M",
+      "capacity": 3,
+      "bndbox": {
+        "xmin": 1020,
+        "ymin": 660,
+        "xmax": 1110,
+        "ymax": 890
+      }
+    },
+    {
+      "id": "N",
+      "capacity": 13,
+      "bndbox": {
+        "xmin": 1120,
+        "ymin": 785,
+        "xmax": 1520,
+        "ymax": 900
+      }
+    }
+  ]
+}

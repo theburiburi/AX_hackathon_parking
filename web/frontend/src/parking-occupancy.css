@@ -1,0 +1,16 @@
+.parking-occupancy { margin-top: 16px; padding: 16px; border: 1px solid #293b54; border-radius: 12px; background: #0d1829; }
+.occupancy-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+.occupancy-heading h3 { margin: 0 0 5px; font-size: 23px; color: #e2e8f0; }
+.occupancy-heading p, .occupancy-heading > strong span { color: #94a3b8; font-size: 19px; font-weight: 400; }
+.occupancy-heading p { margin: 0; }
+.occupancy-heading > strong { color: #e2e8f0; font-size: 21px; }
+.occupancy-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; }
+.occupancy-zone { padding: 12px; border: 1px solid #293b54; border-radius: 8px; min-width: 0; }
+.occupancy-zone > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #e2e8f0; }
+.occupancy-zone > div strong { font-size: 17px; }
+.occupancy-zone > div span { color: #94a3b8; font-size: 14px; }
+.occupancy-zone p { color: #94a3b8; font-size: 19px; }
+.occupancy-zone p { margin: 6px 0 0; }
+.occupancy-zone .occupancy-count { margin: 10px 0; font-size: 21px; }
+.occupancy-count strong { color: #e2e8f0; font-size: 29px; }
+@media (max-width: 480px) { .parking-occupancy { padding: 12px; } .occupancy-grid { grid-template-columns: 1fr 1fr; } .occupancy-zone > div { align-items: start; flex-direction: column; gap: 3px; } }

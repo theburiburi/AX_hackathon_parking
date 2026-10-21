@@ -5,11 +5,10 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: "localhost",
-    port: 8080,
+    port: 5173,
     strictPort: true,
     proxy: {
-      "/api": "http://127.0.0.1:8000",
-      "/vision": { target: "http://127.0.0.1:8001", rewrite: path => path.replace(/^\/vision/, "") },
+      "/api": "http://127.0.0.1:8080",
     },
   },
 });

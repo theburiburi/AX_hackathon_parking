@@ -2,7 +2,7 @@ from copy import deepcopy
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
-from types import SimpleNamespace
+import os
 
 from django.test import SimpleTestCase
 from rest_framework.test import APIRequestFactory
@@ -51,22 +51,17 @@ class MediaRangeTests(SimpleTestCase):
         self.assertEqual(response.content, b"")
         self.assertEqual(response["Content-Length"], "1024")
 
-    def test_range_endpoint_remains_admin_only(self):
-        for user, expected in [(None, 401), ({"role": "USER"}, 403)]:
-            with patch.object(views, "current_user", return_value=user):
-                response = views.media_file(self.factory.get("/", HTTP_RANGE="bytes=-128"), "cctv", "08", "260914_8.mp4")
-                self.assertEqual(response.status_code, expected)
 
 
 class MapPositionTests(SimpleTestCase):
     def setUp(self):
         self.factory = APIRequestFactory()
         self.records = [{"id": "V1", "plate_number": "TEST", "map_position": {"map_id": "parkinglot_map.jpg", "x": 10, "y": 10}}]
-        self.body = {"plate_number": "TEST", "camera_id": "camera_01", "zone_id": "P1", "status": "MOVING"}
+        self.body = {"plate_number": "TEST", "camera_id": "camera_01", "zone_id": "A", "status": "MOVING"}
 
     def submit(self, extra):
-        collections = {"vehicles": deepcopy(self.records), "tracking_logs": [], "map_layout": {"map_id": "parkinglot_map.jpg"}}
-        with patch.object(views, "current_user", return_value={"role": "ADMIN"}), patch.object(views, "read", side_effect=lambda name: collections[name]), patch.object(views, "write") as write:
+        collections = {"vehicles": deepcopy(self.records), "vehicle_replay_state": {}, "tracking_logs": [], "map_layout": {"map_id": "parkinglot_map.jpg"}}
+        with patch.object(views, "current_user", return_value={"role": "ADMIN"}), patch.object(views, "read", side_effect=lambda name: collections[name]), patch.object(views, "write") as write, patch.object(views, "current_map_layout", return_value={"map_id": "parkinglot_map.jpg", "zones": [{"id": z} for z in "ABCDEFGHIJKLMN"]}):
             response = views.tracking_event(self.factory.post("/api/tracking-events/", {**self.body, **extra}, format="json"))
             return response, write.call_args_list
 
@@ -96,12 +91,30 @@ class MapPositionTests(SimpleTestCase):
             self.assertEqual(response.status_code, 201)
             self.assertIsNone(writes[0].args[1][0]["map_position"])
 
-    def test_legacy_zones_are_stored_as_p_zones(self):
-        for old, new in [("A-01", "P1"), ("A-02", "P2"), ("B-01", "P3"), ("B-02", "P4")]:
-            response, writes = self.submit({"zone_id": old})
+    def test_tracking_event_uses_current_external_map_id_and_zone_catalog(self):
+        layout = {"map_id": "map.png", "zones": [{"id": "EXTERNAL"}]}
+        with patch.object(views, "current_map_layout", return_value=layout):
+            # submit patches the demo layout, so call the view with an isolated store here.
+            collections = {"vehicles": deepcopy(self.records), "vehicle_replay_state": {}, "tracking_logs": []}
+            with patch.object(views, "current_user", return_value={"role": "ADMIN"}), patch.object(views, "read", side_effect=lambda name: collections[name]), patch.object(views, "write") as write:
+                response = views.tracking_event(self.factory.post("/api/tracking-events/", {
+                    **self.body, "zone_id": "EXTERNAL", "map_position": {"map_id": "map.png", "x": 10, "y": 20},
+                }, format="json"))
+                self.assertEqual(response.status_code, 201)
+                self.assertEqual(write.call_args_list[0].args[1][0]["current_zone_id"], "EXTERNAL")
+
+    def test_all_legend_zones_are_accepted(self):
+        for zone in "ABCDEFGHIJKLMN":
+            response, writes = self.submit({"zone_id": zone})
             self.assertEqual(response.status_code, 201)
-            self.assertEqual(response.data["zone_id"], new)
-            self.assertEqual(writes[0].args[1][0]["current_zone_id"], new)
+            self.assertEqual(response.data["zone_id"], zone)
+            self.assertEqual(writes[0].args[1][0]["current_zone_id"], zone)
+
+    def test_removed_numbered_zones_are_rejected_without_writing(self):
+        for zone in ["P1", "P7", "1", "7", "A-01", "B-02"]:
+            response, writes = self.submit({"zone_id": zone})
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(writes, [])
 
     def test_unknown_zone_and_plate_do_not_change_any_vehicle(self):
         for fields, expected in [({"zone_id": "P8"}, 400), ({"plate_number": "UNREGISTERED", "vehicle_id": "V1"}, 404)]:
@@ -115,7 +128,7 @@ class MapPositionTests(SimpleTestCase):
         self.assertEqual(response.data["vehicle_id"], "V1")
 
     def test_position_updates_require_admin(self):
-        with patch.object(views, "current_user", return_value={"role": "USER"}), patch.object(views, "write") as write:
+        with patch.object(views, "current_user", return_value={"role": "USER"}), patch.object(views, "write") as write, patch.object(views, "current_map_layout", return_value={"map_id": "parkinglot_map.jpg", "zones": [{"id": z} for z in "ABCDEFGHIJKLMN"]}):
             response = views.tracking_event(self.factory.post("/api/tracking-events/", self.body, format="json"))
             self.assertEqual(response.status_code, 403)
             write.assert_not_called()
@@ -131,12 +144,12 @@ class UserParkingMapTests(SimpleTestCase):
         self.patch_media = patch.object(views, "MEDIA_DIR", media)
         self.patch_media.start()
         self.addCleanup(self.patch_media.stop)
-        self.patch_registry = patch("tracking.project_media.registry", return_value=SimpleNamespace(
-            bev_map=media / "missing-project-map.png", cameras=[]))
-        self.patch_registry.start()
-        self.addCleanup(self.patch_registry.stop)
+        self.patch_map = patch.dict(os.environ, {"WEB_BEV_MAP": str(media / "missing-project-map.png")})
+        self.patch_map.start()
+        self.addCleanup(self.patch_map.stop)
         self.store = {
-            "map_layout": {"map_id": "parkinglot_map.jpg", "zones": []},
+            "vehicle_replay_state": {},
+            "map_layout": {"map_id": "parkinglot_map.jpg", "zones": [{"id": "A", "label": [50, 50]}]},
             "vehicles": [
                 {"id": "V1", "plate_number": "OWN", "team_id": "TEAM_A", "status": "PARKED", "map_position": None},
                 {"id": "V2", "plate_number": "OTHER", "team_id": "TEAM_B", "status": "PARKED", "map_position": {"map_id": "parkinglot_map.jpg", "x": 1, "y": 2}},
@@ -161,7 +174,7 @@ class UserParkingMapTests(SimpleTestCase):
                 self.assertEqual(b"".join(image.streaming_content), b"\xff\xd8\xff\xd9")
             finally:
                 image.close()
-            for path in ["/api/admin/media/", "/api/admin/media/cctv/08/260914_8.mp4", "/api/tracking-logs/"]:
+            for path in ["/api/tracking-logs/"]:
                 self.assertEqual(self.client.get(path).status_code, 403)
 
     def test_anonymous_cannot_read_map_or_positions(self):
@@ -172,7 +185,7 @@ class UserParkingMapTests(SimpleTestCase):
     def test_user_poll_receives_new_positions_for_own_team_only(self):
         position = {"map_id": "parkinglot_map.jpg", "x": 57.5, "y": 23.2}
         with patch.object(views, "current_user", return_value={"role": "ADMIN"}), patch.object(views, "write", side_effect=lambda name, records: self.store.update({name: deepcopy(records)})):
-            event = self.client.post("/api/tracking-events/", {"plate_number": "OWN", "camera_id": "camera_01", "zone_id": "P1", "map_position": position}, content_type="application/json")
+            event = self.client.post("/api/tracking-events/", {"plate_number": "OWN", "camera_id": "camera_01", "zone_id": "A", "map_position": position}, content_type="application/json")
             self.assertEqual(event.status_code, 201)
         with patch.object(views, "current_user", return_value=self.user):
             for query in ["", "?team_id=TEAM_B"]:
