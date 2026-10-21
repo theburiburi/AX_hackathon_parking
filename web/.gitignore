@@ -3,9 +3,10 @@ __pycache__/
 *.py[cod]
 node_modules/
 frontend/dist/
-backend/data/
 backend/media/
 backend/vision/data/
+backend/replay_data/
+backend/data/vehicle_replay_state.json
 backend/db.sqlite3
 .env
 .secret-key

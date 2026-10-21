@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>AX Parking</title>
+
+    <link
+        rel="stylesheet"
+        href="/web/style.css"
+    >
+</head>
+
+<body>
+
+    <div class="app">
+
+        <header class="header">
+
+            <div>
+                <h1>AX Parking</h1>
+
+                <p>
+                    Cached YOLO · Local Tracking · BEV · Global Tracking
+                </p>
+            </div>
+
+            <div class="status-group">
+
+                <div
+                    id="tracking-status"
+                    class="tracking-status"
+                >
+                    Tracking loading...
+                </div>
+
+                <div
+                    id="video-status"
+                    class="camera-status loading"
+                >
+                    mosaic loading...
+                </div>
+
+            </div>
+
+        </header>
+
+
+        <main class="content">
+
+            <section class="video-grid">
+
+                <article class="camera-card mosaic-card">
+
+                    <div class="camera-header">
+
+                        <span id="scene-title">MOSAIC</span>
+
+                        <span
+                            id="video-time"
+                            class="camera-time"
+                        >
+                            00:00.000
+                        </span>
+
+                    </div>
+
+                    <div class="video-stage">
+
+                        <!-- src는 /api/tracking/info 의 scene.video_url로 설정됨 -->
+                        <video
+                            id="mosaic-video"
+                            preload="auto"
+                            muted
+                            playsinline
+                        ></video>
+
+                        <canvas
+                            id="mosaic-overlay"
+                            class="video-overlay"
+                        ></canvas>
+
+                    </div>
+
+                </article>
+
+
+                <article class="camera-card bev-card">
+
+                    <div class="camera-header">
+
+                        <span>BEV MAP</span>
+
+                        <span id="bev-status">
+                            loading...
+                        </span>
+
+                    </div>
+
+                    <div
+                        id="bev-container"
+                        class="bev-container"
+                    >
+
+                        <canvas
+                            id="bev-canvas"
+                        ></canvas>
+
+                    </div>
+
+                    <!-- 차단기 입출차 기록: 화면에 표시된 프레임까지의 기록만 표시 -->
+                    <div class="gate-log">
+
+                        <div class="camera-header gate-log-header">
+
+                            <span>GATE LOG</span>
+
+                            <span id="gate-log-status">
+                                loading...
+                            </span>
+
+                        </div>
+
+                        <ol
+                            id="gate-log-list"
+                            class="gate-log-list"
+                        ></ol>
+
+                    </div>
+
+                    <!-- 구역별 주차 기록: 화면에 표시된 프레임까지의 기록 -->
+                    <div class="gate-log parking-log">
+
+                        <div class="camera-header gate-log-header">
+
+                            <span>PARKING LOG</span>
+
+                            <span id="parking-log-status">
+                                기록 없음
+                            </span>
+
+                        </div>
+
+                        <ol
+                            id="parking-log-list"
+                            class="gate-log-list"
+                        ></ol>
+
+                    </div>
+
+                </article>
+
+            </section>
+
+        </main>
+
+
+        <footer class="controls">
+
+            <div class="button-row">
+
+                <button id="back-30-button">
+                    -30초
+                </button>
+
+                <button id="back-button">
+                    -5초
+                </button>
+
+                <button
+                    id="play-button"
+                    class="primary-button"
+                    disabled
+                >
+                    재생
+                </button>
+
+                <button id="forward-button">
+                    +5초
+                </button>
+
+                <button id="forward-30-button">
+                    +30초
+                </button>
+
+                <button id="reset-button">
+                    처음
+                </button>
+
+                <select
+                    id="speed-select"
+                    title="재생 속도"
+                >
+                    <option value="0.5">
+                        0.5×
+                    </option>
+
+                    <option
+                        value="1"
+                        selected
+                    >
+                        1×
+                    </option>
+
+                    <option value="2">
+                        2×
+                    </option>
+                </select>
+
+                <button
+                    id="reload-tracking-button"
+                >
+                    트래킹 설정 재로드
+                </button>
+
+            </div>
+
+
+            <div class="timeline-row">
+
+                <span id="current-time">
+                    00:00.000
+                </span>
+
+                <input
+                    id="timeline"
+                    type="range"
+                    min="0"
+                    max="0"
+                    step="0.01"
+                    value="0"
+                >
+
+                <span id="duration-time">
+                    00:00.000
+                </span>
+
+            </div>
+
+
+            <div class="help">
+                Space : 재생/일시정지
+                ·
+                A/D : -5초/+5초
+                ·
+                Shift+A/D : -30초/+30초
+                ·
+                , / . : 1프레임 뒤/앞
+                ·
+                R : 처음
+            </div>
+
+        </footer>
+
+    </div>
+
+
+    <script
+        type="module"
+        src="/web/app.js"
+    ></script>
+
+</body>
+</html>

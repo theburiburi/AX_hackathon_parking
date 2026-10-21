@@ -1,0 +1,125 @@
+/* User pages use a light palette; administrator and login pages keep their theme. */
+:root:has(.user-dashboard) {
+  color-scheme: light;
+  color: #172033;
+  background: #f4f7fb;
+  --surface: #ffffff;
+  --surface-raised: #f1f5f9;
+  --surface-soft: #f8fafc;
+  --border: #cbd5e1;
+  --text: #172033;
+  --muted: #53627a;
+  --accent: #1d4ed8;
+  --accent-soft: #e8f0ff;
+  --primary: #2563eb;
+  --success: #047857;
+  --success-soft: #d1fae5;
+  --danger: #b91c1c;
+  --shadow: 0 8px 28px #1720330d;
+}
+
+.user-dashboard { max-width: 760px; min-height: 100svh; font-size: 19px; zoom: .9; }
+.user-dashboard .vehicle-list { grid-template-columns: minmax(0, 1fr); }
+.user-dashboard .vehicle { grid-template-columns: minmax(max-content, 1fr) max-content; align-items: center; overflow-x: auto; }
+.user-dashboard .vehicle strong,
+.user-dashboard .vehicle .badge { white-space: nowrap; overflow-wrap: normal; }
+.user-dashboard .user-location-grid { grid-template-columns: minmax(0, 1fr); }
+.user-dashboard .user-page-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px 24px; margin: -6px 0 18px; }
+.user-dashboard .user-page-toolbar .page-nav { margin: 0; }
+.user-dashboard .user-page-toolbar .team-notice { margin: 0 0 0 auto; min-width: 0; max-width: 100%; text-align: left; overflow-wrap: anywhere; }
+.user-dashboard .user-schedule-date { flex: 0 1 340px; margin-left: auto; min-width: 0; max-width: 100%; }
+.user-dashboard .user-schedule-date .schedule-date-nav { width: 100%; }
+.user-dashboard input::placeholder { color: #64748b; }
+.user-dashboard .moving, .user-dashboard .parking { background: #fef3c7; color: #854d0e; }
+
+.user-dashboard .parking-viewport { background: #e2e8f0; border-color: var(--border); }
+.user-dashboard .parking-zone-label { background: #fffffff2; box-shadow: 0 2px 6px #17203326; }
+.user-dashboard .parking-zone-label.active { background: var(--accent-soft); }
+.user-dashboard .map-empty { color: var(--muted); }
+
+.user-dashboard .parking-occupancy { background: var(--surface-soft); border-color: var(--border); }
+.user-dashboard .occupancy-zone { background: var(--surface); border-color: var(--border); }
+.user-dashboard .occupancy-heading h3,
+.user-dashboard .occupancy-heading > strong,
+.user-dashboard .occupancy-zone > div,
+.user-dashboard .occupancy-count strong { color: var(--text); }
+.user-dashboard .occupancy-heading p,
+.user-dashboard .occupancy-heading > strong span,
+.user-dashboard .occupancy-zone p,
+.user-dashboard .occupancy-zone > div span { color: var(--muted); }
+
+.user-dashboard .schedule-editor { border-color: var(--border); }
+.user-dashboard .schedule-block { background: #dbeafe; border-color: #93c5fd; color: #1e40af; }
+.user-dashboard .schedule-block.teal { background: #d1fae5; border-color: #6ee7b7; color: #065f46; }
+.user-dashboard .schedule-block.violet { background: #ede9fe; border-color: #c4b5fd; color: #5b21b6; }
+
+/* Keep the smaller typography scoped to user pages, including schedule views. */
+.user-dashboard h1 { font-size: clamp(27px, calc(3vw + 1px), 33px); }
+.user-dashboard h2,
+.user-dashboard .panel-heading h2,
+.user-dashboard .schedule-editor h3 { font-size: 20px; }
+.user-dashboard .eyebrow,
+.user-dashboard .schedule-toolbar .eyebrow { font-size: 15px; }
+.user-dashboard .account { font-size: 18px; }
+.user-dashboard button,
+.user-dashboard input,
+.user-dashboard select { font-size: 19px; }
+.user-dashboard .team-notice,
+.user-dashboard .form-note,
+.user-dashboard table { font-size: 17px; }
+.user-dashboard .panel-heading p,
+.user-dashboard .vehicle span,
+.user-dashboard .position-summary,
+.user-dashboard .schedule-toolbar p,
+.user-dashboard .schedule-heading p,
+.user-dashboard .schedule-filters label,
+.user-dashboard .schedule-form-grid label,
+.user-dashboard .schedule-summary span,
+.user-dashboard .schedule-summary strong small,
+.user-dashboard .schedule-heading > span,
+.user-dashboard .schedule-legend,
+.user-dashboard .schedule-hint,
+.user-dashboard .schedule-repeat-help { font-size: 16px; }
+.user-dashboard .vehicle strong { font-size: 19px; }
+.user-dashboard .badge { font-size: 15px; }
+.user-dashboard .position-summary strong { font-size: 22px; }
+.user-dashboard .map-controls label { font-size: 15px; }
+.user-dashboard .parking-zone-label { font-size: 14px; }
+.user-dashboard .occupancy-heading h3 { font-size: 20px; }
+.user-dashboard .occupancy-heading > strong,
+.user-dashboard .occupancy-zone .occupancy-count { font-size: 18px; }
+.user-dashboard .occupancy-heading p,
+.user-dashboard .occupancy-heading > strong span,
+.user-dashboard .occupancy-zone p { font-size: 16px; }
+.user-dashboard .occupancy-count strong { font-size: 25px; }
+.user-dashboard .schedule-toolbar h2 { font-size: 29px; }
+.user-dashboard .schedule-summary { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 2fr); }
+.user-dashboard .schedule-summary > div { display: flex; align-items: center; gap: 4px; padding: 10px 8px; }
+.user-dashboard .schedule-summary > div > span { flex-shrink: 0; margin-bottom: 0; }
+.user-dashboard .schedule-summary strong { display: block; flex: 1; min-width: 0; margin-left: auto; text-align: right; white-space: nowrap; font-size: 31px; line-height: 1.2; }
+.user-dashboard .schedule-summary .schedule-scope { display: flex; align-items: center; justify-content: flex-end; gap: 2px; color: var(--accent); font-weight: 700; white-space: nowrap; }
+.user-dashboard .schedule-summary .schedule-section-name { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: inherit; font-size: clamp(12px, calc((100cqw - 102px) / 10), 22px); font-weight: inherit; line-height: 1.2; letter-spacing: -.03em; margin: 0; }
+.user-dashboard .schedule-summary .schedule-section-suffix { flex: 0 0 auto; color: var(--muted); font-size: 16px; font-weight: 400; line-height: 1.2; letter-spacing: normal; margin: 0; }
+.user-dashboard .schedule-board thead th,
+.user-dashboard .schedule-vehicle span,
+.user-dashboard .schedule-free,
+.user-dashboard .schedule-block span,
+.user-dashboard .schedule-readonly { font-size: 15px; }
+.user-dashboard .schedule-vehicle strong { font-size: 18px; }
+.user-dashboard .schedule-vehicle small,
+.user-dashboard .schedule-block strong,
+.user-dashboard .schedule-list small { font-size: 14px; }
+.user-dashboard .schedule-list th,
+.user-dashboard .schedule-list td,
+.user-dashboard .schedule-actions button { font-size: 16px; }
+.user-dashboard .schedule-empty { font-size: 17px; }
+
+@media (max-width: 760px) {
+  .user-dashboard .user-page-toolbar .team-notice { flex-basis: 100%; margin-left: 0; }
+  .user-dashboard .schedule-toolbar h2 { font-size: 26px; }
+  .user-dashboard .schedule-summary strong { font-size: 28px; }
+  .user-dashboard .schedule-vehicle strong { font-size: 16px; }
+  .user-dashboard .schedule-list td::before { font-size: 14px; }
+  .user-dashboard .schedule-list .schedule-time { font-size: 20px; }
+  .user-dashboard .parking-zone-label { font-size: 13px; }
+}

@@ -1,0 +1,355 @@
+{
+  "video": "test01",
+  "description": "scripts/detect_gate_events.py 가 자동 감지한 입출차 기록. 구역 설정: config/gate.yaml",
+  "start_time": null,
+  "fps": 30.0,
+  "gate": {
+    "id": "GATE-01",
+    "name": "정문 차단기",
+    "camera_id": "cam01"
+  },
+  "events": [
+    {
+      "frame": 1132,
+      "time": "00:00:37.733",
+      "type": "IN",
+      "label": "입차",
+      "plate": null,
+      "detail": "cam01 L036 · car · 62px/s",
+      "track_id": 36,
+      "position": [
+        273.7,
+        148.9
+      ],
+      "bbox": [
+        199.7,
+        83.8,
+        332.3,
+        151.8
+      ]
+    },
+    {
+      "frame": 1886,
+      "time": "00:01:02.867",
+      "type": "IN",
+      "label": "입차",
+      "plate": null,
+      "detail": "cam01 L060 · car · 59px/s",
+      "track_id": 60,
+      "position": [
+        274.2,
+        151.8
+      ],
+      "bbox": [
+        199.3,
+        77.8,
+        334.0,
+        154.0
+      ]
+    },
+    {
+      "frame": 5768,
+      "time": "00:03:12.267",
+      "type": "IN",
+      "label": "입차",
+      "plate": null,
+      "detail": "cam01 L150 · car · 55px/s",
+      "track_id": 150,
+      "position": [
+        273.7,
+        147.3
+      ],
+      "bbox": [
+        198.3,
+        85.5,
+        334.3,
+        150.0
+      ]
+    },
+    {
+      "frame": 6045,
+      "time": "00:03:21.500",
+      "type": "IN",
+      "label": "입차",
+      "plate": null,
+      "detail": "cam01 L155 · car · 63px/s",
+      "track_id": 155,
+      "position": [
+        271.5,
+        147.8
+      ],
+      "bbox": [
+        197.7,
+        88.8,
+        329.0,
+        150.8
+      ]
+    },
+    {
+      "frame": 6906,
+      "time": "00:03:50.200",
+      "type": "IN",
+      "label": "입차",
+      "plate": null,
+      "detail": "cam01 L171 · car · 50px/s",
+      "track_id": 171,
+      "position": [
+        273.7,
+        151.8
+      ],
+      "bbox": [
+        202.3,
+        79.3,
+        334.7,
+        154.2
+      ]
+    },
+    {
+      "frame": 7330,
+      "time": "00:04:04.333",
+      "type": "IN",
+      "label": "입차",
+      "plate": null,
+      "detail": "cam01 L183 · car · 32px/s",
+      "track_id": 183,
+      "position": [
+        269.7,
+        148.0
+      ],
+      "bbox": [
+        201.3,
+        76.8,
+        333.0,
+        148.9
+      ]
+    },
+    {
+      "frame": 8262,
+      "time": "00:04:35.400",
+      "type": "IN",
+      "label": "입차",
+      "plate": null,
+      "detail": "cam01 L205 · car · 65px/s",
+      "track_id": 205,
+      "position": [
+        262.8,
+        149.3
+      ],
+      "bbox": [
+        200.0,
+        86.0,
+        310.7,
+        152.0
+      ]
+    },
+    {
+      "frame": 10035,
+      "time": "00:05:34.500",
+      "type": "IN",
+      "label": "입차",
+      "plate": null,
+      "detail": "cam01 L218 · car · 59px/s",
+      "track_id": 218,
+      "position": [
+        269.5,
+        147.0
+      ],
+      "bbox": [
+        198.7,
+        76.3,
+        328.3,
+        149.5
+      ]
+    },
+    {
+      "frame": 10195,
+      "time": "00:05:39.833",
+      "type": "IN",
+      "label": "입차",
+      "plate": null,
+      "detail": "cam01 L223 · car · 42px/s",
+      "track_id": 223,
+      "position": [
+        265.0,
+        146.2
+      ],
+      "bbox": [
+        200.0,
+        80.4,
+        322.0,
+        148.1
+      ]
+    },
+    {
+      "frame": 10829,
+      "time": "00:06:00.967",
+      "type": "IN",
+      "label": "입차",
+      "plate": null,
+      "detail": "cam01 L244 · car · 60px/s",
+      "track_id": 244,
+      "position": [
+        270.5,
+        149.8
+      ],
+      "bbox": [
+        200.0,
+        85.8,
+        326.7,
+        152.5
+      ]
+    },
+    {
+      "frame": 11141,
+      "time": "00:06:11.367",
+      "type": "IN",
+      "label": "입차",
+      "plate": null,
+      "detail": "cam01 L259 · car · 55px/s",
+      "track_id": 259,
+      "position": [
+        273.3,
+        149.2
+      ],
+      "bbox": [
+        200.0,
+        86.5,
+        334.7,
+        150.8
+      ]
+    },
+    {
+      "frame": 12578,
+      "time": "00:06:59.267",
+      "type": "OUT",
+      "label": "출차",
+      "plate": null,
+      "detail": "cam01 L275 · car · 140px/s",
+      "track_id": 275,
+      "position": [
+        227.2,
+        299.2
+      ],
+      "bbox": [
+        108.3,
+        149.5,
+        375.7,
+        289.5
+      ]
+    },
+    {
+      "frame": 13589,
+      "time": "00:07:32.967",
+      "type": "IN",
+      "label": "입차",
+      "plate": null,
+      "detail": "cam01 L285 · car · 68px/s",
+      "track_id": 285,
+      "position": [
+        270.0,
+        145.8
+      ],
+      "bbox": [
+        196.0,
+        86.8,
+        328.0,
+        148.8
+      ]
+    },
+    {
+      "frame": 14537,
+      "time": "00:08:04.567",
+      "type": "OUT",
+      "label": "출차",
+      "plate": null,
+      "detail": "cam01 L305 · car · 100px/s",
+      "track_id": 305,
+      "position": [
+        209.8,
+        310.2
+      ],
+      "bbox": [
+        73.7,
+        126.7,
+        365.7,
+        305.0
+      ]
+    },
+    {
+      "frame": 14596,
+      "time": "00:08:06.533",
+      "type": "IN",
+      "label": "입차",
+      "plate": null,
+      "detail": "cam01 L304 · car · 89px/s",
+      "track_id": 304,
+      "position": [
+        280.7,
+        148.5
+      ],
+      "bbox": [
+        199.7,
+        77.4,
+        342.3,
+        152.9
+      ]
+    },
+    {
+      "frame": 16147,
+      "time": "00:08:58.233",
+      "type": "IN",
+      "label": "입차",
+      "plate": null,
+      "detail": "cam01 L359 · car · 47px/s",
+      "track_id": 359,
+      "position": [
+        276.3,
+        151.3
+      ],
+      "bbox": [
+        202.2,
+        88.7,
+        339.8,
+        153.0
+      ]
+    },
+    {
+      "frame": 16541,
+      "time": "00:09:11.367",
+      "type": "IN",
+      "label": "입차",
+      "plate": null,
+      "detail": "cam01 L365 · car · 55px/s",
+      "track_id": 365,
+      "position": [
+        270.5,
+        147.2
+      ],
+      "bbox": [
+        200.0,
+        76.8,
+        329.3,
+        149.8
+      ]
+    },
+    {
+      "frame": 16552,
+      "time": "00:09:11.733",
+      "type": "IN",
+      "label": "입차",
+      "plate": null,
+      "detail": "cam01 L368 · car · 22px/s",
+      "track_id": 368,
+      "position": [
+        250.7,
+        154.8
+      ],
+      "bbox": [
+        181.7,
+        79.2,
+        317.7,
+        155.2
+      ]
+    }
+  ]
+}
