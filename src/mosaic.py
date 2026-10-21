@@ -10,38 +10,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 LAYOUT_PATH = ROOT / "config" / "mosaic.yaml"
 
-DETECTION_CONFIG_PATH = ROOT / "config" / "detection.yaml"
-
-RAW_VIDEO_DIR = ROOT / "data" / "videos" / "raw"
-
-SPLIT_VIDEO_ROOT = ROOT / "data" / "videos"
-
-DETECTIONS_ROOT = ROOT / "data" / "detections"
-
-# 차단기 입출차 기록 (영상 제목별, 프레임 번호 기준)
-GATE_LOG_ROOT = ROOT / "data" / "gate_logs"
-
-# 카메라 위치는 영상과 무관하므로 calibration은 모든 원본 영상이 공유한다.
-CALIBRATION_DIR = ROOT / "config" / "calibration"
-
-VIDEO_EXTENSIONS = (
-    ".mp4",
-    ".mkv",
-    ".avi",
-    ".mov",
-)
-
 
 """
-모자이크 원본 영상과 칸 배치.
+모자이크 칸 배치 (config/mosaic.yaml, 모든 영상 공통).
 
-- 원본       : data/videos/raw/<title>.mp4
-- 칸 배치    : config/mosaic.yaml (모든 원본 영상 공통)
-- 분리 영상  : data/videos/<title>/<camera_id>.mp4
-- YOLO 결과  : data/detections/<title>/detections.jsonl
-- 차단기 기록: data/gate_logs/<title>.json (선택)
-- calibration: config/calibration/<camera_id>.json (공통)
-
+모자이크 한 프레임 = rows x cols 칸, 칸 1개 = 카메라 1대.
 카메라 좌표계는 "잘라낸 칸의 왼쪽 위 = (0, 0)"인 픽셀 좌표다.
 YOLO 결과, calibration, tracking이 모두 이 좌표를 사용한다.
 """
@@ -154,77 +127,6 @@ class MosaicLayout:
         }
 
 
-@dataclass
-class MosaicVideo:
-    """
-    원본 모자이크 영상 1개 (제목 = 파일 이름에서 확장자를 뺀 것).
-    """
-
-    name: str
-    video_path: Path
-    layout: MosaicLayout
-
-    @property
-    def rows(
-        self,
-    ) -> int:
-
-        return self.layout.rows
-
-    @property
-    def cols(
-        self,
-    ) -> int:
-
-        return self.layout.cols
-
-    @property
-    def camera_ids(
-        self,
-    ) -> list[str]:
-
-        return self.layout.camera_ids
-
-    def crop_rects(
-        self,
-        width: int,
-        height: int,
-    ) -> dict[str, tuple[int, int, int, int]]:
-
-        return self.layout.crop_rects(
-            width,
-            height,
-        )
-
-    @property
-    def split_dir(
-        self,
-    ) -> Path:
-
-        return SPLIT_VIDEO_ROOT / self.name
-
-    @property
-    def detections_dir(
-        self,
-    ) -> Path:
-
-        return DETECTIONS_ROOT / self.name
-
-    @property
-    def calibration_dir(
-        self,
-    ) -> Path:
-
-        return CALIBRATION_DIR
-
-    @property
-    def gate_log_path(
-        self,
-    ) -> Path:
-
-        return GATE_LOG_ROOT / f"{self.name}.json"
-
-
 def load_layout(
     path: Path = LAYOUT_PATH,
 ) -> MosaicLayout:
@@ -301,68 +203,24 @@ def load_layout(
     )
 
 
-def find_raw_video(
-    title: str,
-) -> Path:
+def pixel_scale(
+    cell_rect: tuple[int, int, int, int],
+    reference_size,
+) -> float:
     """
-    "test00" -> data/videos/raw/test00.mp4 (지원 확장자 중 존재하는 파일)
-    """
-
-    path = Path(title)
-
-    if path.suffix.lower() in VIDEO_EXTENSIONS:
-
-        title = path.stem
-
-    for extension in VIDEO_EXTENSIONS:
-
-        candidate = RAW_VIDEO_DIR / f"{title}{extension}"
-
-        if candidate.exists():
-            return candidate
-
-    available = sorted(
-        file.stem
-        for file in RAW_VIDEO_DIR.glob("*")
-        if file.suffix.lower() in VIDEO_EXTENSIONS
-    )
-
-    raise FileNotFoundError(
-        f"Raw video not found: {RAW_VIDEO_DIR / title}.*\n"
-        f"Available: {', '.join(available) or '(none)'}"
-    )
-
-
-def load_video(
-    title: str,
-) -> MosaicVideo:
-
-    raw_path = find_raw_video(
-        title
-    )
-
-    return MosaicVideo(
-        name=raw_path.stem,
-        video_path=raw_path,
-        layout=load_layout(),
-    )
-
-
-def default_title() -> str | None:
-    """
-    config/detection.yaml 의 video 값 (server / calibrate / play 기본값).
+    칸 기준 픽셀 설정값(거리 / 이동량 / 속도)에 곱할 배율.
+    reference_size [width, height] 칸에서 정한 값을 cell_rect 칸 크기에 맞춘다.
     """
 
-    if not DETECTION_CONFIG_PATH.exists():
-        return None
+    x1, y1, x2, y2 = cell_rect
 
-    with DETECTION_CONFIG_PATH.open(
-        "r",
-        encoding="utf-8",
-    ) as file:
+    reference_width, reference_height = (
+        float(value)
+        for value in reference_size
+    )
 
-        data = yaml.safe_load(file) or {}
-
-    value = data.get("video")
-
-    return str(value) if value else None
+    return (
+        (x2 - x1) / reference_width
+        *
+        (y2 - y1) / reference_height
+    ) ** 0.5

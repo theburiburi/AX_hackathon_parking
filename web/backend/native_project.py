@@ -1,6 +1,6 @@
 """Read-only bridge to the native project; no HTTP server or inference on import.
 
-src.mosaic is safe to import directly. server.py initializes its engine at module
+src.video is safe to import directly. server.py initializes its engine at module
 scope, so compile its existing definitions instead of executing its entrypoint.
 The algorithms remain in the native files; this module contains no tracker.
 """
@@ -17,7 +17,7 @@ PROJECT = Path(__file__).resolve().parents[2]
 if str(PROJECT) not in sys.path:
     sys.path.insert(0, str(PROJECT))
 
-from src import mosaic
+from src import video
 
 
 
@@ -86,8 +86,8 @@ def read_native_gate_log(path, title):
 
 def gate_log_candidates(project, title):
     """Explicit shared-log overrides, then the native MosaicVideo per-video path."""
-    scene = mosaic.MosaicVideo(title, Path(), None)
-    native_path = project / scene.gate_log_path.relative_to(mosaic.ROOT)
+    scene = video.MosaicVideo(title, Path(), None)
+    native_path = project / scene.gate_log_path.relative_to(video.ROOT)
     return (native_path.parent / "gate_logs.json", native_path.parent / "gate_log.json", native_path)
 
 

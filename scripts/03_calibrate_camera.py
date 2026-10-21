@@ -18,20 +18,14 @@ if str(ROOT) not in sys.path:
         str(ROOT),
     )
 
-from src.mosaic import default_title, load_video  # noqa: E402
-from src.view_mode import is_letterboxed, load_letterbox, unletterbox_image  # noqa: E402
+from src.video import DETECTION_CONFIG_PATH, default_title, load_video  # noqa: E402
 from src.calibration.mapping import (  # noqa: E402
     CalibrationMapping,
     apply_homography,
     coverage_grid,
+    fade_px_for_width,
 )
 
-
-DETECTION_CONFIG_PATH = (
-    ROOT
-    / "config"
-    / "detection.yaml"
-)
 
 BEV_MAP_PATH = (
     ROOT
@@ -53,23 +47,12 @@ BEV_DISPLAY_MAX_HEIGHT = 650
 
 
 ZOOM_STEP = 1.25
-
-# 키보드 확대 / 축소 / 이동 (macOS에서 휠이 안 될 때)
-KEY_ZOOM_IN = (ord("+"), ord("="))
-KEY_ZOOM_OUT = (ord("-"), ord("_"))
-KEY_ZOOM_RESET = (ord("0"),)
-KEY_PAN = {
-    ord("i"): (0, -1),
-    ord("k"): (0, 1),
-    ord("j"): (-1, 0),
-    ord("l"): (1, 0),
-}
-KEY_PAN_STEP = 0.15
 MIN_ZOOM = 1.0
 MAX_ZOOM = 20.0
 
 
 # coverage heatmap: 이 confidence 미만인 영역만 붉게 표시한다.
+# 칸 폭 640 px 기준. 칸이 큰 영상은 칸 폭에 비례해 늘린다.
 COVERAGE_GRID_STEP = 40
 COVERAGE_LOW_THRESHOLD = 0.5
 COVERAGE_MAX_ALPHA = 0.30
@@ -582,9 +565,9 @@ class CalibrationTool:
             frame_index
         )
 
-        # 원본 모자이크 영상에서 해당 카메라 칸을 잘라 사용하고,
-        # 결과는 config/calibration/<camera>.json 에 칸 좌표 기준으로 저장한다.
-        # (카메라 위치는 영상과 무관하므로 모든 원본 영상이 공유)
+        # 칸 좌우 여백을 없앤 모자이크(mosaic.mp4)에서 해당 카메라 칸을 잘라 사용하고,
+        # 결과는 config/calibration/<가로>x<세로>/<camera>.json 에 칸 좌표 기준으로 저장한다.
+        # (폴더는 원본 해상도로 자동 선택, 같은 해상도의 영상끼리 공유)
         video_title = (
             video_title
             or
@@ -609,9 +592,19 @@ class CalibrationTool:
                 f"{camera_id}"
             )
 
+        # bbox / tracking과 같은 좌표가 되도록
+        # 칸 좌우 여백을 없앤 모자이크(00_prepare_video.py)에서 칸을 자른다.
         self.video_path = (
-            self.scene.video_path
+            self.scene.mosaic_path
         )
+
+        if not self.video_path.exists():
+
+            raise FileNotFoundError(
+                f"Mosaic video not found: {self.video_path}\n"
+                f"Run: python scripts/00_prepare_video.py "
+                f"{self.scene.name}"
+            )
 
         mosaic = (
             self._load_video_frame()
@@ -630,22 +623,6 @@ class CalibrationTool:
         self.frame = (
             mosaic[y1:y2, x1:x2].copy()
         )
-
-        # 축소 모드(좌우 검은 띠) 프레임은 전체 화면 좌표로 펼쳐서 보여준다.
-        # calibration 점은 항상 전체 화면 좌표로 저장된다.
-        letterbox = load_letterbox()
-
-        if is_letterboxed(self.frame, *letterbox):
-
-            self.frame = unletterbox_image(
-                self.frame,
-                *letterbox,
-            )
-
-            print(
-                "Letterboxed frame: shown stretched to "
-                "full-view coordinates."
-            )
 
         self.bev_map = (
             self._load_bev_map()
@@ -875,69 +852,6 @@ class CalibrationTool:
             display_height,
         )
 
-    def _keyboard_view(
-        self,
-        key: int,
-    ) -> None:
-        """
-        macOS(Cocoa)에서는 마우스 휠 / 트랙패드 스크롤이 OpenCV 창에
-        전달되지 않는 경우가 있어 키보드로도 확대 / 이동할 수 있게 한다.
-        """
-
-        hover = getattr(
-            self,
-            "hover",
-            None,
-        )
-
-        if hover is None:
-
-            view = self.image_view
-            x = view.display_width // 2
-            y = view.display_height // 2
-
-        else:
-
-            view, x, y = hover
-
-        if key in KEY_ZOOM_IN:
-
-            view.zoom_at(
-                mouse_x=x,
-                mouse_y=y,
-                direction=1,
-            )
-
-        elif key in KEY_ZOOM_OUT:
-
-            view.zoom_at(
-                mouse_x=x,
-                mouse_y=y,
-                direction=-1,
-            )
-
-        elif key in KEY_ZOOM_RESET:
-
-            view.zoom = 1.0
-            view.pan_x = 0.0
-            view.pan_y = 0.0
-            view.clamp_pan()
-
-        else:
-
-            dx, dy = KEY_PAN[key]
-            step_x = view.display_width * KEY_PAN_STEP
-            step_y = view.display_height * KEY_PAN_STEP
-
-            view.start_drag(0, 0)
-            view.drag(
-                int(-dx * step_x),
-                int(-dy * step_y),
-            )
-            view.end_drag()
-
-        self._refresh_windows()
-
     def _get_wheel_direction(
         self,
         flags: int,
@@ -971,13 +885,6 @@ class CalibrationTool:
     ) -> bool:
 
         changed = False
-
-        # 키보드 확대 / 이동은 마우스가 마지막으로 올라간 창에 적용한다.
-        self.hover = (
-            view,
-            x,
-            y,
-        )
 
         if (
             event
@@ -1360,6 +1267,9 @@ class CalibrationTool:
             CalibrationMapping.from_points(
                 self.image_points,
                 self.bev_points,
+                fade_px=fade_px_for_width(
+                    self.frame.shape[1]
+                ),
             )
         )
 
@@ -1411,7 +1321,16 @@ class CalibrationTool:
             self.image_points,
             width=width,
             height=height,
-            step=COVERAGE_GRID_STEP,
+            step=max(
+                1,
+                round(
+                    COVERAGE_GRID_STEP
+                    *
+                    width
+                    /
+                    640
+                ),
+            ),
         )
 
         self.coverage_ratio = float(
@@ -1636,10 +1555,8 @@ class CalibrationTool:
                 self.frame_index
             ),
 
-            # image 좌표는 잘라낸 칸 기준, 전체 화면 모드 좌표다.
+            # image 좌표는 잘라낸 칸 기준이다.
             "video": self.scene.name,
-
-            "view": "full",
 
             "crop_rect": list(
                 self.crop_rect
@@ -2250,19 +2167,6 @@ class CalibrationTool:
         )
 
         print(
-            "+ / - : zoom in / out at mouse cursor "
-            "(use when the wheel does not work)"
-        )
-
-        print(
-            "0 : reset zoom"
-        )
-
-        print(
-            "I / J / K / L : pan up / left / down / right"
-        )
-
-        print(
             "U : undo last point"
         )
 
@@ -2356,12 +2260,6 @@ class CalibrationTool:
 
                 self._undo()
 
-            elif key in KEY_ZOOM_IN + KEY_ZOOM_OUT + KEY_ZOOM_RESET + tuple(KEY_PAN):
-
-                self._keyboard_view(
-                    key,
-                )
-
             elif key == ord("c"):
 
                 self.show_coverage = (
@@ -2444,10 +2342,11 @@ def parse_args():
         type=str,
         default=None,
         help=(
-            "Raw video title used for the background frame "
-            "(data/videos/raw/<title>.mp4). "
+            "Video title used for the background frame "
+            "(data/<title>/mosaic.mp4 from 00_prepare_video.py). "
             "Default: 'video' in config/detection.yaml. "
-            "Saved to config/calibration/<camera>.json."
+            "Saved to config/calibration/<width>x<height>/<camera>.json "
+            "(folder = raw video resolution)."
         ),
     )
 
@@ -2458,11 +2357,15 @@ def main():
 
     args = parse_args()
 
-    tool = CalibrationTool(
-        camera_id=args.camera,
-        frame_index=args.frame,
-        video_title=args.video,
-    )
+    try:
+        tool = CalibrationTool(
+            camera_id=args.camera,
+            frame_index=args.frame,
+            video_title=args.video,
+        )
+
+    except FileNotFoundError as error:
+        sys.exit(str(error))
 
     tool.run()
 

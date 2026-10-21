@@ -1,6 +1,6 @@
 # 모자이크 원본 영상의 칸 배치 (모든 원본 영상에 공통).
 #
-# 원본: data/videos/raw/<영상 제목>.mp4
+# 원본: data/raw_video/<영상 제목>.mp4
 # 각 칸을 잘라 카메라 1대로 취급한다.
 # 모든 카메라가 같은 프레임에서 잘리므로 프레임 번호가 항상 일치한다.
 #
@@ -41,7 +41,8 @@ cameras:
 #   축소 모드 x = scale_x * 전체 화면 x + offset_x   (y는 같다)
 # tracking / calibration은 전체 화면 좌표를 쓰므로 축소 모드 검출은 이 식으로 되돌린다.
 # test02의 7개 카메라 모두 두 모드 프레임 정합 결과가 같았다 (0.824~0.826, 113~115).
-# 프레임별 모드는 scripts/detect_view_modes.py 가 data/detections/<title>/view_modes.json 에 기록한다.
+# scripts/00_prepare_video.py 는 여백을 없애고 늘린 영상에서 검출하므로 보통 이 변환은 쓰이지 않는다
+# (data/<title>/view_modes.json 이 있을 때만 server.py 가 사용).
 letterbox:
   scale_x: 0.825
   offset_x: 113.0

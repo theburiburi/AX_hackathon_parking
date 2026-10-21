@@ -75,10 +75,10 @@ Pop-Location
 
 | 루트 기준 경로 | 용도 |
 |---|---|
-| `data/videos/raw/<title>.mp4` | 브라우저에서 재생하는 모자이크 원본 |
-| `data/detections/<title>/detections.jsonl` | 카메라별 검출 박스 |
-| `data/detections/<title>/metadata.json` | 원본 크기·FPS·프레임 수·카메라 배치. 캐시 생성 시 일치 여부 검증 |
-| `data/detections/<title>/view_modes.json` | 전체/축소 화면 구간. 레터박스 좌표 보정에 사용 |
+| `data/raw_video/<title>.mp4` | 모자이크 원본 |
+| `data/<title>/mosaic.mp4` | 브라우저에서 재생하는 모자이크 (칸 좌우 여백을 없애고 늘린 영상) |
+| `data/<title>/detections.jsonl` | 카메라별 검출 박스 |
+| `data/<title>/metadata.json` | 원본 크기·FPS·프레임 수·카메라 배치. 캐시 생성 시 일치 여부 검증 |
 | `config/mosaic.yaml` | 모자이크 칸과 카메라 배치 |
 | `config/tracking.yaml`, `config/global_tracking.yaml` | 기존 추적·ID 연결·주차 판정 설정 |
 | `config/calibration/camXX.json` | 카메라별 영상→BEV 보정 |
@@ -90,14 +90,12 @@ Pop-Location
 검출 결과가 없다면 원본 영상과 YOLO 가중치·추론 환경을 준비한 뒤 기존 도구로 생성합니다.
 
 ```powershell
-.\.venv\Scripts\python.exe -B scripts/preprocess.py video
+.\.venv\Scripts\python.exe -B scripts/00_prepare_video.py video
+.\.venv\Scripts\python.exe -B scripts/01_detect_vehicles.py video
 ```
 
-전처리는 YOLO를 실행합니다. 기존 검출 자료에 `view_modes.json`만 빠졌다면 다음 명령으로 보완합니다.
-
-```powershell
-.\.venv\Scripts\python.exe -B scripts/detect_view_modes.py video
-```
+`00_prepare_video.py`가 축소 화면의 좌우 여백을 없애고 늘린 영상을 만들고, YOLO는 그 영상에서 검출하므로
+검출 좌표는 처음부터 전체 화면 기준입니다 (`view_modes.json` 불필요).
 
 필요한 자료가 준비되면 웹 재생 캐시를 생성합니다. 이 단계는 기존 검출 결과로 Local/Global Tracking과 지도 투영을 계산하며 YOLO 추론을 다시 실행하지 않습니다.
 
@@ -268,12 +266,11 @@ $env:WEB_REPLAY_VIDEO = "video"
 
 차단기 로그는 다음 순서에서 **처음 존재하는 파일 하나**를 사용합니다.
 
-1. `data/gate_logs/gate_logs.json`
-2. `data/gate_logs/gate_log.json`
-3. `data/gate_logs/<title>.json`
+1. `data/<title>/gate_logs.json`
+2. `data/<title>/gate_log.json` (`scripts/04_detect_gate_events.py` 출력 위치)
 
 상위 우선순위 파일이 다른 영상이거나 형식이 잘못됐어도 하위 파일로 자동 전환하지 않습니다.
-현재 사용하는 공유 파일은 `data/gate_logs/gate_log.json`입니다.
+현재 `video` 영상은 `data/video/gate_log.json`을 사용합니다.
 `video`·`fps`가 선택 영상과 맞고 `events[].frame`이 영상 범위 안의 정수여야 합니다.
 `frame`은 0부터 시작하며 동기화 기준이고, `time`은 사람이 확인하는 시각입니다.
 
@@ -499,7 +496,7 @@ PowerShell 실행 정책으로 `.ps1`이 막히면 가상환경 활성화 없이
 | 로그인 실패 | 운용 `users.json` 확인. seed는 기존 비밀번호를 재설정하지 않음 |
 | 보정·추적·지도 변경 오류 | 선택 영상 자료를 확인하고 `web/build_replay.py --video video --overwrite` 실행 |
 | 원본·검출 결과 불일치 | 원본·metadata·검출 JSONL의 해상도·FPS·프레임 수·칸 배치를 맞춘 뒤 캐시 재생성 |
-| `view_modes.json not found` 경고 | `scripts/detect_view_modes.py video` 실행 후 캐시 재생성. 경고 상태에서는 축소 화면을 원본 좌표로 추적 |
+| `Failed to open mosaic video` | `scripts/00_prepare_video.py video` 실행 후 캐시 재생성 |
 | `load_json_file`·`format_parking_event` 이름 오류 | 기존 엔진과 `backend/native_project.py`가 서로 맞는 버전인지 확인. 현재 어댑터는 두 함수를 포함 |
 | 관리자 지도 추적이 없음 | 추적 모드 ON, 현재 프레임 결과·카메라 필터·지도 범위·모델 상태 확인. 사용자 지도에는 차량 아이콘이 없는 것이 현재 사양 |
 | 현재 프레임 위치 로딩 표시 | 프레임 API 오류·캐시 유효성 확인. 같은 시점의 결과가 없을 때 이전 프레임을 대신 표시하지 않음 |

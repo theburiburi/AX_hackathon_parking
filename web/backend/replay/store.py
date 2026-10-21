@@ -7,7 +7,7 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
-from native_project import mosaic, gate_log_candidates, read_native_gate_log, open_native_cache
+from native_project import video, gate_log_candidates, read_native_gate_log, open_native_cache
 
 PROJECT = Path(__file__).resolve().parents[3]
 CACHE_ROOT = Path(__file__).resolve().parents[1] / "replay_data"
@@ -23,7 +23,7 @@ def read_gate_log(project, title, fps, frame_count):
     path = next((candidate for candidate in candidates if candidate.is_file()), candidates[0])
     empty = {"video": title, "gate": None, "events": []}
     if not path.is_file():
-        return empty, "data/gate_logs/gate_logs.json 파일이 없습니다."
+        return empty, f"data/{title}/gate_log.json 파일이 없습니다."
     try:
         data = read_native_gate_log(path, title)
         if not isinstance(data, dict) or data.get("video") != title:
@@ -54,7 +54,7 @@ def selected_title():
         return title_value(override)
     import yaml
     try:
-        return title_value(mosaic.default_title())
+        return title_value(video.default_title())
     except (OSError, ValueError, AttributeError, yaml.YAMLError) as exc:
         raise ReplayError("config/detection.yaml의 video 설정을 확인하세요. 예: video: test02") from exc
 

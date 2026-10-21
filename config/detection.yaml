@@ -1,5 +1,5 @@
-# 기본으로 사용할 원본 영상 제목 (data/videos/raw/<video>.mp4).
-# server.py, calibrate_camera.py, play_mosaic.py의 기본값으로 사용된다.
+# 기본으로 사용할 원본 영상 제목 (data/raw_video/<video>.mp4).
+# server.py, 02_play_mosaic.py, 03_calibrate_camera.py 등 스크립트의 기본값으로 사용된다.
 # 칸 ↔ 카메라 배치는 config/mosaic.yaml 에서 관리한다.
 video: video
 
@@ -11,6 +11,10 @@ inference:
   imgsz: 960
   conf: 0.20
   iou: 0.70
+  # 클래스와 관계없이 이 IoU보다 많이 겹치는 박스는 신뢰도가 높은 하나만 남긴다.
+  # 같은 차량이 car / truck으로 동시에 검출되는 중복을 없앤다. 0이면 사용하지 않는다.
+  # (01_detect_vehicles.py)
+  class_agnostic_iou: 0.70
   quantize: 16
   batch_size: 7
 

@@ -36,7 +36,7 @@ class ParkingScenarioTests(SimpleTestCase):
         gate = {"video": "demo", "fps": 1, "gate": {"camera_id": "cam01"}, "events": [
             {"frame": 1, "type": "IN", "scenario_vehicle_id": 1, "plate": "11가1111"},
             {"frame": 5, "type": "OUT", "scenario_vehicle_id": 7, "plate": "77사7777", "zone": "B"}]}
-        gate_path = self.root / "data/gate_logs/gate_log.json"
+        gate_path = self.root / "data/demo/gate_log.json"
         gate_path.parent.mkdir(parents=True)
         gate_path.write_text(json.dumps(gate), encoding="utf-8")
         runtime = self.root / "runtime"
@@ -116,7 +116,7 @@ class ParkingScenarioTests(SimpleTestCase):
         self.assertEqual(json_store.read("vehicles"), original)
 
     def test_transferred_section_remains_after_reentry_but_rewinds_to_original_section(self):
-        gate_path = self.root / "data/gate_logs/gate_log.json"
+        gate_path = self.root / "data/demo/gate_log.json"
         gate = json.loads(gate_path.read_text(encoding="utf-8"))
         gate["events"].append({"frame": 6, "type": "IN", "scenario_vehicle_id": 7, "plate": "77사7777"})
         gate_path.write_text(json.dumps(gate), encoding="utf-8")

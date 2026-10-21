@@ -1,4 +1,4 @@
-# 차단기 입출차 자동 감지 설정 (scripts/detect_gate_events.py)
+# 차단기 입출차 자동 감지 설정 (scripts/04_detect_gate_events.py, server.py 입구 GID 발급)
 #
 # 입차용 / 출차용 네모 감지 박스를 따로 둔다.
 # 박스 넓이 중 차량 bbox와 겹친 비율이 min_overlap_ratio보다 크고,
@@ -49,3 +49,6 @@ direction_window_sec: 0.5
 # direction 방향으로 이 속도(px/s) 이상 움직이고 있어야 인정
 # (박스 안에 서 있는 차량 / 반대 방향 차량 제외)
 min_speed_px_per_sec: 10.0
+
+# 04_detect_gate_events.py: 박스 겹침 비율이 이만큼 커지면서(박스 안으로 들어오는 중) 기준을 넘을 때 기록
+min_overlap_increase: 0.2

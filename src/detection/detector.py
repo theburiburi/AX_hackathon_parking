@@ -24,6 +24,30 @@ class Detection:
     y2: float
 
 
+def box_iou(
+    a: Detection,
+    b: Detection,
+) -> float:
+
+    width = min(a.x2, b.x2) - max(a.x1, b.x1)
+    height = min(a.y2, b.y2) - max(a.y1, b.y1)
+
+    if width <= 0 or height <= 0:
+        return 0.0
+
+    intersection = width * height
+
+    union = (
+        (a.x2 - a.x1) * (a.y2 - a.y1)
+        +
+        (b.x2 - b.x1) * (b.y2 - b.y1)
+        -
+        intersection
+    )
+
+    return intersection / union if union > 0 else 0.0
+
+
 class VehicleDetector:
     def __init__(
         self,
@@ -87,6 +111,14 @@ class VehicleDetector:
             16,
         )
 
+        # 클래스와 관계없는 중복 제거 기준 (0이면 사용 안 함)
+        self.class_agnostic_iou = float(
+            inference_config.get(
+                "class_agnostic_iou",
+                0.0,
+            )
+        )
+
         self.batch_size = int(
             inference_config.get(
                 "batch_size",
@@ -136,6 +168,11 @@ class VehicleDetector:
         print(
             f"IoU threshold: "
             f"{self.iou}"
+        )
+
+        print(
+            f"Class-agnostic IoU: "
+            f"{self.class_agnostic_iou or 'off'}"
         )
 
         print(
@@ -378,7 +415,41 @@ class VehicleDetector:
                 )
             )
 
-        return detections
+        return self._remove_cross_class_duplicates(
+            detections
+        )
+
+    def _remove_cross_class_duplicates(
+        self,
+        detections: list[Detection],
+    ) -> list[Detection]:
+        """
+        YOLO는 클래스별로만 겹친 박스를 지우므로
+        같은 차량이 car / truck 두 박스로 남는 경우가 있다.
+        클래스와 관계없이 class_agnostic_iou보다 많이 겹치면
+        신뢰도가 높은 박스만 남긴다.
+        """
+
+        if self.class_agnostic_iou <= 0.0:
+            return detections
+
+        kept: list[Detection] = []
+
+        for detection in sorted(
+            detections,
+            key=lambda item: item.confidence,
+            reverse=True,
+        ):
+
+            if all(
+                box_iou(detection, other)
+                <=
+                self.class_agnostic_iou
+                for other in kept
+            ):
+                kept.append(detection)
+
+        return kept
 
 
     def detect_batch(

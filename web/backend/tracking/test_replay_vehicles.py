@@ -53,8 +53,8 @@ class ReplayVehicleTests(SimpleTestCase):
             for frame in self.frames:
                 offsets.append(target.tell())
                 target.write((json.dumps(frame) + "\n").encode())
-        (root / "data/gate_logs").mkdir()
-        self.gate_path = root / "data/gate_logs/gate_log.json"
+        (root / "data/demo").mkdir()
+        self.gate_path = root / "data/demo/gate_log.json"
         self.gate_path.write_text(json.dumps(self.gate), encoding="utf-8")
         self.store = SimpleNamespace(project=root, title="demo", frames_path=path, offsets=offsets,
                                      manifest={"cache_id": "cache-1", "frame_count": 5, "fps": 30, "map": self.layout})

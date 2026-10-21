@@ -27,7 +27,7 @@ from starlette.types import (
 )
 
 from src.calibration import CameraProjector
-from src.mosaic import MosaicVideo, default_title, load_video
+from src.video import MosaicVideo, default_title, load_video
 from src.view_mode import VIEW_MODES_FILENAME, ViewModes
 
 from src.tracking.parking_log import ParkingLog
@@ -48,12 +48,11 @@ WEB_DIR = (
     "web"
 )
 
+# 웹 재생 영상: data/<title>/mosaic.mp4 (scripts/00_prepare_video.py)
 VIDEO_DIR = (
     ROOT
     /
     "data"
-    /
-    "videos"
 )
 
 MAP_DIR = (
@@ -498,7 +497,7 @@ class TrackingEngine:
             threading.RLock()
         )
 
-        # 원본은 모자이크 영상 1개 (data/videos/raw/<title>.mp4).
+        # 모자이크 영상 1개 (data/<title>/mosaic.mp4, 칸 좌우 여백을 없애고 늘린 영상).
         # 카메라 = config/mosaic.yaml 의 칸, 좌표 = 잘라낸 칸 기준 픽셀.
         self.scene = scene
 
@@ -519,16 +518,11 @@ class TrackingEngine:
         )
 
         # 축소 모드(좌우 검은 띠) 프레임 기록. tracking은 전체 화면 좌표를 쓴다.
+        # scripts/00_prepare_video.py 가 여백을 없애고 늘린 영상에서 검출하므로
+        # 보통은 파일이 없다 (없으면 좌표 변환을 하지 않는다).
         self.view_modes = ViewModes.load(
             scene.detections_dir / VIEW_MODES_FILENAME
         )
-
-        if self.view_modes is None:
-            print(
-                f"[WARN] {VIEW_MODES_FILENAME} not found. "
-                "Letterboxed frames are tracked in raw coordinates. "
-                f"Run: python scripts/detect_view_modes.py {scene.name}"
-            )
 
         (
             self.mosaic_width,
@@ -601,7 +595,7 @@ class TrackingEngine:
 
         capture = cv2.VideoCapture(
             str(
-                self.scene.video_path
+                self.scene.mosaic_path
             )
         )
 
@@ -609,7 +603,8 @@ class TrackingEngine:
 
             raise RuntimeError(
                 "Failed to open mosaic video: "
-                f"{self.scene.video_path}"
+                f"{self.scene.mosaic_path}\n"
+                f"Run: python scripts/00_prepare_video.py {self.scene.name}"
             )
 
         width = int(
@@ -1991,7 +1986,7 @@ class TrackingEngine:
         video_url = (
             "/media/"
             +
-            self.scene.video_path
+            self.scene.mosaic_path
             .relative_to(VIDEO_DIR)
             .as_posix()
         )
@@ -2191,7 +2186,7 @@ def tracking_reload():
 )
 def gate_log():
     """
-    차단기 입출차 기록 (data/gate_logs/<title>.json).
+    차단기 입출차 기록 (data/<title>/gate_log.json).
 
     이벤트마다 frame(영상 프레임 번호)이 있으며,
     웹은 화면에 표시된 프레임까지의 기록만 보여 주는 방식으로 영상과 동기화한다.

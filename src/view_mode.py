@@ -20,7 +20,8 @@ from src.mosaic import LAYOUT_PATH
 
     축소 모드 x = scale_x * 전체 화면 x + offset_x   (y는 같다)
 
-모드 기록: data/detections/<title>/view_modes.json
+모드 기록: data/<title>/view_modes.json (있을 때만 사용.
+scripts/00_prepare_video.py 로 여백을 없앤 영상에서 검출했다면 필요 없다)
     {"letterbox": {...}, "frame_count": N,
      "cameras": {"cam06": [[start, end), ...], ...}}   (축소 모드 구간)
 """

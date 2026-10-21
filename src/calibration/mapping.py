@@ -32,7 +32,21 @@ MAPPING_TYPE = "homography_tps"
 MIN_TPS_POINTS = 5
 
 # hull 밖에서 TPS 보정이 줄어드는 거리 스케일(px).
+# 칸 폭 FADE_REFERENCE_WIDTH(640px, 1920x1080 모자이크) 기준 값이며,
+# 해상도가 다른 영상은 fade_px_for_width()로 칸 폭에 비례해 맞춘다.
 DEFAULT_FADE_PX = 200.0
+
+FADE_REFERENCE_WIDTH = 640.0
+
+
+def fade_px_for_width(
+    image_width: float,
+) -> float:
+    """
+    칸 폭에 비례한 fade 거리. 해상도만 다른 영상에서 같은 mapping이 되도록 한다.
+    """
+
+    return DEFAULT_FADE_PX * float(image_width) / FADE_REFERENCE_WIDTH
 
 
 # =========================================================

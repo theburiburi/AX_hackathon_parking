@@ -88,7 +88,7 @@ class ReplayApiTests(SimpleTestCase):
         self.assertEqual(self.client.get("/media/raw/clip.mp4").status_code, 404)
 
     def test_shared_gate_log_is_loaded_on_refresh_without_rebuilding_cache(self):
-        path = self.root / "data/gate_logs/gate_logs.json"
+        path = self.root / "data/demo/gate_logs.json"
         path.parent.mkdir()
         data = {"video": "demo", "fps": 30, "gate": {"name": "Gate"},
                 "events": [{"frame": 0, "type": "IN", "label": "Arrival"}]}
@@ -102,7 +102,7 @@ class ReplayApiTests(SimpleTestCase):
         self.assertEqual(updated["gate_log"]["events"][0]["type"], "OUT")
 
     def test_invalid_gate_log_does_not_break_video_or_mix_other_video_events(self):
-        path = self.root / "data/gate_logs/gate_logs.json"
+        path = self.root / "data/demo/gate_logs.json"
         path.parent.mkdir()
         for data in [
             {"video": "other", "fps": 30, "events": [{"frame": 0}]},
@@ -119,7 +119,7 @@ class ReplayApiTests(SimpleTestCase):
         self.assertEqual(self.client.get("/api/replay/manifest/").json()["gate_log"]["events"], [])
 
     def test_plural_gate_log_takes_priority_over_legacy_file(self):
-        folder = self.root / "data/gate_logs"
+        folder = self.root / "data/demo"
         folder.mkdir()
         data = {"video": "demo", "fps": 30, "events": [{"frame": 0, "type": "IN"}]}
         (folder / "gate_log.json").write_text(json.dumps(data))

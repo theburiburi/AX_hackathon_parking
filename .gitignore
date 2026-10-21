@@ -24,8 +24,15 @@ temp/
 # Generated outputs (play_mosaic --save)
 outputs/
 
-# 영상: 원본 모자이크(data/videos/raw/)와 전처리로 분리한 카메라 영상
-data/videos/
+# 영상별 데이터는 data/<title>/ 에 모은다.
+# 원본 모자이크, 여백을 없앤 모자이크 / 카메라 영상 (용량이 큼)
+# 받은 뒤 python scripts/00_prepare_video.py <title> 로 다시 만든다 (raw 필요).
+data/raw_video/
+data/*/mosaic.mp4
+data/*/mosaic.tmp.mp4
+data/*/cams/
+data/*/content.jsonl
+data/*/content.tmp.jsonl
 
 # YOLO 모델 가중치 (용량이 커서 제외, ultralytics로 다시 받을 수 있음)
 *.pt
@@ -34,11 +41,12 @@ data/videos/
 *.zip
 
 # YOLO 결과 bbox (영상 1분에 약 20MB라 GitHub 100MB 제한을 넘기 쉬움)
-# 받은 뒤 python scripts/preprocess.py <title> 로 다시 만든다.
-data/detections/*/detections.jsonl
+# 받은 뒤 python scripts/01_detect_vehicles.py <title> 로 다시 만든다.
+data/*/detections.jsonl
+data/*/detections.jsonl.tmp
 
 # 커밋 대상:
-#   data/detections/<title>/metadata.json
+#   data/<title>/metadata.json, gate_log.json
 #   config/calibration/        카메라 calibration
 #   data/maps/                 BEV 지도, 주차 구역
 

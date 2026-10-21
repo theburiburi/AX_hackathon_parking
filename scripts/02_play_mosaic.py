@@ -17,11 +17,11 @@ if str(ROOT) not in sys.path:
         str(ROOT),
     )
 
-from src.mosaic import default_title, load_video  # noqa: E402
+from src.video import VIDEO_FPS, default_title, load_video  # noqa: E402
 
 
 """
-모자이크 영상 + YOLO detection 캐시를 프레임 번호로 맞춰 재생한다.
+모자이크 영상(mosaic.mp4, 칸 좌우 여백을 없앤 것) + YOLO detection 캐시를 프레임 번호로 맞춰 재생한다.
 
 - 영상 프레임 i 에는 detections.jsonl 의 frame_index i 결과를 그린다.
   (영상과 bbox가 같은 프레임 번호이므로 항상 동기화된다)
@@ -29,11 +29,11 @@ from src.mosaic import default_title, load_video  # noqa: E402
   config/mosaic.yaml 의 칸 위치만큼 옮겨 그린다.
 
 예:
-    python scripts/play_mosaic.py                 # detection.yaml 의 video
-    python scripts/play_mosaic.py test00
+    python scripts/02_play_mosaic.py                 # config/detection.yaml 의 video
+    python scripts/02_play_mosaic.py test00
 
     # 화면 없이 bbox가 그려진 영상만 저장
-    python scripts/play_mosaic.py test00 \\
+    python scripts/02_play_mosaic.py test00 \\
         --save outputs/test00_bbox.mp4 --no-show
 
 키:
@@ -209,7 +209,7 @@ def parse_args() -> argparse.Namespace:
         nargs="?",
         default=None,
         help=(
-            "Raw video title (data/videos/raw/<title>.mp4). "
+            "Video title (data/<title>/mosaic.mp4). "
             "Default: 'video' in config/detection.yaml"
         ),
     )
@@ -220,7 +220,7 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help=(
             "Override detections.jsonl path "
-            "(default: data/detections/<title>/detections.jsonl)"
+            "(default: data/<title>/detections.jsonl)"
         ),
     )
 
@@ -272,7 +272,8 @@ def main() -> None:
 
         sys.exit(str(error))
 
-    video_path = scene.video_path
+    # bbox는 칸 좌우 여백을 없앤 좌표이므로 같은 처리를 한 mosaic.mp4 위에 그린다
+    video_path = scene.mosaic_path
 
     detections_path = (
         resolve(args.detections)
@@ -281,7 +282,10 @@ def main() -> None:
     )
 
     if not video_path.exists():
-        sys.exit(f"Video not found: {video_path}")
+        sys.exit(
+            f"Video not found: {video_path}\n"
+            f"Run: python scripts/00_prepare_video.py {scene.name}"
+        )
 
     if not detections_path.exists():
         sys.exit(f"Detections not found: {detections_path}")
@@ -298,7 +302,7 @@ def main() -> None:
 
     width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fps = float(capture.get(cv2.CAP_PROP_FPS)) or 30.0
+    fps = VIDEO_FPS  # 모든 영상 30 fps
     frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
 
     cache = DetectionCache(

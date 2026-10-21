@@ -58,14 +58,14 @@ Pop-Location
 
 ```text
 모자이크 원본 영상
-  → 전처리: 카메라별 분리 + YOLO 검출 + 화면 모드 기록
+  → 전처리: 칸 좌우 여백(축소 화면)을 없앤 모자이크·카메라별 분리 영상 + YOLO 검출
   → 보정·Local/Global Tracking을 사용해 웹 재생 캐시 생성
-  → 통합 서버가 원본 영상과 프레임별 결과 제공
+  → 통합 서버가 여백을 없앤 모자이크 영상과 프레임별 결과 제공
   → 관리자 영상 시점 저장
   → 같은 시점의 차량 상태·구역별 주차 현황을 사용자에게 제공
 ```
 
-검출과 추적은 분리되어 있습니다. `scripts/preprocess.py`는 YOLO 검출 결과를 만들고,
+검출과 추적은 분리되어 있습니다. `scripts/00_prepare_video.py`, `01_detect_vehicles.py`는 YOLO 검출 결과를 만들고,
 `web/build_replay.py`는 기존 검출 결과로 추적·지도 결과를 사전 계산합니다.
 통합 웹에서 영상을 재생할 때는 YOLO 추론을 실행하지 않습니다.
 수동 주차 시나리오가 선택 영상과 일치하면 웹의 주차 집계·등록 차량 상태에는 해당 시나리오를 우선 사용합니다.
@@ -83,13 +83,17 @@ AX_Parking/
 │   ├── gate.yaml               # 차단기 자동 감지 설정
 │   └── calibration/            # 카메라별 영상→지도 보정
 ├── data/
-│   ├── videos/raw/             # 모자이크 원본 영상
-│   ├── videos/<title>/         # 분리 영상
-│   ├── detections/<title>/     # detections.jsonl·metadata.json·view_modes.json
+│   ├── raw_video/<title>.mp4   # 모자이크 원본 영상
+│   ├── <title>/                # 영상별 결과 (scripts가 만듦, data/README.md)
+│   │   ├── mosaic.mp4          #   칸 좌우 여백을 없애고 늘린 모자이크 (웹 재생)
+│   │   ├── cams/               #   카메라별 분리 영상
+│   │   ├── content.jsonl       #   프레임별 원래 화면 가로 범위
+│   │   ├── detections.jsonl    #   YOLO 결과
+│   │   ├── metadata.json       #   전처리·검출 조건
+│   │   └── gate_log.json       #   차단기 입출차 로그
 │   ├── maps/                   # 지도와 zones.json
-│   ├── gate_logs/              # 차단기 입출차 로그
 │   └── parking_logs/           # 수동 주차 시나리오
-├── scripts/                    # 전처리·보정·화면 모드·차단기 분석 도구
+├── scripts/                    # 00~06 전처리·검출·재생·보정·차단기·추적 확인 도구
 ├── src/                        # 기존 검출·보정·Local/Global Tracking 구현
 ├── web/
 │   ├── README.md               # 상세 운용 문서
@@ -108,18 +112,24 @@ AX_Parking/
 ## 분석 자료 준비와 기존 뷰어
 
 검출 결과를 전달받았다면 전처리는 생략합니다. 새 영상은 다음 순서로 준비합니다.
-`video`는 `data/videos/raw/video.mp4`의 파일 제목이며 다른 영상을 사용하면 제목을 바꿉니다.
+`video`는 `data/raw_video/video.mp4`의 파일 제목이며 다른 영상을 사용하면 제목을 바꿉니다.
 
 ```powershell
-# 원본 분리·YOLO 검출. 가중치·추론 장치 설정은 config/detection.yaml 확인
-.\.venv\Scripts\python.exe -B scripts/preprocess.py video
+# 칸 좌우 여백을 없앤 모자이크(data/video/mosaic.mp4)와 카메라별 분리 영상
+.\.venv\Scripts\python.exe -B scripts/00_prepare_video.py video
 
-# 화면 모드 파일이 없는 기존 검출 자료에 대해 실행
-.\.venv\Scripts\python.exe -B scripts/detect_view_modes.py video
+# YOLO 검출 (data/video/detections.jsonl). 가중치·추론 장치 설정은 config/detection.yaml 확인
+.\.venv\Scripts\python.exe -B scripts/01_detect_vehicles.py video
 
 # 보정이 필요한 카메라에 대해 실행
-.\.venv\Scripts\python.exe -B scripts/calibrate_camera.py --camera cam01 --video video --frame 100
+.\.venv\Scripts\python.exe -B scripts/03_calibrate_camera.py --camera cam01 --video video --frame 100
+
+# 차단기 입출차 자동 감지 (data/video/gate_log.json, 이미 있으면 --overwrite 필요)
+.\.venv\Scripts\python.exe -B scripts/04_detect_gate_events.py video
 ```
+
+확인용 도구: `02_play_mosaic.py`(검출 결과 재생), `05_preview_local_tracking.py`(추적 경로 이미지),
+`06_evaluate_track_states.py`(상태 전환 통계).
 
 보정 도구에서는 영상 점과 지도 점을 순서대로 선택해 대응점을 추가합니다.
 보정 파일은 `config/calibration/camXX.json`에 저장됩니다.

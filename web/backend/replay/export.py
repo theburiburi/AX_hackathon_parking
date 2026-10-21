@@ -29,7 +29,7 @@ def export(title, *, overwrite=False, progress=print):
         if zones_data["map"] != {"width": width, "height": height}:
             raise ReplayError("지도와 구역 JSON의 이미지 크기가 다릅니다.")
         metadata = json.loads((scene.detections_dir / "metadata.json").read_text(encoding="utf-8"))
-        capture = cv2.VideoCapture(str(scene.video_path))
+        capture = cv2.VideoCapture(str(scene.mosaic_path))
         try:
             fps = capture.get(cv2.CAP_PROP_FPS)
             count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -78,7 +78,7 @@ def export(title, *, overwrite=False, progress=print):
         # Gate events are read independently at request time, not frozen into
         # the expensive tracking export or included in its source signature.
         gate = {"events": [], "gate": None}
-        source_paths = [scene.video_path, engine.cache_path, scene.detections_dir / "metadata.json"]
+        source_paths = [scene.mosaic_path, engine.cache_path, scene.detections_dir / "metadata.json"]
         sources = [{"path": p.relative_to(PROJECT).as_posix(), "stat": signature(p),
                     "sha256": file_digest(str(p), **signature(p))} for p in source_paths]
         digest = config_digest()
@@ -115,7 +115,7 @@ def export(title, *, overwrite=False, progress=print):
         manifest = {"schema_version": 1, "title": title, "cache_id": cache_id,
                     "generated_at": datetime.now(timezone.utc).isoformat(),
                     "fps": fps, "frame_count": count, "duration": count / fps,
-                    "video_path": scene.video_path.relative_to(PROJECT).as_posix(),
+                    "video_path": scene.mosaic_path.relative_to(PROJECT).as_posix(),
                     "frames_file": frames_path.name, "index_file": index_file.name,
                     "sources": sources, "config_digest": digest,
                     "scene": engine.scene_info(),
