@@ -1,6 +1,6 @@
 // Drawing code from the repository viewer, shared without a second renderer.
 // Tracking, state classification and BEV projection remain in server.py/src.
-import { collapseBevItems, detectionLabel, globalVehicleLabel, isExpiredParked } from "./bev_items.js";
+import { collapseBevItems, detectionLabel, globalVehicleColor, globalVehicleLabel, isExpiredParked } from "./bev_items.js";
 export const STATE_COLORS = {
     UNKNOWN: "#8b929c",
     ACTIVE: "#22e86f",
@@ -231,7 +231,10 @@ export function drawBevTracking(
             *
             layout.scale;
 
+        // GID가 있으면 카메라가 바뀌어도 같은 색, 없으면 카메라 색.
         const cameraColor =
+            globalVehicleColor(item.global_id)
+            ||
             CAMERA_COLORS[
                 item.camera_id
             ]

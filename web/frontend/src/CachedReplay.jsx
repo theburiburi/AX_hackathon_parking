@@ -1,14 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ReplayBuffer, gateEventsForTime, replayTracks, replayZoneCountsFromTracks, watchReplayMedia, watchReplayKeyboard } from "./replayBuffer";
 import { drawCameraLabel, drawDetection, drawBevTracking } from "../../viewer-rendering.js";
-import { collapseBevItems, globalVehicleLabel, pathUntil } from "../../bev_items.js";
+import { collapseBevItems, globalVehicleColor, globalVehicleLabel, pathUntil } from "../../bev_items.js";
 import { watchReplayVideoState } from "./replayVehicleSync";
 import { createReplayCanvas } from "./replayCanvas";
 import { useDemoState } from "./DemoSync";
 import "./cached-replay.css";
 
 const COLORS = ["#2563eb", "#0891b2", "#7c3aed", "#ea580c", "#059669", "#db2777", "#4f46e5"];
-const PATH_COLORS = ["#ff5d5d", "#38bdf8", "#facc15", "#a78bfa", "#34d399", "#fb923c", "#f472b6", "#22d3ee", "#a3e635", "#e879f9"];
 const clock = n => `${Math.floor(n / 60).toString().padStart(2, "0")}:${Math.floor(n % 60).toString().padStart(2, "0")}`;
 const gatePlate = value => {
   const plate = typeof value === "string" ? value.trim() : "";
@@ -55,7 +54,7 @@ export function ReplayPathLayer({ map, paths, frameIndex }) {
   const line = points => points.map(([x, y]) => `${x},${y}`).join(" ");
   return <svg className="replay-path-layer" viewBox={`0 0 ${map.width} ${map.height}`} aria-label="차량별 이동 경로">
     {drawn.map(path => {
-      const color = PATH_COLORS[(path.id - 1) % PATH_COLORS.length];
+      const color = globalVehicleColor(path.id);
       return <g key={path.id} stroke={color} fill="none">
         {path.gaps.map((gap, index) => <polyline key={`gap${index}`} points={line(gap)} className="gap" />)}
         {path.runs.map((run, index) => <polyline key={`run${index}`} points={line(run)} />)}

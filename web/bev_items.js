@@ -3,6 +3,17 @@ export function globalVehicleLabel(globalId) {
     return globalId == null ? null : `G${String(globalId).padStart(3, "0")}`;
 }
 
+// One color per Global ID, shared by the BEV marker and its path, so a car
+// keeps its color while it moves between cameras.
+export const GLOBAL_ID_COLORS = ["#ff5d5d", "#38bdf8", "#facc15", "#a78bfa", "#34d399",
+    "#fb923c", "#f472b6", "#22d3ee", "#a3e635", "#e879f9"];
+
+export function globalVehicleColor(globalId) {
+    if (globalId == null) return null;
+    const index = (Number(globalId) - 1) % GLOBAL_ID_COLORS.length;
+    return GLOBAL_ID_COLORS[(index + GLOBAL_ID_COLORS.length) % GLOBAL_ID_COLORS.length];
+}
+
 // A confirmed Global ID is shown in every state (a parked car keeps its
 // number). Before confirmation, a provisional candidate is shown with "?",
 // falling back to the unverified best candidate (display only).

@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { collapseBevItems, detectionLabel, globalVehicleLabel, isExpiredParked, pathUntil } = require("../web/bev_items.js");
+const { collapseBevItems, detectionLabel, globalVehicleColor, globalVehicleLabel, isExpiredParked, pathUntil } = require("../web/bev_items.js");
 
 test("parked cars disappear 15 s after becoming PARKED", () => {
     assert.equal(isExpiredParked({ state: "PARKED", stopped_seconds: 19.9 }), false);
@@ -76,4 +76,11 @@ test("path mode draws up to the current frame and links camera gaps", () => {
     assert.deepEqual(late.gaps, [[[20, 0], [80, 40]]]);
     assert.deepEqual(late.last, [90, 40]);
     assert.equal(pathUntil(points, -1, 30).last, null);
+});
+
+test("a Global ID keeps one color whichever camera sees it", () => {
+    assert.equal(globalVehicleColor(7), globalVehicleColor("7"));
+    assert.notEqual(globalVehicleColor(1), globalVehicleColor(2));
+    assert.equal(globalVehicleColor(1), globalVehicleColor(11));
+    assert.equal(globalVehicleColor(null), null);
 });
