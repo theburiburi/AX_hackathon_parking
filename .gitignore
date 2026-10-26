@@ -67,3 +67,6 @@ data/detections/
 # 영상 제작 빌드 결과, npm 패키지
 video-production/dist/
 node_modules/
+
+# 이미지 (공개 저장소에 올리지 않음)
+*.png
