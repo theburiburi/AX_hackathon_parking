@@ -52,3 +52,18 @@ data/*/detections.jsonl.tmp
 
 # 웹 비밀 키 (커밋 금지)
 web/.secret-key
+
+# 영상 파일 (용량이 커서 제외)
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+data/videos/
+
+# YOLO 결과 bbox (data/detections/<title>/detections.jsonl, 100MB 넘음)
+data/detections/
+
+# 영상 제작 빌드 결과, npm 패키지
+video-production/dist/
+node_modules/

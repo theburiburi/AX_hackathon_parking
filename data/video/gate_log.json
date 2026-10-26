@@ -1,7 +1,7 @@
 {
   "video": "video",
-  "description": "사용자 제공 상태 기준 차단기 입출차 시나리오. 주차 완료 기록은 data/parking_logs/parking_log.json에서 관리한다.",
-  "start_time": "07:32:15",
+  "description": "scripts/04_detect_gate_events.py 가 자동 감지한 입출차 기록. 구역 설정: config/gate.yaml",
+  "start_time": null,
   "fps": 30.0,
   "gate": {
     "id": "GATE-01",
@@ -10,145 +10,194 @@
   },
   "events": [
     {
-      "sequence": 1,
-      "frame": 240,
-      "time": "07:32:23",
-      "elapsed_seconds": 8,
+      "frame": 246,
+      "time": "00:00:08.200",
       "type": "IN",
       "label": "입차",
       "plate": "11가1111",
-      "scenario_vehicle_id": 1,
-      "vehicle_type": "검정 쉐보레",
-      "camera_id": "cam01",
-      "track_id": null,
-      "detail": "1번 · 검정 쉐보레 · +8초"
+      "detail": "cam01 L012 · car · 겹침 0.31→0.52",
+      "track_id": 12,
+      "position": [
+        531.0,
+        307.3
+      ],
+      "bbox": [
+        382.0,
+        180.7,
+        663.3,
+        311.0
+      ]
     },
     {
-      "sequence": 2,
-      "frame": 810,
-      "time": "07:32:42",
-      "elapsed_seconds": 27,
+      "frame": 836,
+      "time": "00:00:27.867",
       "type": "IN",
       "label": "입차",
       "plate": "22나2222",
-      "scenario_vehicle_id": 2,
-      "vehicle_type": "실버 스파크",
-      "camera_id": "cam01",
-      "track_id": null,
-      "detail": "2번 · 실버 스파크 · +27초"
+      "detail": "cam01 L025 · car · 겹침 0.32→0.54",
+      "track_id": 25,
+      "position": [
+        510.7,
+        309.3
+      ],
+      "bbox": [
+        381.3,
+        176.3,
+        608.0,
+        315.0
+      ]
     },
     {
-      "sequence": 4,
-      "frame": 3660,
-      "time": "07:34:17",
-      "elapsed_seconds": 122,
+      "frame": 3675,
+      "time": "00:02:02.500",
       "type": "IN",
       "label": "입차",
       "plate": "33다3333",
-      "scenario_vehicle_id": 3,
-      "vehicle_type": "하얀색 모닝",
-      "camera_id": "cam01",
-      "track_id": null,
-      "detail": "3번 · 하얀색 모닝 · +122초"
+      "detail": "cam01 L089 · car · 겹침 0.32→0.53",
+      "track_id": 89,
+      "position": [
+        506.0,
+        310.7
+      ],
+      "bbox": [
+        382.0,
+        179.2,
+        608.7,
+        314.2
+      ]
     },
     {
-      "sequence": 6,
-      "frame": 4050,
-      "time": "07:34:30",
-      "elapsed_seconds": 135,
+      "frame": 4061,
+      "time": "00:02:15.367",
       "type": "IN",
       "label": "입차",
       "plate": "44라4444",
-      "scenario_vehicle_id": 4,
-      "vehicle_type": "검정 SUV",
-      "camera_id": "cam01",
-      "track_id": null,
-      "detail": "4번 · 검정 SUV · +135초"
+      "detail": "cam01 L086 · car · 겹침 0.30→0.51",
+      "track_id": 86,
+      "position": [
+        520.0,
+        304.7
+      ],
+      "bbox": [
+        379.3,
+        160.2,
+        644.7,
+        306.8
+      ]
     },
     {
-      "sequence": 7,
-      "frame": 4590,
-      "time": "07:34:48",
-      "elapsed_seconds": 153,
+      "frame": 4576,
+      "time": "00:02:32.533",
       "type": "IN",
       "label": "입차",
       "plate": "55마5555",
-      "scenario_vehicle_id": 5,
-      "vehicle_type": "검정 K8",
-      "camera_id": "cam01",
-      "track_id": null,
-      "detail": "5번 · 검정 K8 · +153초"
+      "detail": "cam01 L122 · car · 겹침 0.31→0.52",
+      "track_id": 122,
+      "position": [
+        540.3,
+        310.0
+      ],
+      "bbox": [
+        384.7,
+        184.3,
+        667.3,
+        315.7
+      ]
     },
     {
-      "sequence": 9,
-      "frame": 4950,
-      "time": "07:35:00",
-      "elapsed_seconds": 165,
+      "frame": 4972,
+      "time": "00:02:45.733",
       "type": "IN",
       "label": "입차",
       "plate": "66바6666",
-      "scenario_vehicle_id": 6,
-      "vehicle_type": "검정색 카니발",
-      "camera_id": "cam01",
-      "track_id": null,
-      "detail": "6번 · 검정색 카니발 · +165초"
+      "detail": "cam01 L126 · car · 겹침 0.31→0.52",
+      "track_id": 126,
+      "position": [
+        526.0,
+        307.0
+      ],
+      "bbox": [
+        380.7,
+        152.7,
+        658.0,
+        309.7
+      ]
     },
     {
-      "sequence": 12,
-      "frame": 7590,
-      "time": "07:36:28",
-      "elapsed_seconds": 253,
+      "frame": 7602,
+      "time": "00:04:13.400",
       "type": "OUT",
       "label": "출차",
       "plate": "77사7777",
-      "scenario_vehicle_id": 7,
-      "vehicle_type": "실버 아반떼",
-      "camera_id": "cam01",
-      "track_id": null,
-      "detail": "7번 · 실버 아반떼 · L구역에서 출차 · +253초",
-      "zone": "L"
+      "detail": "cam01 L173 · car · 겹침 0.32→0.55",
+      "track_id": 173,
+      "position": [
+        478.0,
+        588.7
+      ],
+      "bbox": [
+        230.7,
+        294.2,
+        766.7,
+        576.7
+      ]
     },
     {
-      "sequence": 14,
-      "frame": 8610,
-      "time": "07:37:02",
-      "elapsed_seconds": 287,
+      "frame": 8614,
+      "time": "00:04:47.133",
       "type": "IN",
       "label": "입차",
       "plate": "88아8888",
-      "scenario_vehicle_id": 8,
-      "vehicle_type": "검정 팰리세이드",
-      "camera_id": "cam01",
-      "track_id": null,
-      "detail": "8번 · 검정 팰리세이드 · +287초"
+      "detail": "cam01 L205 · car · 겹침 0.32→0.52",
+      "track_id": 205,
+      "position": [
+        526.7,
+        308.0
+      ],
+      "bbox": [
+        380.7,
+        156.5,
+        654.0,
+        310.8
+      ]
     },
     {
-      "sequence": 15,
-      "frame": 8790,
-      "time": "07:37:08",
-      "elapsed_seconds": 293,
+      "frame": 8800,
+      "time": "00:04:53.333",
       "type": "IN",
       "label": "입차",
       "plate": "99자9999",
-      "scenario_vehicle_id": 9,
-      "vehicle_type": "검정 쉐보레세단",
-      "camera_id": "cam01",
-      "track_id": null,
-      "detail": "9번 · 검정 쉐보레세단 · +293초"
+      "detail": "cam01 L213 · car · 겹침 0.31→0.52",
+      "track_id": 213,
+      "position": [
+        528.7,
+        300.7
+      ],
+      "bbox": [
+        377.3,
+        176.3,
+        646.7,
+        305.7
+      ]
     },
     {
-      "sequence": 17,
       "frame": 12060,
-      "time": "07:38:57",
-      "elapsed_seconds": 402,
+      "time": "00:06:42.000",
       "type": "IN",
       "label": "입차",
       "plate": "10차1010",
-      "scenario_vehicle_id": 10,
-      "vehicle_type": "검정 세단",
-      "camera_id": "cam01",
-      "track_id": null,
-      "detail": "10번 · 검정 세단 · +402초"
+      "detail": "cam01 L267 · car · 겹침 0.33→0.57",
+      "track_id": 267,
+      "position": [
+        526.7,
+        299.0
+      ],
+      "bbox": [
+        369.3,
+        178.3,
+        646.7,
+        305.0
+      ]
     }
   ]
 }

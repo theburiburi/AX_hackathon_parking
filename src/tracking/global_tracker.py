@@ -188,23 +188,14 @@ class GlobalTrack:
     def label(self) -> str:
         return f"G{self.global_id:03d}"
 
-
     def predicted_position(
         self,
         timestamp: float,
     ) -> tuple[float, float]:
-
-        time_gap = max(
-            0.0,
-            float(timestamp) - self.last_seen,
-        )
-
+        time_gap = max(0.0, float(timestamp) - self.last_seen)
         return (
-            self.last_bev_x
-            + self.velocity_x * time_gap,
-
-            self.last_bev_y
-            + self.velocity_y * time_gap,
+            self.last_bev_x + self.velocity_x * time_gap,
+            self.last_bev_y + self.velocity_y * time_gap,
         )
 
 
@@ -407,155 +398,46 @@ class GlobalTracker:
     @staticmethod
     def _linear_velocity(
         history: deque[BevSample],
-    ) -> tuple[
-        float,
-        float,
-    ]:
-
+    ) -> tuple[float, float]:
         if len(history) < 2:
-            return (
-                0.0,
-                0.0,
-            )
+            return 0.0, 0.0
 
-        samples = list(
-            history
-        )
-
-        mean_t = (
-            sum(
-                sample.timestamp
-                for sample in samples
-            )
-            /
-            len(samples)
-        )
-
-        mean_x = (
-            sum(
-                sample.x
-                for sample in samples
-            )
-            /
-            len(samples)
-        )
-
-        mean_y = (
-            sum(
-                sample.y
-                for sample in samples
-            )
-            /
-            len(samples)
-        )
-
-        denominator = sum(
-            (
-                sample.timestamp
-                -
-                mean_t
-            )
-            ** 2
-            for sample in samples
-        )
+        samples = list(history)
+        mean_t = sum(sample.timestamp for sample in samples) / len(samples)
+        mean_x = sum(sample.x for sample in samples) / len(samples)
+        mean_y = sum(sample.y for sample in samples) / len(samples)
+        denominator = sum((sample.timestamp - mean_t) ** 2 for sample in samples)
 
         if denominator <= 1e-9:
-            return (
-                0.0,
-                0.0,
-            )
+            return 0.0, 0.0
 
-        velocity_x = (
-            sum(
-                (
-                    sample.timestamp
-                    -
-                    mean_t
-                )
-                *
-                (
-                    sample.x
-                    -
-                    mean_x
-                )
-                for sample in samples
-            )
-            /
-            denominator
-        )
-
-        velocity_y = (
-            sum(
-                (
-                    sample.timestamp
-                    -
-                    mean_t
-                )
-                *
-                (
-                    sample.y
-                    -
-                    mean_y
-                )
-                for sample in samples
-            )
-            /
-            denominator
-        )
-
-        return (
-            velocity_x,
-            velocity_y,
-        )
+        velocity_x = sum(
+            (sample.timestamp - mean_t) * (sample.x - mean_x)
+            for sample in samples
+        ) / denominator
+        velocity_y = sum(
+            (sample.timestamp - mean_t) * (sample.y - mean_y)
+            for sample in samples
+        ) / denominator
+        return velocity_x, velocity_y
 
     @staticmethod
     def _direction(
         velocity_x: float,
         velocity_y: float,
-    ) -> tuple[
-        float,
-        float,
-        float,
-    ]:
-
-        speed = math.hypot(
-            velocity_x,
-            velocity_y,
-        )
-
+    ) -> tuple[float, float, float]:
+        speed = math.hypot(velocity_x, velocity_y)
         if speed <= 1e-9:
-            return (
-                0.0,
-                0.0,
-                0.0,
-            )
-
-        return (
-            velocity_x / speed,
-            velocity_y / speed,
-            speed,
-        )
+            return 0.0, 0.0, 0.0
+        return velocity_x / speed, velocity_y / speed, speed
 
     def _trim_history(
         self,
         history: deque[BevSample],
         timestamp: float,
     ) -> None:
-
-        keep_after = (
-            timestamp
-            -
-            self.motion_history_sec
-        )
-
-        while (
-            len(history) > 2
-            and
-            history[0].timestamp
-            <
-            keep_after
-        ):
-
+        keep_after = timestamp - self.motion_history_sec
+        while len(history) > 2 and history[0].timestamp < keep_after:
             history.popleft()
 
     def _append_global_history(
@@ -563,60 +445,23 @@ class GlobalTracker:
         global_track: GlobalTrack,
         observation: GlobalObservation,
     ) -> None:
-
         global_track.bev_history.append(
             BevSample(
-                timestamp=(
-                    observation.timestamp
-                ),
-                x=(
-                    observation.bev_x
-                ),
-                y=(
-                    observation.bev_y
-                ),
+                timestamp=observation.timestamp,
+                x=observation.bev_x,
+                y=observation.bev_y,
             )
         )
+        self._trim_history(global_track.bev_history, observation.timestamp)
 
-        self._trim_history(
-            global_track.bev_history,
-            observation.timestamp,
-        )
+        velocity_x, velocity_y = self._linear_velocity(global_track.bev_history)
+        direction_x, direction_y, speed = self._direction(velocity_x, velocity_y)
 
-        velocity_x, velocity_y = (
-            self._linear_velocity(
-                global_track.bev_history
-            )
-        )
-
-        (
-            direction_x,
-            direction_y,
-            speed,
-        ) = self._direction(
-            velocity_x,
-            velocity_y,
-        )
-
-        global_track.velocity_x = (
-            velocity_x
-        )
-
-        global_track.velocity_y = (
-            velocity_y
-        )
-
-        global_track.direction_x = (
-            direction_x
-        )
-
-        global_track.direction_y = (
-            direction_y
-        )
-
-        global_track.speed_px_per_sec = (
-            speed
-        )
+        global_track.velocity_x = velocity_x
+        global_track.velocity_y = velocity_y
+        global_track.direction_x = direction_x
+        global_track.direction_y = direction_y
+        global_track.speed_px_per_sec = speed
 
     def _append_probe_history(
         self,
@@ -894,74 +739,39 @@ class GlobalTracker:
         self,
         global_track: GlobalTrack,
         observation: GlobalObservation,
-        local_velocity: tuple[
-            float,
-            float,
-        ]
-        |
-        None = None,
+        local_velocity: tuple[float, float] | None = None,
         max_time_gap_sec: float | None = None,
-    ) -> tuple[
-        float,
-        float,
-        float,
-        float | None,
-    ] | None:
-
+    ) -> tuple[float, float, float, float | None] | None:
         changing_camera = observation.camera_id != global_track.current_camera_id
         # A fresh local ID in the current camera should not inherit a car that
         # just left the same view. Cross-camera matches use BEV and time.
         if not changing_camera and observation.local_key not in global_track.local_keys:
             return None
 
-        time_gap = (
-            observation.timestamp
-            -
-            global_track.last_seen
+        time_gap = observation.timestamp - global_track.last_seen
+        max_gap = (
+            self.max_reid_gap_sec
+            if max_time_gap_sec is None
+            else max_time_gap_sec
         )
-
-        max_gap = self.max_reid_gap_sec if max_time_gap_sec is None else max_time_gap_sec
-        if (
-            time_gap < 0.0
-            or
-            time_gap
-            >
-            max_gap
-        ):
-
+        if time_gap < 0.0 or time_gap > max_gap:
             return None
 
         # 기존 차량이 이전 속도와 방향을 그대로 유지했다고 가정한
         # 현재 시점 예상 위치.
-        (
-            predicted_x,
-            predicted_y,
-        ) = global_track.predicted_position(
+        predicted_x, predicted_y = global_track.predicted_position(
             observation.timestamp
         )
-
         predicted_distance = math.hypot(
-
-            observation.bev_x
-            -
-            predicted_x,
-
-            observation.bev_y
-            -
-            predicted_y,
+            observation.bev_x - predicted_x,
+            observation.bev_y - predicted_y,
         )
-
         last_distance = math.hypot(
             observation.bev_x - global_track.last_bev_x,
             observation.bev_y - global_track.last_bev_y,
         )
 
-        allowed_distance = (
-            self._allowed_distance(
-                time_gap
-            )
-        )
-
+        allowed_distance = self._allowed_distance(time_gap)
         overlapping_view = (
             changing_camera and time_gap <= self.overlap_window_sec
             and predicted_distance <= self.overlap_match_distance_px
@@ -986,191 +796,71 @@ class GlobalTracker:
             spatial_distance / max(allowed_distance, 1.0)
             + (0.20 if use_last_position else 0.0)
         )
-
-        time_score = (
-            time_gap
-            /
-            max(
-                max_gap,
-                0.001,
-            )
-        )
+        time_score = time_gap / max(max_gap, 0.001)
 
         direction_score = None
         speed_score = None
         direction_angle = None
 
         if local_velocity is not None:
+            local_velocity_x, local_velocity_y = local_velocity
+            _, _, local_speed = self._direction(local_velocity_x, local_velocity_y)
+            global_speed = global_track.speed_px_per_sec
 
-            (
-                local_velocity_x,
-                local_velocity_y,
-            ) = local_velocity
-
-            (
-                _,
-                _,
-                local_speed,
-            ) = self._direction(
-                local_velocity_x,
-                local_velocity_y,
-            )
-
-            global_speed = (
-                global_track.speed_px_per_sec
-            )
-
-            if (
-                local_speed
-                >=
-                self.min_direction_speed_px_per_sec
-                and
-                global_speed
-                >=
-                self.min_direction_speed_px_per_sec
-            ):
-
-                direction_angle = (
-                    self._angle_degrees(
-
-                        global_track.direction_x,
-                        global_track.direction_y,
-
-                        local_velocity_x,
-                        local_velocity_y,
-                    )
+            if (local_speed >= self.min_direction_speed_px_per_sec
+                    and global_speed >= self.min_direction_speed_px_per_sec):
+                direction_angle = self._angle_degrees(
+                    global_track.direction_x,
+                    global_track.direction_y,
+                    local_velocity_x,
+                    local_velocity_y,
                 )
 
                 # 거의 반대 방향이면 같은 차량으로 보지 않는다.
-                if (
-                    direction_angle is not None
-                    and
-                    direction_angle
-                    >
-                    self.direction_hard_limit_deg
-                ):
-
+                if (direction_angle is not None
+                        and direction_angle > self.direction_hard_limit_deg):
                     return None
 
                 if direction_angle is not None:
-
                     direction_score = min(
                         1.0,
-                        direction_angle
-                        /
-                        max(
-                            self.direction_soft_limit_deg,
-                            1.0,
-                        ),
+                        direction_angle / max(self.direction_soft_limit_deg, 1.0),
                     )
 
                 speed_score = (
-                    abs(
-                        global_speed
-                        -
-                        local_speed
-                    )
-                    /
-                    max(
-                        global_speed,
-                        local_speed,
-                        self.min_direction_speed_px_per_sec,
-                        1.0,
+                    abs(global_speed - local_speed)
+                    / max(
+                        global_speed, local_speed,
+                        self.min_direction_speed_px_per_sec, 1.0,
                     )
                 )
 
         # 방향/속도가 아직 계산되지 않은 초기 probe에서는
         # 해당 항목을 score에서 제외하고 나머지 가중치를 재정규화한다.
-        weighted_sum = (
-            self.prediction_weight
-            *
-            position_score
-        )
-
-        weight_sum = (
-            self.prediction_weight
-        )
+        weighted_sum = self.prediction_weight * position_score
+        weight_sum = self.prediction_weight
 
         if self.time_weight > 0.0:
-
-            weighted_sum += (
-                self.time_weight
-                *
-                time_score
-            )
-
-            weight_sum += (
-                self.time_weight
-            )
-
-        if (
-            direction_score is not None
-            and
-            self.direction_weight > 0.0
-        ):
-
-            weighted_sum += (
-                self.direction_weight
-                *
-                direction_score
-            )
-
-            weight_sum += (
-                self.direction_weight
-            )
-
-        if (
-            speed_score is not None
-            and
-            self.speed_weight > 0.0
-        ):
-
-            weighted_sum += (
-                self.speed_weight
-                *
-                speed_score
-            )
-
-            weight_sum += (
-                self.speed_weight
-            )
-
+            weighted_sum += self.time_weight * time_score
+            weight_sum += self.time_weight
+        if direction_score is not None and self.direction_weight > 0.0:
+            weighted_sum += self.direction_weight * direction_score
+            weight_sum += self.direction_weight
+        if speed_score is not None and self.speed_weight > 0.0:
+            weighted_sum += self.speed_weight * speed_score
+            weight_sum += self.speed_weight
         if weight_sum <= 1e-9:
             return None
 
-        score = (
-            weighted_sum
-            /
-            weight_sum
-        )
-
-        if (
-            global_track.class_name
-            !=
-            observation.class_name
-        ):
-
-            score += (
-                self.class_mismatch_penalty
-            )
-
+        score = weighted_sum / weight_sum
+        if global_track.class_name != observation.class_name:
+            score += self.class_mismatch_penalty
         if overlapping_view:
             score = max(0.0, score - self.overlap_score_bonus)
-
-        if (
-            score
-            >
-            self.max_match_score
-        ):
-
+        if score > self.max_match_score:
             return None
 
-        return (
-            score,
-            spatial_distance,
-            time_gap,
-            direction_angle,
-        )
+        return score, spatial_distance, time_gap, direction_angle
 
     def _candidate_list(
         self,

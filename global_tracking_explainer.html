@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101a2c">
+  <title>카메라가 바뀌어도 같은 차량일까?</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b1220;
+      --panel: #121d30;
+      --panel-soft: #17243a;
+      --text: #eef4ff;
+      --muted: #a8b7ce;
+      --line: #2d3d56;
+      --cyan: #62d6e8;
+      --lime: #b8ee85;
+      --amber: #ffce76;
+      --pink: #ff94b8;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(ellipse at 12% 0%, #1a3150 0, transparent 40rem),
+        var(--bg);
+      color: var(--text);
+      font: 16px/1.65 Inter, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    }
+
+    a { color: var(--cyan); }
+
+    .page {
+      width: min(1080px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 52px 0 80px;
+    }
+
+    .eyebrow {
+      color: var(--cyan);
+      font-size: .78rem;
+      font-weight: 800;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      max-width: 850px;
+      margin: 12px 0 14px;
+      font-size: clamp(2.2rem, 6vw, 4.5rem);
+      letter-spacing: -.055em;
+      line-height: 1.08;
+    }
+
+    h2 {
+      margin: 0 0 10px;
+      font-size: clamp(1.4rem, 3vw, 2rem);
+      letter-spacing: -.035em;
+    }
+
+    h3 { margin: 0 0 8px; font-size: 1.08rem; }
+    p { margin: 8px 0; }
+    .lead { max-width: 720px; color: var(--muted); font-size: 1.15rem; }
+
+    .hero, .card, .takeaway {
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: color-mix(in srgb, var(--panel) 94%, transparent);
+    }
+
+    .hero { margin: 30px 0 24px; padding: 24px; }
+    .hero-label, .tag {
+      color: var(--muted);
+      font-size: .76rem;
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      align-items: stretch;
+      gap: 22px;
+      margin-top: 16px;
+    }
+
+    .step {
+      position: relative;
+      min-height: 105px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--panel-soft);
+    }
+
+    .step:not(:last-child)::after {
+      position: absolute;
+      top: 34px;
+      right: -18px;
+      color: var(--cyan);
+      content: "→";
+      font-size: 1.2rem;
+      font-weight: 800;
+    }
+
+    .step b { display: block; margin-bottom: 4px; }
+    .step span { color: var(--muted); font-size: .9rem; }
+
+    .section { margin-top: 54px; }
+    .section-intro { margin-bottom: 18px; color: var(--muted); }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .card { padding: 22px; }
+    .card p { color: var(--muted); }
+    .source {
+      display: inline-block;
+      margin: 8px 0 12px;
+      color: var(--cyan);
+      font-size: .9rem;
+      font-weight: 700;
+    }
+
+    pre {
+      overflow-x: auto;
+      margin: 12px 0;
+      padding: 16px;
+      border: 1px solid #263751;
+      border-radius: 12px;
+      background: #09111e;
+      color: #dce8fa;
+      font: .9rem/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      tab-size: 4;
+    }
+
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .cyan { color: var(--cyan); }
+    .lime { color: var(--lime); }
+    .amber { color: var(--amber); }
+    .pink { color: var(--pink); }
+
+    .equation {
+      margin: 14px 0;
+      padding: 12px 16px;
+      border-left: 3px solid var(--cyan);
+      background: #0d1828;
+      color: var(--text);
+      font: 1rem/1.7 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .weights {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin: 16px 0;
+    }
+
+    .weight {
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--panel-soft);
+    }
+
+    .weight b { display: block; color: var(--cyan); font-size: 1.35rem; }
+    .weight span { color: var(--muted); font-size: .88rem; }
+
+    .callout {
+      margin-top: 16px;
+      padding: 14px 16px;
+      border: 1px solid #61502f;
+      border-radius: 12px;
+      background: #261f16;
+      color: #ffe5b0;
+    }
+
+    .takeaway {
+      margin-top: 48px;
+      padding: 24px;
+      border-color: #326070;
+      background: linear-gradient(120deg, #142b3c, #14243a);
+    }
+
+    .talk-track {
+      margin-top: 14px;
+      padding: 16px;
+      border-radius: 12px;
+      background: #0b1724;
+      color: #dce8fa;
+    }
+
+    .footnote { margin-top: 24px; color: var(--muted); font-size: .86rem; }
+
+    @media (max-width: 760px) {
+      .page { width: min(100% - 28px, 620px); padding-top: 34px; }
+      .flow { grid-template-columns: 1fr; gap: 10px; }
+      .step { min-height: auto; }
+      .step:not(:last-child)::after {
+        top: auto;
+        right: 16px;
+        bottom: -17px;
+        z-index: 1;
+        content: "↓";
+      }
+      .grid { grid-template-columns: 1fr; }
+      .weights { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media print {
+      :root { color-scheme: light; --bg: #fff; --panel: #fff; --panel-soft: #f4f7fb; --text: #142033; --muted: #475569; --line: #ccd5e1; }
+      body { background: #fff; color: var(--text); }
+      .page { width: 100%; padding: 0; }
+      .hero, .card, .takeaway, .step, .weight { break-inside: avoid; box-shadow: none; }
+      pre, .talk-track { background: #f4f7fb; color: #142033; }
+      .section { margin-top: 32px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <div class="eyebrow">AX Parking · Tracking overview</div>
+      <h1>카메라가 바뀌어도<br>같은 차량일까?</h1>
+      <p class="lead">
+        차량의 BEV 위치 기록으로 움직임을 추정하고, 화면에서 사라진 동안의 예상 위치와
+        재등장한 차량의 움직임을 비교해 Global ID를 이어 붙이는 흐름입니다.
+      </p>
+    </header>
+
+    <section class="hero" aria-label="처리 흐름">
+      <div class="hero-label">한눈에 보는 흐름</div>
+      <div class="flow">
+        <div class="step"><b>① 위치 기록</b><span>차량 중심을 BEV 좌표로 모음</span></div>
+        <div class="step"><b>② 속도 추정</b><span>최근 좌표에서 vx, vy 계산</span></div>
+        <div class="step"><b>③ 위치 예측</b><span>마지막 위치에서 직선 외삽</span></div>
+        <div class="step"><b>④ 후보 비교</b><span>거리·시간·방향·속도 점수화</span></div>
+        <div class="step"><b>⑤ ID 연결</b><span>가장 그럴듯한 Global ID 선택</span></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>1. 위치 기록에서 속도와 방향을 구한다</h2>
+      <p class="section-intro">
+        BEV 좌표는 카메라 영상의 점을 탑뷰 좌표로 바꾼 위치입니다.
+        최근 위치 여러 개에 선형 회귀를 적용해 X/Y축 속도를 각각 구합니다.
+      </p>
+      <div class="grid">
+        <article class="card">
+          <div class="tag">코드에서 볼 곳 · 399–464행</div>
+          <a class="source" href="src/tracking/global_tracker.py">global_tracker.py · _linear_velocity / _direction / _append_global_history</a>
+          <pre><code><span class="cyan">vx</span> = 위치 변화량(x) / 시간 변화량
+<span class="cyan">vy</span> = 위치 변화량(y) / 시간 변화량
+
+<span class="lime">speed</span> = hypot(vx, vy)
+<span class="lime">direction</span> = (vx / speed, vy / speed)</code></pre>
+          <p>
+            실제 코드는 최근 샘플의 평균을 기준으로 선형 회귀를 계산합니다.
+            두 성분 <code>velocity_x</code>, <code>velocity_y</code>가 속도 벡터이고,
+            정규화한 벡터가 방향입니다.
+          </p>
+        </article>
+        <article class="card">
+          <div class="tag">트랙에 보관되는 값 · 148–199행</div>
+          <a class="source" href="src/tracking/global_tracker.py">global_tracker.py · GlobalTrack / predicted_position</a>
+          <pre><code>last_bev_x, last_bev_y  # 마지막 위치
+velocity_x, velocity_y  # BEV 속도 벡터
+direction_x, direction_y
+speed_px_per_sec</code></pre>
+          <p>
+            매 프레임 위치를 쌓고 속도를 다시 계산합니다.
+            기록 길이는 설정의 <code>motion_history_sec</code>를 따릅니다.
+          </p>
+          <div class="equation">설정값: 최근 0.8초의 BEV 위치 사용</div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>2. 사라진 동안의 위치를 예측한다</h2>
+      <p class="section-intro">
+        복잡한 차량 동역학 모델이 아니라, 마지막 속도가 잠시 유지된다는 가정의 직선 예측입니다.
+      </p>
+      <article class="card">
+        <div class="tag">코드에서 볼 곳 · 191–199행</div>
+        <a class="source" href="src/tracking/global_tracker.py">global_tracker.py · GlobalTrack.predicted_position</a>
+        <div class="equation">
+          예상 위치 = 마지막 BEV 위치 + 속도 벡터 × 경과 시간
+        </div>
+        <pre><code>predicted_x = last_bev_x + velocity_x * time_gap
+predicted_y = last_bev_y + velocity_y * time_gap</code></pre>
+        <p>
+          이 예상 위치와 새 카메라에서 관측된 BEV 위치 사이의 거리가 후보 평가에 쓰입니다.
+        </p>
+      </article>
+    </section>
+
+    <section class="section">
+      <h2>3. 새 관측이 기존 차량인지 점수로 비교한다</h2>
+      <p class="section-intro">
+        시간 간격이 허용 범위 안인지 먼저 확인하고, 위치가 너무 멀면 후보에서 제외합니다.
+        남은 후보는 낮은 점수일수록 더 잘 맞는 것으로 봅니다.
+      </p>
+      <article class="card">
+        <div class="tag">코드에서 볼 곳 · 738–863행</div>
+        <a class="source" href="src/tracking/global_tracker.py">global_tracker.py · _candidate_score</a>
+        <div class="weights">
+          <div class="weight"><b>55%</b><span>예측 위치와의 거리</span></div>
+          <div class="weight"><b>25%</b><span>진행 방향 차이</span></div>
+          <div class="weight"><b>10%</b><span>시간 간격</span></div>
+          <div class="weight"><b>10%</b><span>속력 차이</span></div>
+        </div>
+        <pre><code>총점 = 가중 평균(위치 점수, 방향 점수, 시간 점수, 속력 점수)
+점수 &gt; max_match_score → 후보에서 제외
+후보 목록 → 점수가 낮은 순으로 정렬</code></pre>
+        <p>
+          설정 출처: <a href="config/global_tracking.yaml">global_tracking.yaml · 110–143행</a>.
+          방향·속력은 양쪽 모두 최소 속도 기준을 넘었을 때만 점수에 들어갑니다.
+          아직 움직임 정보가 부족하면 해당 항목을 빼고 나머지 가중치를 다시 정규화합니다.
+        </p>
+        <div class="callout">
+          <b>해석할 때 주의:</b> 이 점수는 확률이 아닙니다. 코드의 규칙에 따라 후보를 비교하는 비용 점수이며,
+          값이 작을수록 선호됩니다.
+        </div>
+      </article>
+    </section>
+
+    <section class="section">
+      <h2>4. 방향이 바뀌거나 속도가 느릴 때는?</h2>
+      <div class="grid">
+        <article class="card">
+          <div class="tag">방향 반대 후보 제외 · 설정 143행</div>
+          <p>
+            속도 정보가 충분한데 방향 차이가 <code>direction_hard_limit_deg</code>보다 크면
+            같은 차량 후보로 보지 않습니다. 현재 설정 한계는 120°입니다.
+          </p>
+          <p>
+            단, 이 기준을 적용할 만큼 속도가 크지 않으면 방향·속력 점수는 생략됩니다.
+          </p>
+        </article>
+        <article class="card">
+          <div class="tag">실제 BEV 이동으로 보조 확인 · 1286행부터</div>
+          <a class="source" href="src/tracking/global_tracker.py">global_tracker.py · bev_motion_matches</a>
+          <p>
+            새 트랙이 BEV에서 충분히 꾸준히 움직였는지, 기존 차량의 속도 벡터와 방향·속력이
+            비슷한지 추가로 확인합니다. 기존 트랙이 거의 멈춘 상태로 사라졌다면 방향 비교 대신
+            ACTIVE 상태 여부를 확인하는 분기도 있습니다.
+          </p>
+        </article>
+      </div>
+    </section>
+
+    <section class="takeaway">
+      <div class="eyebrow">발표에서 이렇게 말하면 됩니다</div>
+      <h2>“최근 이동으로 다음 위치를 예상하고,<br>재등장 차량과 여러 단서를 비교합니다.”</h2>
+      <div class="talk-track">
+        차량의 BEV 위치 기록으로 X/Y 속도 벡터를 계산합니다. 차량이 화면에서 사라지면
+        마지막 위치와 속도로 위치를 직선 예측합니다. 다른 카메라의 새 관측이 시간·거리 조건에
+        맞는지 확인한 뒤, 위치·방향·속력·시간 점수를 합쳐 기존 Global ID와 연결할지 판단합니다.
+      </div>
+      <p class="footnote">
+        핵심 순서: <code>_linear_velocity</code> (399행) →
+        <code>predicted_position</code> (191행) →
+        <code>_candidate_score</code> (738행) →
+        <code>_candidate_list</code> (865행).
+      </p>
+    </section>
+
+    <p class="footnote">
+      이 페이지는 코드 설명용 요약입니다. 코드 위치는 현재 작업본 기준이며,
+      실제 구현은 <code>src/tracking/global_tracker.py</code>,
+      점수 비중과 임계값은 <code>config/global_tracking.yaml</code>에서 확인할 수 있습니다.
+    </p>
+  </main>
+</body>
+</html>
